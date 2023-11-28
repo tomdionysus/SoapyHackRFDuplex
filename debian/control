@@ -1,4 +1,4 @@
-Source: soapyhackrf
+Source: SoapyHackRFDuplex
 Section: libs
 Priority: optional
 Maintainer: jocover <jiangwei0402@gmail.com>
@@ -9,9 +9,9 @@ Build-Depends:
     libhackrf-dev,
     libsoapysdr-dev
 Standards-Version: 4.5.0
-Homepage: https://github.com/pothosware/SoapyHackRF/wiki
-Vcs-Git: https://github.com/pothosware/SoapyHackRF.git
-Vcs-Browser: https://github.com/pothosware/SoapyHackRF
+Homepage: https://github.com/pothosware/SoapyHackRFDuplex/wiki
+Vcs-Git: https://github.com/pothosware/SoapyHackRFDuplex.git
+Vcs-Browser: https://github.com/pothosware/SoapyHackRFDuplex
 
 Package: soapysdr0.7-module-hackrf
 Architecture: any

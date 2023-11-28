@@ -3,7 +3,7 @@
  ######################################################################## 
 
 cmake_minimum_required(VERSION 2.8.7)
-project(SoapyHackRF CXX)
+project(SoapyHackRFDuplex CXX)
 
 find_package(SoapySDR "0.4.0" NO_MODULE)
  if (NOT SoapySDR_FOUND) 

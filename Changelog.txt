@@ -1,3 +1,9 @@
+Release 0.0.1 (2023-12-01)
+==========================
+- Duplicate all devices, settings, buffers, mutexes 
+
+NOTE: Changelog below pertains to https://github.com/pothosware/SoapyHackRF
+
 Release 0.3.4 (2022-01-16)
 ==========================
 
@@ -16,8 +22,8 @@ Release 0.3.2 (2017-11-19)
 
 - Corrected order of gain elements in the Rx direction
 - Track settings during TX/RX switch for TRX switching
-- Prevent spin loop in SoapyHackRF::acquireReadBuffer()
-- Fix edge case in SoapyHackRF::releaseReadBuffer()
+- Prevent spin loop in SoapyHackRFDuplex::acquireReadBuffer()
+- Fix edge case in SoapyHackRFDuplex::releaseReadBuffer()
 - Standard style find script for FindLIBHACKRF.cmake
 
 Release 0.3.1 (2017-06-19)
@@ -62,4 +68,4 @@ Release 0.2.0 (2015-11-20)
 Release 0.1.0 (2015-10-10)
 ==========================
 
-- First release of SoapyHackRF support module
+- First release of SoapyHackRFDuplex support module

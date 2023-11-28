@@ -1,8 +1,6 @@
 # Soapy SDR module for Hack RF
 
-## Build Status
-
-- Travis: [![Travis Build Status](https://travis-ci.org/pothosware/SoapyHackRF.svg?branch=master)](https://travis-ci.org/pothosware/SoapyHackRF)
+A virtual SoapySDR module, allowing full duplex communication with two HackRF devices.
 
 ## Dependencies
 
@@ -11,7 +9,7 @@
 
 ## Documentation
 
-* https://github.com/pothosware/SoapyHackRF/wiki
+* https://github.com/pothosware/SoapyHackRFDuplex/wiki
 
 ## Licensing information
 

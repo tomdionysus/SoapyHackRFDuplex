@@ -19,40 +19,37 @@
  * THE SOFTWARE.
  */
 
-#include "SoapyHackRF.hpp"
 #include <SoapySDR/Logger.hpp>
-#include <mutex>
 #include <cstddef>
+#include <mutex>
+
+#include "SoapyHackRFDuplex.hpp"
 
 static std::mutex sessionMutex;
 static size_t sessionCount = 0;
 
-SoapyHackRFSession::SoapyHackRFSession(void)
-{
-    std::lock_guard<std::mutex> lock(sessionMutex);
+SoapyHackRFDuplexSession::SoapyHackRFDuplexSession(void) {
+  std::lock_guard<std::mutex> lock(sessionMutex);
 
-    if (sessionCount == 0)
-    {
-        int ret = hackrf_init();
-        if (ret != HACKRF_SUCCESS)
-        {
-            SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_init() failed -- %s", hackrf_error_name(hackrf_error(ret)));
-        }
+  if (sessionCount == 0) {
+    int ret = hackrf_init();
+    if (ret != HACKRF_SUCCESS) {
+      SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_init() failed -- %s",
+                     hackrf_error_name(hackrf_error(ret)));
     }
-    sessionCount++;
+  }
+  sessionCount++;
 }
 
-SoapyHackRFSession::~SoapyHackRFSession(void)
-{
-    std::lock_guard<std::mutex> lock(sessionMutex);
+SoapyHackRFDuplexSession::~SoapyHackRFDuplexSession(void) {
+  std::lock_guard<std::mutex> lock(sessionMutex);
 
-    sessionCount--;
-    if (sessionCount == 0)
-    {
-        int ret = hackrf_exit();
-        if (ret != HACKRF_SUCCESS)
-        {
-            SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_exit() failed -- %s", hackrf_error_name(hackrf_error(ret)));
-        }
+  sessionCount--;
+  if (sessionCount == 0) {
+    int ret = hackrf_exit();
+    if (ret != HACKRF_SUCCESS) {
+      SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_exit() failed -- %s",
+                     hackrf_error_name(hackrf_error(ret)));
     }
+  }
 }

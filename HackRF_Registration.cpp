@@ -20,98 +20,97 @@
  * THE SOFTWARE.
  */
 
-#include "SoapyHackRF.hpp"
 #include <SoapySDR/Registry.hpp>
+
+#include "SoapyHackRFDuplex.hpp"
 
 static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
 
-static std::vector<SoapySDR::Kwargs> find_HackRF(const SoapySDR::Kwargs &args)
-{
-	SoapyHackRFSession Sess;
+static std::vector<SoapySDR::Kwargs> find_HackRF(const SoapySDR::Kwargs &args) {
+  SoapyHackRFDuplexSession Sess;
 
-	std::vector<SoapySDR::Kwargs> results;
+  std::vector<SoapySDR::Kwargs> results;
 
-	hackrf_device_list_t *list;
+  hackrf_device_list_t *list;
 
-	list =hackrf_device_list();
+  list = hackrf_device_list();
 
-	if (list->devicecount > 0) {
-	
-		for (int i = 0; i < list->devicecount; i++) {
-		
-			hackrf_device* device = NULL;
-			uint8_t board_id = BOARD_ID_INVALID;
-			read_partid_serialno_t read_partid_serialno;
+  if (list->devicecount > 0) {
+    for (int i = 0; i < list->devicecount; i++) {
+      hackrf_device *device = NULL;
+      uint8_t board_id = BOARD_ID_INVALID;
+      read_partid_serialno_t read_partid_serialno;
 
-			hackrf_device_list_open(list, i, &device);
+      hackrf_device_list_open(list, i, &device);
 
-			SoapySDR::Kwargs options;
+      SoapySDR::Kwargs options;
 
-			if (device!=NULL) {
+      if (device != NULL) {
+        hackrf_board_id_read(device, &board_id);
 
-				hackrf_board_id_read(device, &board_id);
+        options["device"] = hackrf_board_id_name((hackrf_board_id)board_id);
 
-				options["device"] = hackrf_board_id_name((hackrf_board_id) board_id);
+        char version_str[100];
 
-				char version_str[100];
+        hackrf_version_string_read(device, &version_str[0], 100);
 
-				hackrf_version_string_read(device, &version_str[0], 100);
+        options["version"] = version_str;
 
-				options["version"] = version_str;
+        hackrf_board_partid_serialno_read(device, &read_partid_serialno);
 
-				hackrf_board_partid_serialno_read(device, &read_partid_serialno);
+        char part_id_str[100];
 
-				char part_id_str[100];
+        sprintf(part_id_str, "%08x%08x", read_partid_serialno.part_id[0],
+                read_partid_serialno.part_id[1]);
 
-				sprintf(part_id_str, "%08x%08x", read_partid_serialno.part_id[0], read_partid_serialno.part_id[1]);
+        options["part_id"] = part_id_str;
 
-				options["part_id"] = part_id_str;
+        char serial_str[100];
+        sprintf(serial_str, "%08x%08x%08x%08x",
+                read_partid_serialno.serial_no[0],
+                read_partid_serialno.serial_no[1],
+                read_partid_serialno.serial_no[2],
+                read_partid_serialno.serial_no[3]);
+        options["serial"] = serial_str;
 
-				char serial_str[100];
-				sprintf(serial_str, "%08x%08x%08x%08x", read_partid_serialno.serial_no[0],
-						read_partid_serialno.serial_no[1], read_partid_serialno.serial_no[2],
-						read_partid_serialno.serial_no[3]);
-				options["serial"] = serial_str;
+        // generate a displayable label string with trimmed serial
+        size_t ofs = 0;
+        while (ofs < sizeof(serial_str) and serial_str[ofs] == '0') ofs++;
+        char label_str[100];
+        sprintf(label_str, "%s #%d %s", options["device"].c_str(), i,
+                serial_str + ofs);
+        options["label"] = label_str;
 
-				//generate a displayable label string with trimmed serial
-				size_t ofs = 0;
-				while (ofs < sizeof(serial_str) and serial_str[ofs] == '0') ofs++;
-				char label_str[100];
-				sprintf(label_str, "%s #%d %s", options["device"].c_str(), i, serial_str+ofs);
-				options["label"] = label_str;
+        // filter based on serial and idx
+        const bool serialMatch =
+            args.count("serial") == 0 or args.at("serial") == options["serial"];
+        const bool idxMatch =
+            args.count("hackrf") == 0 or std::stoi(args.at("hackrf")) == i;
+        if (serialMatch and idxMatch) {
+          results.push_back(options);
+          _cachedResults[serial_str] = options;
+        }
 
-				//filter based on serial and idx
-				const bool serialMatch = args.count("serial") == 0 or args.at("serial") == options["serial"];
-				const bool idxMatch = args.count("hackrf") == 0 or std::stoi(args.at("hackrf")) == i;
-				if (serialMatch and idxMatch)
-				{
-					results.push_back(options);
-					_cachedResults[serial_str] = options;
-				}
+        hackrf_close(device);
+      }
+    }
+  }
 
-				hackrf_close(device);
-			}
-		
-		}
-	
-	}
+  hackrf_device_list_free(list);
 
-	hackrf_device_list_free(list);
+  // fill in the cached results for claimed handles
+  for (const auto &serial : HackRF_getClaimedSerials()) {
+    if (_cachedResults.count(serial) == 0) continue;
+    if (args.count("serial") != 0 and args.at("serial") != serial) continue;
+    results.push_back(_cachedResults.at(serial));
+  }
 
-	//fill in the cached results for claimed handles
-	for (const auto &serial : HackRF_getClaimedSerials())
-	{
-		if (_cachedResults.count(serial) == 0) continue;
-		if (args.count("serial") != 0 and args.at("serial") != serial) continue;
-		results.push_back(_cachedResults.at(serial));
-	}
-
-	return results;
+  return results;
 }
 
-static SoapySDR::Device *make_HackRF(const SoapySDR::Kwargs &args)
-{
-    return new SoapyHackRF(args);
+static SoapySDR::Device *make_HackRF(const SoapySDR::Kwargs &args) {
+  return new SoapyHackRFDuplex(args);
 }
 
-static SoapySDR::Registry register_hackrf("hackrf", &find_HackRF, &make_HackRF, SOAPY_SDR_ABI_VERSION);
+static SoapySDR::Registry register_hackrf("hackrfduplex", &find_HackRF, &make_HackRF,
+                                          SOAPY_SDR_ABI_VERSION);
