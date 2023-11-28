@@ -337,7 +337,7 @@ void SoapyHackRFDuplex::setGain(const int direction, const size_t channel,
     ret = hackrf_set_txvga_gain(_tx_dev, _tx_stream.vga_gain);
     ret |= hackrf_set_amp_enable(_tx_dev, (_tx_current_amp > 0) ? 1 : 0);
   }
-  
+
   if (ret != HACKRF_SUCCESS) {
     SoapySDR::logf(SOAPY_SDR_ERROR, "setGain(%f) returned %s", value,
                    hackrf_error_name((hackrf_error)ret));

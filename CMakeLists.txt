@@ -53,13 +53,17 @@ if (APPLE)
 endif(APPLE)
 
 SOAPY_SDR_MODULE_UTIL(
-    TARGET HackRFSupport
+    TARGET HackRFDuplexSupport
     SOURCES
 	HackRF_Registration.cpp
 	HackRF_Settings.cpp
 	HackRF_Streaming.cpp
 	HackRF_Session.cpp
     LIBRARIES ${LIBHACKRF_LIBRARIES}
+)
+
+add_definitions(
+    -w
 )
 
 ########################################################################
