@@ -113,5 +113,5 @@ static SoapySDR::Device *make_HackRF(const SoapySDR::Kwargs &args) {
   return new SoapyHackRFDuplex(args);
 }
 
-static SoapySDR::Registry register_hackrf("hackrfduplex", &find_HackRF, &make_HackRF,
-                                          SOAPY_SDR_ABI_VERSION);
+static SoapySDR::Registry register_hackrf("hackrfduplex", &find_HackRF,
+                                          &make_HackRF, SOAPY_SDR_ABI_VERSION);

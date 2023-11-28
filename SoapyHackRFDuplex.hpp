@@ -23,13 +23,14 @@
  */
 
 #pragma once
+#include <hackrf.h>
+#include <string.h>
+
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Logger.hpp>
 #include <condition_variable>
-#include <hackrf.h>
 #include <mutex>
 #include <set>
-#include <string.h>
 
 #define BUF_LEN 262144
 #define BUF_NUM 15
@@ -58,13 +59,13 @@ std::set<std::string> &HackRF_getClaimedSerials(void);
  * with a process-wide reference count.
  */
 class SoapyHackRFDuplexSession {
-public:
+ public:
   SoapyHackRFDuplexSession(void);
   ~SoapyHackRFDuplexSession(void);
 };
 
 class SoapyHackRFDuplex : public SoapySDR::Device {
-public:
+ public:
   SoapyHackRFDuplex(const SoapySDR::Kwargs &args);
 
   ~SoapyHackRFDuplex(void);
@@ -100,10 +101,10 @@ public:
   SoapySDR::ArgInfoList getStreamArgsInfo(const int direction,
                                           const size_t channel) const;
 
-  SoapySDR::Stream *
-  setupStream(const int direction, const std::string &format,
-              const std::vector<size_t> &channels = std::vector<size_t>(),
-              const SoapySDR::Kwargs &args = SoapySDR::Kwargs());
+  SoapySDR::Stream *setupStream(
+      const int direction, const std::string &format,
+      const std::vector<size_t> &channels = std::vector<size_t>(),
+      const SoapySDR::Kwargs &args = SoapySDR::Kwargs());
 
   void closeStream(SoapySDR::Stream *stream);
 
@@ -242,15 +243,23 @@ public:
 
   int hackrf_rx_callback(int8_t *buffer, int32_t length);
 
-private:
+ private:
   SoapySDR::Stream *const TX_STREAM = (SoapySDR::Stream *)0x1;
   SoapySDR::Stream *const RX_STREAM = (SoapySDR::Stream *)0x2;
 
   struct Stream {
     Stream()
-        : opened(false), buf_num(BUF_NUM), buf_len(BUF_LEN), buf(nullptr),
-          buf_head(0), buf_tail(0), buf_count(0), remainderHandle(-1),
-          remainderSamps(0), remainderOffset(0), remainderBuff(nullptr),
+        : opened(false),
+          buf_num(BUF_NUM),
+          buf_len(BUF_LEN),
+          buf(nullptr),
+          buf_head(0),
+          buf_tail(0),
+          buf_count(0),
+          remainderHandle(-1),
+          remainderSamps(0),
+          remainderOffset(0),
+          remainderBuff(nullptr),
           format(HACKRF_FORMAT_INT8) {}
 
     bool opened;

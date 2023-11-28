@@ -3,7 +3,8 @@
  *
  * Copyright (c) 2015-2016 Wei Jiang
  * Copyright (c) 2015-2017 Josh Blum
- * Copyright (c) 2017 Kevin Mehall
+ * Copyright (c) 2017-2023 Kevin Mehall
+ * Copyright (c) 2023 Tom Cully
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -336,6 +337,7 @@ void SoapyHackRFDuplex::setGain(const int direction, const size_t channel,
     ret = hackrf_set_txvga_gain(_tx_dev, _tx_stream.vga_gain);
     ret |= hackrf_set_amp_enable(_tx_dev, (_tx_current_amp > 0) ? 1 : 0);
   }
+  
   if (ret != HACKRF_SUCCESS) {
     SoapySDR::logf(SOAPY_SDR_ERROR, "setGain(%f) returned %s", value,
                    hackrf_error_name((hackrf_error)ret));
