@@ -1,28 +1,28 @@
 Source: SoapyHackRFDuplex
 Section: libs
 Priority: optional
-Maintainer: jocover <jiangwei0402@gmail.com>
-Uploaders: Josh Blum <josh@pothosware.com>
+Maintainer: Tom Cully <tomhughcully@gmail.com>
+Uploaders: Tom Cully <tomhughcully@gmail.com>
 Build-Depends:
     debhelper (>= 9.0.0),
     cmake,
     libhackrf-dev,
     libsoapysdr-dev
 Standards-Version: 4.5.0
-Homepage: https://github.com/pothosware/SoapyHackRFDuplex/wiki
-Vcs-Git: https://github.com/pothosware/SoapyHackRFDuplex.git
-Vcs-Browser: https://github.com/pothosware/SoapyHackRFDuplex
+Homepage: https://github.com/tomdionysus/SoapyHackRFDuplex/wiki
+Vcs-Git: https://github.com/tomdionysus/SoapyHackRFDuplex.git
+Vcs-Browser: https://github.com/tomdionysus/SoapyHackRFDuplex
 
-Package: soapysdr0.7-module-hackrf
+Package: soapysdr0.1-module-hackrfduplex
 Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: Soapy HackRF - HackRF device support for Soapy SDR.
- A Soapy module that supports HackRF devices within the Soapy API.
+Description: Soapy HackRF - HackRF device support for Soapy SDR with duplex bonding.
+ A Soapy module that supports HackRF devices within the Soapy API, bonding two devices for duplex use.
 
-Package: soapysdr-module-hackrf
+Package: soapysdr-module-hackrfduplex
 Architecture: all
-Depends: soapysdr0.7-module-hackrf, ${misc:Depends}
+Depends: soapysdr0.1-module-hackrfduplex, ${misc:Depends}
 Description: Soapy HackRF - HackRF device support for Soapy SDR.
  A Soapy module that supports HackRF devices within the Soapy API.
  .
