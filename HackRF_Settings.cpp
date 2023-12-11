@@ -438,7 +438,7 @@ double SoapyHackRFDuplex::getGain(const int direction, const size_t channel,
     std::lock_guard<std::mutex> lock(_rx_device_mutex);
     gain = _rx_stream.vga_gain;
   } else if (direction == SOAPY_SDR_TX and name == "VGA") {
-    std::lock_guard<std::mutex> lock(_rx_device_mutex);
+    std::lock_guard<std::mutex> lock(_tx_device_mutex);
     gain = _tx_stream.vga_gain;
   }
 
@@ -448,14 +448,16 @@ double SoapyHackRFDuplex::getGain(const int direction, const size_t channel,
 SoapySDR::Range SoapyHackRFDuplex::getGainRange(const int direction,
                                                 const size_t channel,
                                                 const std::string &name) const {
-  if (name == "AMP")
+  if (name == "AMP") {
     return (SoapySDR::Range(0, HACKRF_AMP_MAX_DB, HACKRF_AMP_MAX_DB));
-  if (direction == SOAPY_SDR_RX and name == "LNA")
+  } else if (direction == SOAPY_SDR_RX and name == "LNA") {
     return (SoapySDR::Range(0, HACKRF_RX_LNA_MAX_DB, 8.0));
-  if (direction == SOAPY_SDR_RX and name == "VGA")
+  } else if (direction == SOAPY_SDR_RX and name == "VGA") {
     return (SoapySDR::Range(0, HACKRF_RX_VGA_MAX_DB, 2.0));
-  if (direction == SOAPY_SDR_TX and name == "VGA")
+  } else if (direction == SOAPY_SDR_TX and name == "VGA") {
     return (SoapySDR::Range(0, HACKRF_TX_VGA_MAX_DB, 1.0));
+  }
+
   return (SoapySDR::Range(0, 0));
 }
 
@@ -479,19 +481,20 @@ void SoapyHackRFDuplex::setFrequency(const int direction, const size_t channel,
       int ret = hackrf_set_freq(_rx_dev, _rx_current_frequency);
 
       if (ret != HACKRF_SUCCESS) {
-        SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_set_freq(%f) returned %s",
+        SoapySDR::logf(SOAPY_SDR_ERROR, "RX hackrf_set_freq(%f) returned %s",
                        _rx_current_frequency,
                        hackrf_error_name((hackrf_error)ret));
       }
     }
   } else if (direction == SOAPY_SDR_TX) {
     std::lock_guard<std::mutex> lock(_tx_device_mutex);
+    _tx_current_frequency = frequency;
     _tx_stream.frequency = _tx_current_frequency;
     if (_tx_dev != NULL) {
       int ret = hackrf_set_freq(_tx_dev, _tx_current_frequency);
 
       if (ret != HACKRF_SUCCESS) {
-        SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_set_freq(%f) returned %s",
+        SoapySDR::logf(SOAPY_SDR_ERROR, "TX hackrf_set_freq(%f) returned %s",
                        _tx_current_frequency,
                        hackrf_error_name((hackrf_error)ret));
       }
@@ -510,11 +513,9 @@ double SoapyHackRFDuplex::getFrequency(const int direction,
 
   if (direction == SOAPY_SDR_RX) {
     std::lock_guard<std::mutex> lock(_rx_device_mutex);
-
     freq = _rx_stream.frequency;
   } else if (direction == SOAPY_SDR_TX) {
     std::lock_guard<std::mutex> lock(_tx_device_mutex);
-
     freq = _tx_stream.frequency;
   }
   return (freq);
@@ -659,14 +660,13 @@ void SoapyHackRFDuplex::setBandwidth(const int direction, const size_t channel,
 double SoapyHackRFDuplex::getBandwidth(const int direction,
                                        const size_t channel) const {
   double bw(0.0);
+
   if (direction == SOAPY_SDR_RX) {
     std::lock_guard<std::mutex> lock(_rx_device_mutex);
-
     bw = _rx_stream.bandwidth;
   }
   if (direction == SOAPY_SDR_TX) {
     std::lock_guard<std::mutex> lock(_tx_device_mutex);
-
     bw = _tx_stream.bandwidth;
   }
 
