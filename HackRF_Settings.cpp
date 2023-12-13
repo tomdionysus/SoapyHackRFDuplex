@@ -24,14 +24,15 @@
 
 #include "SoapyHackRFDuplex.hpp"
 
+#include <iostream>
+
 std::set<std::string> &HackRF_getClaimedSerials(void) {
   static std::set<std::string> serials;
   return serials;
 }
 
 SoapyHackRFDuplex::SoapyHackRFDuplex(const SoapySDR::Kwargs &args) {
-  if (args.count("label") != 0)
-    SoapySDR_logf(SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Initialising SoapyHackRFDuplex");
 
   _rx_stream.vga_gain = 16;
   _rx_stream.lna_gain = 16;
@@ -59,13 +60,16 @@ SoapyHackRFDuplex::SoapyHackRFDuplex(const SoapySDR::Kwargs &args) {
   _rx_dev = nullptr;
   _tx_dev = nullptr;
 
-  if (args.count("rx_serial") == 0)
-    throw std::runtime_error("no hackrf device matches rx_serial");
-  if (args.count("tx_serial") == 0)
-    throw std::runtime_error("no hackrf device matches tx_serial");
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Checking rx_serial, tx_serial");
 
-  _rx_serial = args.at("_rx_serial");
-  _tx_serial = args.at("_tx_serial");
+  if (args.count("rx_serial") == 0)
+    throw std::runtime_error("rx_serial not supplied");
+
+  if (args.count("tx_serial") == 0)
+    throw std::runtime_error("tx_serial not supplied");
+
+  _rx_serial = args.at("rx_serial");
+  _tx_serial = args.at("tx_serial");
 
   _tx_current_amp = 0;
   _rx_current_amp = 0;
@@ -79,17 +83,21 @@ SoapyHackRFDuplex::SoapyHackRFDuplex(const SoapySDR::Kwargs &args) {
   _rx_current_bandwidth = 0;
   _tx_current_bandwidth = 0;
 
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Opening Devices...");
+
   int ret = hackrf_open_by_serial(_rx_serial.c_str(), &_rx_dev);
   if (ret != HACKRF_SUCCESS) {
-    SoapySDR_logf(SOAPY_SDR_INFO, "Could not Open HackRF RX Device");
+    SoapySDR_logf(SOAPY_SDR_ERROR, "Could not Open HackRF RX Device");
     throw std::runtime_error("hackrf open failed");
   }
 
   ret = hackrf_open_by_serial(_tx_serial.c_str(), &_tx_dev);
   if (ret != HACKRF_SUCCESS) {
-    SoapySDR_logf(SOAPY_SDR_INFO, "Could not Open HackRF TX Device");
+    SoapySDR_logf(SOAPY_SDR_ERROR, "Could not Open HackRF TX Device");
     throw std::runtime_error("hackrf open failed");
   }
+
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Opened Devices");
 
   HackRF_getClaimedSerials().insert(_rx_serial);
   HackRF_getClaimedSerials().insert(_tx_serial);
@@ -102,6 +110,7 @@ SoapyHackRFDuplex::~SoapyHackRFDuplex(void) {
   /* cleanup device handles */
   if (_rx_dev) hackrf_close(_rx_dev);
   if (_tx_dev) hackrf_close(_tx_dev);
+  std::cout << "Closed Devices\n";
 }
 
 /*******************************************************************
@@ -469,6 +478,11 @@ void SoapyHackRFDuplex::setFrequency(const int direction, const size_t channel,
                                      const std::string &name,
                                      const double frequency,
                                      const SoapySDR::Kwargs &args) {
+
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Setting Frequency %s Channel %d, Freq. %f Hz...",
+    direction == SOAPY_SDR_RX ? "RX" : direction == SOAPY_SDR_TX ? "TX" : "<Unknown>",
+    channel, frequency);
+
   if (name == "BB") return;
   if (name != "RF")
     throw std::runtime_error("setFrequency(" + name + ") unknown name");

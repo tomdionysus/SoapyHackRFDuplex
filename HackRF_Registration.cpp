@@ -25,16 +25,21 @@
 
 #include "SoapyHackRFDuplex.hpp"
 
-static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
+static inline std::string ltrim(std::string s, char* t)
+{
+    s.erase(0, s.find_first_not_of(t));
+    return s;
+}
 
 static std::vector<SoapySDR::Kwargs> find_HackRF(const SoapySDR::Kwargs &args) {
   SoapyHackRFDuplexSession Sess;
-
-  std::vector<SoapySDR::Kwargs> results;
-
   hackrf_device_list_t *list;
 
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Listing Devices...");
   list = hackrf_device_list();
+
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Found %d Devices", list->devicecount);
+  uint8_t devicesInUse = 0;
 
   if (list->devicecount > 0) {
     for (int i = 0; i < list->devicecount; i++) {
@@ -72,7 +77,7 @@ static std::vector<SoapySDR::Kwargs> find_HackRF(const SoapySDR::Kwargs &args) {
                 read_partid_serialno.serial_no[1],
                 read_partid_serialno.serial_no[2],
                 read_partid_serialno.serial_no[3]);
-        options["serial"] = serial_str;
+        options["serial"] = ltrim(serial_str, "0");
 
         // generate a displayable label string with trimmed serial
         size_t ofs = 0;
@@ -82,29 +87,53 @@ static std::vector<SoapySDR::Kwargs> find_HackRF(const SoapySDR::Kwargs &args) {
                 serial_str + ofs);
         options["label"] = label_str;
 
-        // filter based on serial and idx
-        const bool serialMatch =
-            args.count("serial") == 0 or args.at("serial") == options["serial"];
-        const bool idxMatch =
-            args.count("hackrf") == 0 or std::stoi(args.at("hackrf")) == i;
-        if (serialMatch and idxMatch) {
-          results.push_back(options);
-          _cachedResults[serial_str] = options;
-        }
+        // filter based on serial
+        const bool rxMatch = args.at("rx_serial") == options["serial"] || args.at("rx_serial") == ltrim(options["serial"],"0");
+        const bool txMatch = args.at("tx_serial") == options["serial"] || args.at("tx_serial") == ltrim(options["serial"],"0");
+
+        if(rxMatch || txMatch) devicesInUse++;
+
+        std::string usage = std::string((rxMatch ? "-> RX" : (txMatch ? "-> TX" : "-> Unused")));
+
+        SoapySDR_logf(SOAPY_SDR_DEBUG, "Device %d: %s, Part ID %d, Serial %s, Version %s %s", 
+          i,
+          options["label"].c_str(),
+          options["part_id"].c_str(),
+          options["serial"].c_str(),
+          options["version"].c_str(),
+          usage.c_str()
+        );
 
         hackrf_close(device);
       }
     }
-  }
+  } 
+
+  std::vector<SoapySDR::Kwargs> results;
 
   hackrf_device_list_free(list);
+  switch (devicesInUse) {
+    case 0:
+      SoapySDR_logf(SOAPY_SDR_ERROR, "Found no HackRF devices");
+    break;
+    case 1:
+      SoapySDR_logf(SOAPY_SDR_ERROR, "Found only one HackRF device (hackrfduplex requires two devices)");
+    break;
+    case 2:
+      SoapySDR_logf(SOAPY_SDR_DEBUG, "Found both RX & TX HackRF devices");
+      SoapySDR::Kwargs rxOptions;
+      rxOptions["rx_serial"] = args.at("rx_serial");
+      rxOptions["tx_serial"] = args.at("tx_serial");
+      results.push_back(rxOptions);
+    break;
+  }
 
   // fill in the cached results for claimed handles
-  for (const auto &serial : HackRF_getClaimedSerials()) {
-    if (_cachedResults.count(serial) == 0) continue;
-    if (args.count("serial") != 0 and args.at("serial") != serial) continue;
-    results.push_back(_cachedResults.at(serial));
-  }
+  // for (const auto &serial : HackRF_getClaimedSerials()) {
+  //   if (_cachedResults.count(serial) == 0) continue;
+  //   if (args.count("serial") != 0 and args.at("serial") != serial) continue;
+  //   results.push_back(_cachedResults.at(serial));
+  // }
 
   return results;
 }

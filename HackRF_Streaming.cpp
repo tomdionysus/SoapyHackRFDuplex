@@ -87,6 +87,8 @@ std::vector<std::string> SoapyHackRFDuplex::getStreamFormats(
     const int direction, const size_t channel) const {
   std::vector<std::string> formats;
 
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Sending Stream Formats...");
+
   formats.push_back(SOAPY_SDR_CS8);
   formats.push_back(SOAPY_SDR_CS16);
   formats.push_back(SOAPY_SDR_CF32);
@@ -98,12 +100,18 @@ std::vector<std::string> SoapyHackRFDuplex::getStreamFormats(
 std::string SoapyHackRFDuplex::getNativeStreamFormat(const int direction,
                                                      const size_t channel,
                                                      double &fullScale) const {
+  
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Sending Native Stream Formats...");
+
   fullScale = 128;
   return SOAPY_SDR_CS8;
 }
 
 SoapySDR::ArgInfoList SoapyHackRFDuplex::getStreamArgsInfo(
     const int direction, const size_t channel) const {
+
+  SoapySDR_logf(SOAPY_SDR_DEBUG, "Sending Stream Argument Info...");
+
   SoapySDR::ArgInfoList streamArgs;
 
   SoapySDR::ArgInfo buffersArg;
