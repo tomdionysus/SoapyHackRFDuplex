@@ -1,0 +1,37 @@
+Source: hackrfduplex
+Section: hamradio
+Priority: optional
+Maintainer: Tom Cully <mail@tomcully.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.24),
+               pkgconf,
+               libhackrf-dev,
+               libsoapysdr-dev,
+               catch2 (>= 3)
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: soapysdr0.8-module-hackrfduplex
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Provides: soapysdr0.8-module
+Description: SoapySDR module joining two HackRF One boards into one full-duplex radio
+ One HackRF One only ever receives and the other only ever transmits, so a
+ SoapySDR application sees a single device, driver key hackrfduplex, with
+ an RX channel and a TX channel that run at the same time, each tuned,
+ filtered and gained on its own. Both streams share one hardware time,
+ found by a short calibration burst when they start, so transmissions can
+ be placed at a receive timestamp. Works with stock HackRF firmware and
+ libhackrf.
+
+Package: hackrfduplex-tools
+Architecture: any
+Depends: soapysdr0.8-module-hackrfduplex (= ${binary:Version}),
+         ${shlibs:Depends},
+         ${misc:Depends}
+Description: check tool for the hackrfduplex SoapySDR module
+ hackrfduplex-check opens a pair of HackRF One boards through SoapySDR,
+ receives, optionally transmits a tone or timed bursts, and reports
+ rates, drops, levels, the time origin and where timed bursts landed.
+ It transmits only when asked to.

@@ -84,7 +84,19 @@ sudo cmake --install build
 ```
 
 `cmake --install` places the module in SoapySDR's modules directory
-under the install prefix and `hackrfduplex-check` in `bin`. To use the
+under the install prefix and `hackrfduplex-check` in `bin`.
+
+On Debian (trixie), the `debian/` directory builds two packages: the
+module as `soapysdr0.8-module-hackrfduplex` and the check tool as
+`hackrfduplex-tools`:
+
+```
+sudo apt install build-essential debhelper cmake pkgconf libhackrf-dev libsoapysdr-dev catch2
+dpkg-buildpackage -us -uc -b
+sudo apt install ../soapysdr0.8-module-hackrfduplex_*.deb ../hackrfduplex-tools_*.deb
+SoapySDRUtil --find="driver=hackrfduplex"
+```
+ To use the
 module from the build tree instead, point SoapySDR at it:
 
 ```
