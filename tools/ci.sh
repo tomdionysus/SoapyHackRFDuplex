@@ -27,12 +27,18 @@ step() {
 
 step "format"
 mapfile -t sources < <(git ls-files '*.cpp' '*.hpp')
+if [[ ${#sources[@]} -eq 0 ]]; then
+    echo "git lists no sources; is this a git checkout git will read?"
+    exit 1
+fi
 clang-format --dry-run --Werror "${sources[@]}"
 echo "${#sources[@]} files formatted"
 
 step "licence lines"
 missing=0
+checked=0
 while IFS= read -r file; do
+    checked=$((checked + 1))
     first=""
     second=""
     {
@@ -48,10 +54,10 @@ while IFS= read -r file; do
             ;;
     esac
 done < <(git ls-files '*.cpp' '*.hpp' '*.in' '*.cmake' '*CMakeLists.txt' '*.sh')
-if [[ $missing -ne 0 ]]; then
+if [[ $missing -ne 0 || $checked -eq 0 ]]; then
     exit 1
 fi
-echo "every source file carries its licence line"
+echo "all $checked source files carry their licence line"
 
 step "release build"
 cmake --preset default >/dev/null

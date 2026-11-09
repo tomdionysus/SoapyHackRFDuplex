@@ -10,7 +10,8 @@ before starting. Do not reopen a standing decision in
 ```
 docs/      design, licensing
 module/    the SoapySDR module: src/ and its Catch2 tests in tests/
-tools/     hackrfduplex-check, and ci.sh, the checks a change must pass
+tools/     hackrfduplex-check; ci.sh, the checks a change must pass; ci-pi.sh,
+           which runs them on a Debian host with the boards attached
 cmake/     version header, sanitizer and coverage builds, libhackrf lookup
 debian/    Debian packaging: the module and the check tool
 TODO/      ACTIVE.md (open work) and COMPLETED.md (done work)
@@ -65,6 +66,12 @@ ctest --test-dir build
 licence line on every source file, the release build and its tests, and
 the sanitizer build and its tests (`--quick` stops after the release
 tests). Run it before a commit that touches code.
+
+The build of record runs on the target, a Debian trixie host with both
+boards attached: `HACKRFDUPLEX_TARGET=user@host tools/ci-pi.sh` copies
+the working tree there over ssh and runs `tools/ci.sh` in the copy, and
+`tools/ci-pi.sh -- <command>` runs anything else there, such as
+`hackrfduplex-check`. The target's address stays out of the repository.
 
 `cmake --preset asan` and `cmake --preset coverage` build the sanitizer
 and coverage variants; `cmake --build --preset coverage --target

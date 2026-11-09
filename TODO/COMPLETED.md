@@ -3,6 +3,40 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: the build moves to the target; packaging and CI
+
+The build of record moved to a Raspberry Pi 5 on Debian 13.7 trixie
+(arm64) with both boards attached, each on its own USB root port.
+`tools/ci-pi.sh` (new) copies the working tree there over ssh and runs
+`tools/ci.sh` or any command in the copy; the target's address lives in
+`CLAUDE.local.md`. Installed there: hackrf and libhackrf-dev 2024.02.1,
+libsoapysdr-dev, soapysdr-tools and python3-soapysdr 0.8.1, debhelper,
+lintian, clang-format 19.
+
+Item 9, packaging and CI, accepted:
+
+- `tools/ci.sh` (format check, licence lines, release and sanitizer
+  builds and tests) passes on the workstation and on the target: 43
+  files formatted, 51 licence lines, 96 test cases in each build, with
+  LeakSanitizer on Linux. It now fails rather than passing vacuously
+  when git lists no files (it had, on a tree git refused for its owner).
+- Every source compiles under GCC 15 (workstation) and GCC 14 (target)
+  with `-Werror`; one shadowed name fixed.
+- `dpkg-buildpackage -us -uc -b` on the target builds
+  `soapysdr0.8-module-hackrfduplex` and `hackrfduplex-tools` (arm64),
+  running all 96 tests during the build; both install, and
+  `SoapySDRUtil --find` lists the pair in both orders. lintian's one
+  warning is the missing man page (ACTIVE item 16). The packages were
+  removed again so they do not shadow development builds.
+
+On the target, receive only (transmit there waits on Tom): 8 Msps,
+99.9% of nominal, 0 overflows, both boards `clock: external` with
+`clkout=rx`, a reference switch handled at the first start. 20 Msps
+through the check tool: 81%, 265 overflows; `hackrf_transfer` alone
+carried 40 MiB/s, so the limit is CPU, not USB (ACTIVE item 11). Without
+a trigger jumper, `--time-origin trigger` failed on the real pair as
+designed, naming the jumper.
+
 ## 2026-11-09: the firmware's reference-switch behaviour, drafted for upstream
 
 `TODO/upstream-reference-switch.md`: the issue as it would go to Great
@@ -49,7 +83,24 @@ reference:
 - Hardware time: read between two live reads, it lay between their
   timestamps 3662 times of 3662.
 
-The plan's corrections are recorded in ACTIVE.md.
+Where the code differed from the plan written before it, the code was
+right (docs/design.md, Time, holds the design as built):
+
+- The burst goes out at full scale on I and Q, not 0.7 on I, and the
+  capture's mean is removed before correlating (12.4 dB as planned, 27
+  to 30 dB as built).
+- Timed blocks are placed by the board's transfer thread, not by the
+  writer writing zeros up to the target: silence the board inserts into
+  an empty ring moves later samples, which only that thread knows.
+- The origin is transmit position less receive position, so a transmit
+  time T goes out at `rx_position(T) + origin`.
+- The origin differs from start to start (it holds how far apart the
+  host started the streams), so "ten starts give the same origin" became:
+  an origin found at every start, and repeat calibrations within a start
+  agreeing.
+- The lead a timed write needs is about five USB transfers, not four:
+  libhackrf keeps four transmit transfers ahead of the air, and a
+  receive timestamp is up to one transfer old when read.
 
 ## 2026-11-09: sample rates below 2 Msps
 
