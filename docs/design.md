@@ -178,8 +178,10 @@ differs by up to the crystals' tolerance, about 17 kHz at 868 MHz for
 The strongest signal in the band, with or without the transmitter, is at
 870.000 MHz (+1.7 MHz from centre), the 87th harmonic of the 10 MHz
 reference. It is 8 dB stronger while CLKOUT drives the cable, so the
-cable radiates the reference; a shorter or better shielded cable, or a
-centre frequency away from multiples of 10 MHz, avoids it.
+cable radiates the reference. A shorter cable took it from -64.3 to
+-69.3 dBFS, within 3.3 dB of its level with CLKOUT off; what remains
+comes mostly from the boards' own references. A centre frequency away
+from multiples of 10 MHz avoids it entirely.
 
 Switching `clkout` off while the fed board is powered leaves that board
 without a clock rather than on its own crystal: a tone sent then was not
