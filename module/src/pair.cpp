@@ -689,11 +689,13 @@ void Pair::calibrate_locked() {
         tx_.board->set_frequency(rx_hz);
     }
 
-    // Listen from now for as long as the burst can take to come round: the
-    // transmit ring, libhackrf's transfers in flight, and some margin.
+    // Listen from now for as long as the burst can take to come round: a
+    // full transmit ring ahead of it, libhackrf's transfers in flight each
+    // way, and some margin.
     const std::size_t transfer = std::max(mtu(Direction::kRx), mtu(Direction::kTx));
-    const std::size_t slots = tx_path_->slots();
-    Capture capture(burst::kChips + (slots + kLibhackrfTransfers + 2) * transfer);
+    const std::size_t listen =
+        burst::kChips + (tx_path_->slots() + 2 * kLibhackrfTransfers + 4) * transfer;
+    Capture capture(listen);
     rx_path_->set_tap([&capture](std::uint64_t position, std::span<const std::uint8_t> bytes) {
         capture.add(position, bytes);
     });
@@ -721,8 +723,7 @@ void Pair::calibrate_locked() {
             sent_at = at;
         }
     }
-    const double seconds =
-        static_cast<double>(burst::kChips + (slots + kLibhackrfTransfers + 2) * transfer) / rx_rate;
+    const double seconds = static_cast<double>(listen) / rx_rate;
     const bool full =
         sent_at &&
         capture.wait(std::chrono::milliseconds(static_cast<long>(2000.0 * seconds) + 2000));
