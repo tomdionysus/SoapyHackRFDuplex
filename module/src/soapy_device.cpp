@@ -51,6 +51,11 @@ void soapy_log(LogLevel level, const std::string& message) {
     SoapySDR::log(soapy_level, "hackrfduplex: " + message);
 }
 
+// A request this device cannot honour, refused rather than ignored.
+[[noreturn]] void refuse(const std::string& call, const std::string& why) {
+    throw std::invalid_argument(call + ": " + why);
+}
+
 std::chrono::microseconds timeout_of(long timeout_us) {
     return std::chrono::microseconds(timeout_us < 0 ? 0 : timeout_us);
 }
@@ -110,6 +115,12 @@ void SoapyDevice::check_channel(const size_t channel) {
     }
 }
 
+Direction SoapyDevice::check(const int direction, const size_t channel) {
+    const Direction dir = direction_of(direction);
+    check_channel(channel);
+    return dir;
+}
+
 // Identification
 
 std::string SoapyDevice::getDriverKey() const { return "hackrfduplex"; }
@@ -141,20 +152,29 @@ size_t SoapyDevice::getNumChannels(const int direction) const {
     return 1;
 }
 
-bool SoapyDevice::getFullDuplex(const int, const size_t) const { return true; }
+bool SoapyDevice::getFullDuplex(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return true;
+}
 
 // Streams
 
-std::vector<std::string> SoapyDevice::getStreamFormats(const int, const size_t) const {
+std::vector<std::string> SoapyDevice::getStreamFormats(const int direction,
+                                                       const size_t channel) const {
+    check(direction, channel);
     return {SOAPY_SDR_CS8, SOAPY_SDR_CS16, SOAPY_SDR_CF32, SOAPY_SDR_CF64};
 }
 
-std::string SoapyDevice::getNativeStreamFormat(const int, const size_t, double& fullScale) const {
+std::string SoapyDevice::getNativeStreamFormat(const int direction, const size_t channel,
+                                               double& fullScale) const {
+    check(direction, channel);
     fullScale = kFullScale;
     return SOAPY_SDR_CS8;
 }
 
-SoapySDR::ArgInfoList SoapyDevice::getStreamArgsInfo(const int, const size_t) const {
+SoapySDR::ArgInfoList SoapyDevice::getStreamArgsInfo(const int direction,
+                                                     const size_t channel) const {
+    check(direction, channel);
     SoapySDR::ArgInfo buffers;
     buffers.key = "buffers";
     buffers.value = std::to_string(kDefaultBuffers);
@@ -181,6 +201,11 @@ SoapySDR::Stream* SoapyDevice::setupStream(const int direction, const std::strin
         }
         buffers = static_cast<std::size_t>(wanted);
     }
+    for (const auto& [key, value] : args) {
+        if (key != "buffers") {
+            soapy_log(LogLevel::kWarning, "setupStream: no stream argument " + key + ", ignored");
+        }
+    }
     pair_->open_stream(dir, parse_format(format), buffers);
     return token(dir);
 }
@@ -193,10 +218,17 @@ size_t SoapyDevice::getStreamMTU(SoapySDR::Stream* stream) const {
     return pair_->mtu(direction_of(stream));
 }
 
-int SoapyDevice::activateStream(SoapySDR::Stream* stream, const int, const long long,
-                                const size_t) {
+int SoapyDevice::activateStream(SoapySDR::Stream* stream, const int flags, const long long,
+                                const size_t numElems) {
+    const Direction dir = direction_of(stream);
+    if (flags != 0 || numElems != 0) {
+        soapy_log(LogLevel::kError,
+                  std::string("activateStream: ") + direction_name(dir) +
+                      " streams start at once and run until deactivated; no flags or count");
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
     try {
-        pair_->activate(direction_of(stream));
+        pair_->activate(dir);
     } catch (const BoardError& e) {
         soapy_log(LogLevel::kError, e.what());
         return SOAPY_SDR_STREAM_ERROR;
@@ -204,7 +236,11 @@ int SoapyDevice::activateStream(SoapySDR::Stream* stream, const int, const long 
     return 0;
 }
 
-int SoapyDevice::deactivateStream(SoapySDR::Stream* stream, const int, const long long) {
+int SoapyDevice::deactivateStream(SoapySDR::Stream* stream, const int flags, const long long) {
+    if (flags != 0) {
+        soapy_log(LogLevel::kError, "deactivateStream: a stream stops at once; no flags");
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
     try {
         pair_->deactivate(direction_of(stream));
     } catch (const BoardError& e) {
@@ -245,6 +281,10 @@ int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
     }
     if (!pair_->active(Direction::kTx)) {
         return SOAPY_SDR_STREAM_ERROR;
+    }
+    if ((flags & ~(SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST | SOAPY_SDR_ONE_PACKET)) != 0) {
+        flags = 0;
+        return SOAPY_SDR_NOT_SUPPORTED;
     }
     const bool end_of_burst = (flags & (SOAPY_SDR_END_BURST | SOAPY_SDR_ONE_PACKET)) != 0;
     if ((flags & SOAPY_SDR_HAS_TIME) != 0) {
@@ -309,29 +349,50 @@ int SoapyDevice::readStreamStatus(SoapySDR::Stream* stream, size_t& chanMask, in
 
 // Antenna
 
-std::vector<std::string> SoapyDevice::listAntennas(const int, const size_t) const {
+std::vector<std::string> SoapyDevice::listAntennas(const int direction,
+                                                   const size_t channel) const {
+    check(direction, channel);
     return {"TX/RX"};
 }
 
-void SoapyDevice::setAntenna(const int, const size_t, const std::string& name) {
+void SoapyDevice::setAntenna(const int direction, const size_t channel, const std::string& name) {
+    check(direction, channel);
     if (name != "TX/RX") {
         throw std::invalid_argument("setAntenna: the HackRF has one port, TX/RX");
     }
 }
 
-std::string SoapyDevice::getAntenna(const int, const size_t) const { return "TX/RX"; }
+std::string SoapyDevice::getAntenna(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return "TX/RX";
+}
 
 // Gain
 
-std::vector<std::string> SoapyDevice::listGains(const int direction, const size_t) const {
+std::vector<std::string> SoapyDevice::listGains(const int direction, const size_t channel) const {
     // gr-osmosdr expects the IF gain first and the baseband gain last.
-    if (direction_of(direction) == Direction::kRx) {
+    if (check(direction, channel) == Direction::kRx) {
         return {"LNA", "AMP", "VGA"};
     }
     return {"VGA", "AMP"};
 }
 
-bool SoapyDevice::hasGainMode(const int, const size_t) const { return false; }
+bool SoapyDevice::hasGainMode(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+void SoapyDevice::setGainMode(const int direction, const size_t channel, const bool automatic) {
+    check(direction, channel);
+    if (automatic) {
+        refuse("setGainMode", "the HackRF has no automatic gain control");
+    }
+}
+
+bool SoapyDevice::getGainMode(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
 
 void SoapyDevice::setGain(const int direction, const size_t channel, const double value) {
     check_channel(channel);
@@ -398,15 +459,16 @@ double SoapyDevice::getGain(const int direction, const size_t channel,
     throw std::invalid_argument("getGain: unknown TX gain " + name);
 }
 
-SoapySDR::Range SoapyDevice::getGainRange(const int direction, const size_t) const {
-    if (direction_of(direction) == Direction::kRx) {
+SoapySDR::Range SoapyDevice::getGainRange(const int direction, const size_t channel) const {
+    if (check(direction, channel) == Direction::kRx) {
         return SoapySDR::Range(0, gain::kRxMaxDb, 1);
     }
     return SoapySDR::Range(0, gain::kTxMaxDb, 1);
 }
 
-SoapySDR::Range SoapyDevice::getGainRange(const int direction, const size_t,
+SoapySDR::Range SoapyDevice::getGainRange(const int direction, const size_t channel,
                                           const std::string& name) const {
+    check(direction, channel);
     if (name == "AMP") {
         return SoapySDR::Range(0, gain::kAmpDb, gain::kAmpDb);
     }
@@ -431,8 +493,12 @@ void SoapyDevice::setFrequency(const int direction, const size_t channel, const 
 }
 
 void SoapyDevice::setFrequency(const int direction, const size_t channel, const std::string& name,
-                               const double frequency, const SoapySDR::Kwargs&) {
+                               const double frequency, const SoapySDR::Kwargs& args) {
     check_channel(channel);
+    if (!args.empty()) {
+        refuse("setFrequency", "no tuning arguments (" + args.begin()->first +
+                                   "); the frequency is set on the RF synthesiser alone");
+    }
     if (name != "RF") {
         throw std::invalid_argument("setFrequency: unknown component " + name);
     }
@@ -456,7 +522,9 @@ double SoapyDevice::getFrequency(const int direction, const size_t channel,
     return static_cast<double>(pair_->frequency(direction_of(direction)));
 }
 
-std::vector<std::string> SoapyDevice::listFrequencies(const int, const size_t) const {
+std::vector<std::string> SoapyDevice::listFrequencies(const int direction,
+                                                      const size_t channel) const {
+    check(direction, channel);
     return {"RF"};
 }
 
@@ -465,12 +533,91 @@ SoapySDR::RangeList SoapyDevice::getFrequencyRange(const int direction,
     return getFrequencyRange(direction, channel, "RF");
 }
 
-SoapySDR::RangeList SoapyDevice::getFrequencyRange(const int, const size_t,
+SoapySDR::RangeList SoapyDevice::getFrequencyRange(const int direction, const size_t channel,
                                                    const std::string& name) const {
+    check(direction, channel);
     if (name != "RF") {
         throw std::invalid_argument("getFrequencyRange: unknown component " + name);
     }
     return {SoapySDR::Range(kMinFrequency, kMaxFrequency)};
+}
+
+// Corrections and modes
+
+bool SoapyDevice::hasDCOffsetMode(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+void SoapyDevice::setDCOffsetMode(const int direction, const size_t channel, const bool automatic) {
+    check(direction, channel);
+    if (automatic) {
+        refuse("setDCOffsetMode", "no DC offset removal in this build");
+    }
+}
+
+bool SoapyDevice::getDCOffsetMode(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+bool SoapyDevice::hasDCOffset(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+void SoapyDevice::setDCOffset(const int direction, const size_t channel,
+                              const std::complex<double>&) {
+    check(direction, channel);
+    refuse("setDCOffset", "no DC offset correction in this build");
+}
+
+bool SoapyDevice::hasIQBalance(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+void SoapyDevice::setIQBalance(const int direction, const size_t channel,
+                               const std::complex<double>&) {
+    check(direction, channel);
+    refuse("setIQBalance", "no I/Q balance correction in this build");
+}
+
+bool SoapyDevice::hasIQBalanceMode(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+void SoapyDevice::setIQBalanceMode(const int direction, const size_t channel,
+                                   const bool automatic) {
+    check(direction, channel);
+    if (automatic) {
+        refuse("setIQBalanceMode", "no I/Q balance correction in this build");
+    }
+}
+
+bool SoapyDevice::getIQBalanceMode(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+bool SoapyDevice::hasFrequencyCorrection(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return false;
+}
+
+void SoapyDevice::setFrequencyCorrection(const int direction, const size_t channel,
+                                         const double value) {
+    check(direction, channel);
+    if (value != 0.0) {
+        refuse("setFrequencyCorrection",
+               "no frequency correction; share one reference between the boards (clkout)");
+    }
+}
+
+double SoapyDevice::getFrequencyCorrection(const int direction, const size_t channel) const {
+    check(direction, channel);
+    return 0.0;
 }
 
 // Sample rate and bandwidth
@@ -485,16 +632,17 @@ double SoapyDevice::getSampleRate(const int direction, const size_t channel) con
     return pair_->sample_rate(direction_of(direction));
 }
 
-std::vector<double> SoapyDevice::listSampleRates(const int direction, const size_t) const {
-    if (direction_of(direction) == Direction::kRx) {
+std::vector<double> SoapyDevice::listSampleRates(const int direction, const size_t channel) const {
+    if (check(direction, channel) == Direction::kRx) {
         return {250e3, 500e3, 1e6, 1.92e6, 2e6, 4e6, 8e6, 10e6, 12.5e6, 16e6, 20e6};
     }
     return {1.92e6, 2e6, 4e6, 8e6, 10e6, 12.5e6, 16e6, 20e6};
 }
 
-SoapySDR::RangeList SoapyDevice::getSampleRateRange(const int direction, const size_t) const {
+SoapySDR::RangeList SoapyDevice::getSampleRateRange(const int direction,
+                                                    const size_t channel) const {
     const double minimum =
-        direction_of(direction) == Direction::kRx ? kMinRxSampleRate : kMinTxSampleRate;
+        check(direction, channel) == Direction::kRx ? kMinRxSampleRate : kMinTxSampleRate;
     return {SoapySDR::Range(minimum, kMaxSampleRate)};
 }
 
@@ -509,7 +657,8 @@ double SoapyDevice::getBandwidth(const int direction, const size_t channel) cons
     return pair_->bandwidth(direction_of(direction));
 }
 
-std::vector<double> SoapyDevice::listBandwidths(const int, const size_t) const {
+std::vector<double> SoapyDevice::listBandwidths(const int direction, const size_t channel) const {
+    check(direction, channel);
     std::vector<double> list;
     for (const std::uint32_t hz : filter_bandwidths()) {
         list.push_back(hz);
@@ -517,7 +666,9 @@ std::vector<double> SoapyDevice::listBandwidths(const int, const size_t) const {
     return list;
 }
 
-SoapySDR::RangeList SoapyDevice::getBandwidthRange(const int, const size_t) const {
+SoapySDR::RangeList SoapyDevice::getBandwidthRange(const int direction,
+                                                   const size_t channel) const {
+    check(direction, channel);
     SoapySDR::RangeList list;
     for (const std::uint32_t hz : filter_bandwidths()) {
         list.emplace_back(hz, hz);
@@ -634,7 +785,13 @@ SoapySDR::ArgInfoList SoapyDevice::getSettingInfo() const {
 
 void SoapyDevice::writeSetting(const std::string& key, const std::string& value) {
     if (key == "bias_tx") {
-        pair_->set_bias_tee(value == "true" || value == "1");
+        if (value == "true" || value == "1") {
+            pair_->set_bias_tee(true);
+        } else if (value == "false" || value == "0") {
+            pair_->set_bias_tee(false);
+        } else {
+            refuse("writeSetting", "bias_tx is true or false, not " + value);
+        }
         return;
     }
     if (key == "clkout") {
@@ -665,6 +822,72 @@ std::string SoapyDevice::readSetting(const std::string& key) const {
         return time_origin_name(pair_->time_origin());
     }
     return {};
+}
+
+void SoapyDevice::writeSetting(const int direction, const size_t channel, const std::string& key,
+                               const std::string&) {
+    check(direction, channel);
+    soapy_log(LogLevel::kWarning, "writeSetting: no channel setting " + key + ", ignored");
+}
+
+// Refused
+
+void SoapyDevice::setFrontendMapping(const int direction, const std::string& mapping) {
+    direction_of(direction);
+    if (!mapping.empty()) {
+        refuse("setFrontendMapping", "each direction has one channel on its own board");
+    }
+}
+
+void SoapyDevice::setMasterClockRate(const double) {
+    refuse("setMasterClockRate", "the sample rate sets the clock; use setSampleRate");
+}
+
+void SoapyDevice::setReferenceClockRate(const double) {
+    refuse("setReferenceClockRate", "the reference is the boards' own 10 MHz");
+}
+
+void SoapyDevice::setCommandTime(const long long, const std::string&) {
+    refuse("setCommandTime", "settings take effect at once; there are no timed commands");
+}
+
+void SoapyDevice::writeRegister(const std::string& name, const unsigned, const unsigned) {
+    refuse("writeRegister", "no register interface " + name);
+}
+
+void SoapyDevice::writeRegister(const unsigned, const unsigned) {
+    refuse("writeRegister", "no register interface");
+}
+
+void SoapyDevice::writeRegisters(const std::string& name, const unsigned,
+                                 const std::vector<unsigned>&) {
+    refuse("writeRegisters", "no register interface " + name);
+}
+
+void SoapyDevice::writeGPIO(const std::string& bank, const unsigned) {
+    refuse("writeGPIO", "no GPIO bank " + bank);
+}
+
+void SoapyDevice::writeGPIO(const std::string& bank, const unsigned, const unsigned) {
+    refuse("writeGPIO", "no GPIO bank " + bank);
+}
+
+void SoapyDevice::writeGPIODir(const std::string& bank, const unsigned) {
+    refuse("writeGPIODir", "no GPIO bank " + bank);
+}
+
+void SoapyDevice::writeGPIODir(const std::string& bank, const unsigned, const unsigned) {
+    refuse("writeGPIODir", "no GPIO bank " + bank);
+}
+
+void SoapyDevice::writeI2C(const int, const std::string&) { refuse("writeI2C", "no I2C bus"); }
+
+unsigned SoapyDevice::transactSPI(const int, const unsigned, const size_t) {
+    refuse("transactSPI", "no SPI bus");
+}
+
+void SoapyDevice::writeUART(const std::string& which, const std::string&) {
+    refuse("writeUART", "no UART " + which);
 }
 
 }  // namespace hackrfduplex

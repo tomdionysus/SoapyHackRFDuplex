@@ -3,6 +3,7 @@
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Types.hpp>
+#include <complex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -88,6 +89,27 @@ public:
     SoapySDR::RangeList getFrequencyRange(const int direction, const size_t channel,
                                           const std::string& name) const override;
 
+    // Corrections and modes: none in hardware. Setting the neutral value
+    // (manual, off, zero) is honoured; anything else is refused.
+    void setGainMode(const int direction, const size_t channel, const bool automatic) override;
+    bool getGainMode(const int direction, const size_t channel) const override;
+    bool hasDCOffsetMode(const int direction, const size_t channel) const override;
+    void setDCOffsetMode(const int direction, const size_t channel, const bool automatic) override;
+    bool getDCOffsetMode(const int direction, const size_t channel) const override;
+    bool hasDCOffset(const int direction, const size_t channel) const override;
+    void setDCOffset(const int direction, const size_t channel,
+                     const std::complex<double>& offset) override;
+    bool hasIQBalance(const int direction, const size_t channel) const override;
+    void setIQBalance(const int direction, const size_t channel,
+                      const std::complex<double>& balance) override;
+    bool hasIQBalanceMode(const int direction, const size_t channel) const override;
+    void setIQBalanceMode(const int direction, const size_t channel, const bool automatic) override;
+    bool getIQBalanceMode(const int direction, const size_t channel) const override;
+    bool hasFrequencyCorrection(const int direction, const size_t channel) const override;
+    void setFrequencyCorrection(const int direction, const size_t channel,
+                                const double value) override;
+    double getFrequencyCorrection(const int direction, const size_t channel) const override;
+
     // Sample rate and bandwidth
     void setSampleRate(const int direction, const size_t channel, const double rate) override;
     double getSampleRate(const int direction, const size_t channel) const override;
@@ -116,19 +138,42 @@ public:
     std::string readSensor(const int direction, const size_t channel,
                            const std::string& key) const override;
 
-    // Settings
+    // Settings. There are no per-channel settings; one written is logged
+    // and ignored, as an unknown device setting is.
     using SoapySDR::Device::getSettingInfo;
     using SoapySDR::Device::readSetting;
     using SoapySDR::Device::writeSetting;
     SoapySDR::ArgInfoList getSettingInfo() const override;
     void writeSetting(const std::string& key, const std::string& value) override;
     std::string readSetting(const std::string& key) const override;
+    void writeSetting(const int direction, const size_t channel, const std::string& key,
+                      const std::string& value) override;
+
+    // What a HackRF pair does not offer through SoapySDR: refused, never
+    // ignored. The matching listings are empty and the reads SoapySDR's.
+    void setFrontendMapping(const int direction, const std::string& mapping) override;
+    void setMasterClockRate(const double rate) override;
+    void setReferenceClockRate(const double rate) override;
+    void setCommandTime(const long long timeNs, const std::string& what) override;
+    void writeRegister(const std::string& name, const unsigned addr, const unsigned value) override;
+    void writeRegister(const unsigned addr, const unsigned value) override;
+    void writeRegisters(const std::string& name, const unsigned addr,
+                        const std::vector<unsigned>& value) override;
+    void writeGPIO(const std::string& bank, const unsigned value) override;
+    void writeGPIO(const std::string& bank, const unsigned value, const unsigned mask) override;
+    void writeGPIODir(const std::string& bank, const unsigned dir) override;
+    void writeGPIODir(const std::string& bank, const unsigned dir, const unsigned mask) override;
+    void writeI2C(const int addr, const std::string& data) override;
+    unsigned transactSPI(const int addr, const unsigned data, const size_t numBits) override;
+    void writeUART(const std::string& which, const std::string& data) override;
 
 private:
     static Direction direction_of(int direction);
     Direction direction_of(SoapySDR::Stream* stream) const;
     SoapySDR::Stream* token(Direction direction) const;
     static void check_channel(const size_t channel);
+    // Both, throwing std::invalid_argument for either.
+    static Direction check(const int direction, const size_t channel);
 
     std::unique_ptr<Pair> pair_;
     // Stream handles: addresses of these, one per direction.

@@ -490,3 +490,158 @@ TEST_CASE("a transmitting board that stops ends its stream with an error", "[soa
     CHECK(d.readStreamStatus(tx, mask, flags, time_ns, 0) == SOAPY_SDR_STREAM_ERROR);
     CHECK(rig.logged(SOAPY_SDR_ERROR, "TX board"));
 }
+
+TEST_CASE("stream flags the device cannot honour are refused", "[soapy][refuse]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    rig.rx->transfer_bytes_value = 2048;
+    rig.tx->transfer_bytes_value = 2048;
+    SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+
+    SECTION("activateStream on the transmitter takes no flags and no count") {
+        CHECK(d.activateStream(tx, SOAPY_SDR_HAS_TIME, 1'000'000) == SOAPY_SDR_NOT_SUPPORTED);
+        CHECK(d.activateStream(tx, SOAPY_SDR_END_BURST, 0, 100) == SOAPY_SDR_NOT_SUPPORTED);
+        CHECK(d.activateStream(tx, 0, 0, 100) == SOAPY_SDR_NOT_SUPPORTED);
+        CHECK_FALSE(rig.tx->tx_streaming);
+        CHECK(d.activateStream(tx) == 0);
+    }
+    SECTION("activateStream on the receiver refuses flags it does not know") {
+        CHECK(d.activateStream(rx, SOAPY_SDR_WAIT_TRIGGER) == SOAPY_SDR_NOT_SUPPORTED);
+        CHECK_FALSE(rig.rx->rx_streaming);
+    }
+    SECTION("deactivateStream takes no flags") {
+        REQUIRE(d.activateStream(rx) == 0);
+        CHECK(d.deactivateStream(rx, SOAPY_SDR_HAS_TIME, 1'000'000) == SOAPY_SDR_NOT_SUPPORTED);
+        CHECK(rig.rx->rx_streaming);
+        CHECK(d.deactivateStream(rx, 0, 1'000'000) == 0);
+        CHECK_FALSE(rig.rx->rx_streaming);
+    }
+    SECTION("writeStream refuses flags it does not know") {
+        REQUIRE(d.activateStream(tx) == 0);
+        std::vector<std::int8_t> buffer(128, 3);
+        const void* buffs[] = {buffer.data()};
+        for (const int flag : {SOAPY_SDR_WAIT_TRIGGER, SOAPY_SDR_MORE_FRAGMENTS}) {
+            int flags = flag;
+            CHECK(d.writeStream(tx, buffs, 64, flags, 0, 100000) == SOAPY_SDR_NOT_SUPPORTED);
+        }
+    }
+    SECTION("an unknown stream argument is logged") {
+        d.closeStream(rx);
+        rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8, {}, {{"bufflen", "4096"}});
+        CHECK(rig.logged(SOAPY_SDR_WARNING, "bufflen"));
+    }
+    d.closeStream(rx);
+    d.closeStream(tx);
+}
+
+TEST_CASE("corrections and modes the device lacks are refused unless neutral", "[soapy][refuse]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    for (const int dir : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CAPTURE(dir);
+        CHECK_FALSE(d.hasGainMode(dir, 0));
+        CHECK_NOTHROW(d.setGainMode(dir, 0, false));
+        CHECK_THROWS_AS(d.setGainMode(dir, 0, true), std::invalid_argument);
+        CHECK_FALSE(d.getGainMode(dir, 0));
+
+        CHECK_FALSE(d.hasDCOffsetMode(dir, 0));
+        CHECK_NOTHROW(d.setDCOffsetMode(dir, 0, false));
+        CHECK_THROWS_AS(d.setDCOffsetMode(dir, 0, true), std::invalid_argument);
+        CHECK_FALSE(d.hasDCOffset(dir, 0));
+        CHECK_THROWS_AS(d.setDCOffset(dir, 0, {0.1, 0.0}), std::invalid_argument);
+
+        CHECK_FALSE(d.hasIQBalance(dir, 0));
+        CHECK_THROWS_AS(d.setIQBalance(dir, 0, {1.0, 0.0}), std::invalid_argument);
+        CHECK_FALSE(d.hasIQBalanceMode(dir, 0));
+        CHECK_NOTHROW(d.setIQBalanceMode(dir, 0, false));
+        CHECK_THROWS_AS(d.setIQBalanceMode(dir, 0, true), std::invalid_argument);
+
+        CHECK_FALSE(d.hasFrequencyCorrection(dir, 0));
+        CHECK_NOTHROW(d.setFrequencyCorrection(dir, 0, 0.0));
+        CHECK_THROWS_AS(d.setFrequencyCorrection(dir, 0, 1.5), std::invalid_argument);
+        CHECK(d.getFrequencyCorrection(dir, 0) == 0.0);
+    }
+}
+
+TEST_CASE("tuning arguments are refused, not ignored", "[soapy][refuse]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK_THROWS_AS(d.setFrequency(SOAPY_SDR_RX, 0, 868.3e6, {{"OFFSET", "1e6"}}),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(d.setFrequency(SOAPY_SDR_TX, 0, "RF", 868.3e6, {{"OFFSET", "1e6"}}),
+                    std::invalid_argument);
+    CHECK(rig.rx->frequency_hz == 0);
+    CHECK(rig.tx->frequency_hz == 0);
+    d.setFrequency(SOAPY_SDR_RX, 0, 868.3e6);
+    CHECK(rig.rx->frequency_hz == 868'300'000);
+}
+
+TEST_CASE("device-level controls the HackRF lacks are refused", "[soapy][refuse]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK_NOTHROW(d.setFrontendMapping(SOAPY_SDR_RX, ""));
+    CHECK_THROWS_AS(d.setFrontendMapping(SOAPY_SDR_RX, "A:0"), std::invalid_argument);
+    CHECK_THROWS_AS(d.setMasterClockRate(40e6), std::invalid_argument);
+    CHECK_THROWS_AS(d.setReferenceClockRate(10e6), std::invalid_argument);
+    CHECK_THROWS_AS(d.setCommandTime(1'000'000'000), std::invalid_argument);
+    CHECK(d.listRegisterInterfaces().empty());
+    CHECK_THROWS_AS(d.writeRegister(0x10, 1), std::invalid_argument);
+    CHECK_THROWS_AS(d.writeRegister("RFFC", 0x10, 1), std::invalid_argument);
+    CHECK_THROWS_AS(d.writeRegisters("RFFC", 0x10, {1, 2}), std::invalid_argument);
+    CHECK(d.listGPIOBanks().empty());
+    CHECK_THROWS_AS(d.writeGPIO("P28", 1), std::invalid_argument);
+    CHECK_THROWS_AS(d.writeGPIO("P28", 1, 1), std::invalid_argument);
+    CHECK_THROWS_AS(d.writeGPIODir("P28", 1), std::invalid_argument);
+    CHECK_THROWS_AS(d.writeGPIODir("P28", 1, 1), std::invalid_argument);
+    CHECK_THROWS_AS(d.writeI2C(0x60, "\x01"), std::invalid_argument);
+    CHECK_THROWS_AS(d.transactSPI(0, 1, 8), std::invalid_argument);
+    CHECK(d.listUARTs().empty());
+    CHECK_THROWS_AS(d.writeUART("0", "x"), std::invalid_argument);
+}
+
+TEST_CASE("settings take only the values they name", "[soapy][refuse]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    for (const char* on : {"true", "1"}) {
+        d.writeSetting("bias_tx", "false");
+        d.writeSetting("bias_tx", on);
+        CHECK(rig.tx->bias);
+    }
+    d.writeSetting("bias_tx", "0");
+    CHECK_FALSE(rig.tx->bias);
+    CHECK_THROWS_AS(d.writeSetting("bias_tx", "yes"), std::invalid_argument);
+    // Per-channel settings: there are none, and one written is logged.
+    CHECK(d.getSettingInfo(SOAPY_SDR_RX, 0).empty());
+    CHECK_NOTHROW(d.writeSetting(SOAPY_SDR_RX, 0, "lna_boost", "1"));
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "lna_boost"));
+    CHECK(d.readSetting(SOAPY_SDR_RX, 0, "lna_boost").empty());
+}
+
+TEST_CASE("every per-channel call checks its direction and channel", "[soapy][refuse]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    for (const auto& [direction, channel] :
+         std::vector<std::pair<int, std::size_t>>{{SOAPY_SDR_RX, 1}, {SOAPY_SDR_TX, 1}, {7, 0}}) {
+        CAPTURE(direction, channel);
+        CHECK_THROWS_AS(d.getFullDuplex(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.getStreamFormats(direction, channel), std::invalid_argument);
+        double full_scale = 0;
+        CHECK_THROWS_AS(d.getNativeStreamFormat(direction, channel, full_scale),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(d.getStreamArgsInfo(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.listAntennas(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.setAntenna(direction, channel, "TX/RX"), std::invalid_argument);
+        CHECK_THROWS_AS(d.getAntenna(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.listGains(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.hasGainMode(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.getGainRange(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.getGainRange(direction, channel, "VGA"), std::invalid_argument);
+        CHECK_THROWS_AS(d.listFrequencies(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.getFrequencyRange(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.listSampleRates(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.getSampleRateRange(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.listBandwidths(direction, channel), std::invalid_argument);
+        CHECK_THROWS_AS(d.getBandwidthRange(direction, channel), std::invalid_argument);
+    }
+}

@@ -108,6 +108,42 @@ Stream handles are the addresses of two integers in the device. Discovery
 open in the same process still appears, and offers every ordered pair of
 distinct boards unless the arguments name one.
 
+### The SoapySDR API against the module
+
+What the device cannot do it refuses: `SOAPY_SDR_NOT_SUPPORTED` from a
+stream call, or `std::invalid_argument` naming why from any other. The
+one exception is a setting or stream argument it does not know, which
+applications pass around blindly: that is logged as a warning and
+ignored. Every per-channel call checks its direction and channel (one
+channel, 0, each way).
+
+| Call | Module |
+|---|---|
+| `getHardwareKey`, `getHardwareInfo` | "HackRF Duplex"; both boards' serial, board, revision, firmware, USB API, clock and CLKOUT, the module and libhackrf versions |
+| `getNumChannels`, `getFullDuplex` | 1 each way; full duplex |
+| `getStreamFormats`, `getNativeStreamFormat` | CS8 (native, full scale 128), CS16, CF32, CF64 |
+| `getStreamArgsInfo`, `setupStream` | `buffers`, the ring depth in transfers; any other argument logged and ignored |
+| `activateStream` | starts the board; flags or a count: `SOAPY_SDR_NOT_SUPPORTED` |
+| `deactivateStream` | stops the board at once; flags: `SOAPY_SDR_NOT_SUPPORTED` |
+| `readStream` | samples stamped with `SOAPY_SDR_HAS_TIME`; overflow with `SOAPY_SDR_END_ABRUPT`; a failed board `SOAPY_SDR_STREAM_ERROR` |
+| `writeStream` | `SOAPY_SDR_HAS_TIME`, `SOAPY_SDR_END_BURST`, `SOAPY_SDR_ONE_PACKET`; any other flag `SOAPY_SDR_NOT_SUPPORTED` |
+| `readStreamStatus` | transmit: underflow, time error, stream error; receive: `SOAPY_SDR_NOT_SUPPORTED` |
+| `getStreamMTU` | one transfer of samples |
+| `acquireReadBuffer` and the rest of direct access | SoapySDR's: not supported (item 11 adds CS8) |
+| antennas | `TX/RX`, the one port |
+| gains | overall, and `LNA`, `VGA`, `AMP` (receive), `VGA`, `AMP` (transmit); automatic gain refused |
+| `setFrequency`, `getFrequency` | the `RF` component only; tuning arguments refused |
+| `setSampleRate`, ranges, lists | passed through; ranges as measured (Low sample rates) |
+| `setBandwidth`, ranges, lists | the filter widths, rounding down; 0 or less for the automatic filter |
+| DC offset, I/Q balance, frequency correction | none: the neutral value (off, zero) accepted, any other refused (item 12 adds DC and I/Q on receive as a build option) |
+| hardware time | the receive count plus an offset; no named time sources |
+| `setCommandTime` | refused: settings act at once |
+| clock and time sources | SoapySDR's: none listed (item 8 maps them onto `clkout` and `time_origin`) |
+| master and reference clock rates | refused |
+| sensors | `lo_locked` per channel (item 9 adds device sensors) |
+| settings | `bias_tx`, `clkout`, `time_origin`, `calibrate`; none per channel |
+| frontend mapping, registers, GPIO, I2C, SPI, UART | none listed; writes refused |
+
 ## Threads
 
 Per board, libhackrf runs one transfer thread that calls the handler. The

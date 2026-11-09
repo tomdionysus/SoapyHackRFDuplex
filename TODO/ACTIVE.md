@@ -216,6 +216,10 @@ first, by Tom's choice; 1.0.0 after it has been used):
   Acceptance: one test per entry point and flag, a table of the
   SoapySDR API against the module in `docs/design.md`, and
   `SoapySDRUtil --probe` unchanged.
+  Status 2026-11-09: done against the fakes (six cases, `[refuse]`; the
+  table is in docs/design.md, "The SoapySDR API against the module").
+  Activation flags are refused until item 7 implements them on receive.
+  The probe on the target remains, once the lead sweep frees the boards.
 
 ### 6. Safety: the transmitter cannot outlive its host
 
