@@ -30,13 +30,14 @@ Documentation:
 
 | Component | Working | Notes |
 |---|---|---|
-| Discovery and opening a pair | yes | two boards pair themselves; more need `rx_serial` and `tx_serial` |
-| Receive stream | yes | CS8, CS16, CF32, CF64; a stream time from the board's sample count; overflows reported |
-| Transmit stream | yes | the same formats; end of burst; underflows reported through the stream status |
-| Tuning, filter, gains, bias tee | yes | per direction; an overall gain is split over the stages |
-| `hackrfduplex-check` | yes | receives, optionally transmits a tone, and reports rates, drops and levels |
-| Verified on two boards | receive | 2, 8 and 20 Msps for 10 s without an overflow; transmit is the next item in [TODO/ACTIVE.md](TODO/ACTIVE.md) |
-| Transmit timestamps, synchronised start, shared clock | no | the LTE items in the roadmap |
+| Discovery and opening a pair | ✓ | two boards pair themselves; more need `rx_serial` and `tx_serial` |
+| Receive stream | ✓ | CS8, CS16, CF32, CF64; a stream time from the board's sample count; overflows reported |
+| Transmit stream | ✓ | the same formats; end of burst; underflows reported through the stream status |
+| Tuning, filter, gains, bias tee | ✓ | per direction; an overall gain is split over the stages |
+| `hackrfduplex-check` | ✓ | receives, optionally transmits a tone, and reports rates, drops and levels |
+| Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
+| Transmit verified on two boards | ✗ | the next item in [TODO/ACTIVE.md](TODO/ACTIVE.md) |
+| Transmit timestamps, synchronised start, shared clock | ✗ | the LTE items in the roadmap |
 
 ## Hardware
 
@@ -175,7 +176,6 @@ specifically Claude.
 ## Licensing
 
 Licensed under the GNU General Public License, version 3 or (at your
-option) any later version; see [LICENSE](LICENSE). The project began as a
-fork of SoapyHackRF, whose MIT notice is kept in [NOTICE](NOTICE).
+option) any later version; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 Third-party works and their licences are listed in
 [docs/licensing.md](docs/licensing.md).
