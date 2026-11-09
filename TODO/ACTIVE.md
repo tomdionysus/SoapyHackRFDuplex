@@ -63,6 +63,19 @@ on hardware Tom does not have yet.
 
 ## Waits on Tom
 
+- 2026-11-09, 17:19: the target rebooted during the lead sweep (item 2),
+  about two minutes into a 600 s full-duplex run at 2 Msps. The journal
+  is not persistent, so the cause is not recorded; since the boot it has
+  reported under-voltage every few seconds to minutes, with the boards
+  idle and another project's CI compiling. A brown-out under the two
+  boards' draw is the likely reading. Hardware runs on the target are
+  stopped until Tom decides how to go on. Done so far in the sweep:
+  2 Msps, default buffers, 4.5 and 4.75 transfers late in all three
+  starts, 5 transfers clean in all three 30 s starts, the 600 s
+  confirmation cut short by the reboot. Commits since `1c13737` are local:
+  `tools/ci.sh` passes on the workstation (release and sanitizer builds,
+  124 test cases) but has not run on the target, so they are not pushed.
+
 Nothing blocks the work. Decided 2026-11-09 and recorded under standing
 decisions: the target's bench, its power, the transmit underrun limit,
 clock and time sources, optional DSP with liquid-dsp, release 0.2.0
