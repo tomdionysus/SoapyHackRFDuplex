@@ -50,7 +50,8 @@ out. The trigger item waits on a jumper Tom has not fitted.
   the hardware time: a common origin from the calibration burst, the
   hardware time API, timed transmit. 96 test cases pass.
 - Not yet done: the transmit lead measured (item 7), the trigger origin
-  on the bench, the upstream report draft, packaging.
+  on the bench, packaging. The upstream report is drafted in
+  `TODO/upstream-reference-switch.md` for Tom to file if he wants.
 
 ## Standing decisions
 
@@ -134,15 +135,6 @@ built). For the record:
   every burst at one constant offset from the time asked (the trigger
   origin is 0 by construction, so the offset is the boards' pipeline
   difference), and without the jumper the start fails naming it.
-
-### 8. Report the firmware's reference-switch behaviour upstream
-
-- [ ] The firmware switches clock source after tuning and does not
-  retune, and caches the applied frequency so a retune to the same value
-  is skipped ([docs/design.md](../docs/design.md) "Reference switches").
-  Draft an issue for Great Scott Gadgets with the reproduction, for Tom
-  to file if he wants. Acceptance: the draft as `TODO/upstream-reference-switch.md`,
-  nothing posted.
 
 ### 9. Packaging and CI
 

@@ -3,6 +3,17 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: the firmware's reference-switch behaviour, drafted for upstream
+
+`TODO/upstream-reference-switch.md`: the issue as it would go to Great
+Scott Gadgets, nothing posted. It traces the fault in the 2026.01.3
+source (`transceiver_startup` tunes through `radio_switch_mode` before
+`activate_best_clock_source` changes the reference, and
+`radio_set_frequency` skips a tune to `applied_freq`), gives a
+reproduction with stock `hackrf_transfer` and `hackrf_clock`, suggests
+choosing the clock source before tuning, and describes the module's
+workaround.
+
 ## 2026-11-09: a common time origin, the hardware time API, timed transmit
 
 Items 4, 5 and 6, built together since each needed the others' parts:
