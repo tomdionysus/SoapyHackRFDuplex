@@ -37,6 +37,16 @@ struct BoardInfo {
     bool clock_out = false;
 };
 
+struct StreamHealth {
+    // Times since the stream started that the board's own buffer ran full
+    // receiving or empty transmitting, each losing or delaying samples the
+    // stream positions cannot see. The firmware counts from every start.
+    std::uint32_t shortfalls = 0;
+    // It went idle by itself: a shortfall outlasted its limit
+    // (set_tx_underrun_limit).
+    bool stopped_itself = false;
+};
+
 // Called on the board's transfer thread with each received transfer's
 // bytes: interleaved int8 I/Q.
 using RxHandler = std::function<void(std::span<const std::uint8_t>)>;
@@ -75,11 +85,14 @@ public:
     // input (P28 pin 16) before it moves a sample. A board's start drives
     // its own trigger output (P28 pin 15).
     virtual void set_hardware_sync(bool on) = 0;
-    // Shortfalls since the stream started: times the board's own buffer
-    // ran full receiving or empty transmitting, each of which loses or
-    // delays samples the stream positions cannot see. The firmware resets
-    // the count at every start; 0 on firmware too old to report it.
-    virtual std::uint32_t shortfalls() = 0;
+    // What the board's own streaming engine reports; all clear on firmware
+    // too old to say (USB API before 1.06).
+    virtual StreamHealth stream_health() = 0;
+    // From the next transmit start, the board idles itself once it has
+    // gone `samples` samples without data in one stretch, so it stops when
+    // its host does; 0 never. False when the firmware cannot (USB API
+    // before 1.06). The firmware keeps the limit until it is set again.
+    virtual bool set_tx_underrun_limit(std::uint32_t samples) = 0;
 
     // Bytes per transfer; every RX handler call carries at most this
     // many and every TX call exactly this many.

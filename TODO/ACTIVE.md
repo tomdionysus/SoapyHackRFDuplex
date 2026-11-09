@@ -233,6 +233,17 @@ first, by Tom's choice; 1.0.0 after it has been used):
   nothing else. Acceptance: those tests, and on the target a check run
   killed with SIGKILL mid-transmit leaving the TX board idle within the
   limit.
+  Status 2026-11-09: built and tested against the fakes (`[safety]`: the
+  limit set before every start and cleared after a clean stop, the
+  setting and device argument, a board that stops itself, old firmware
+  named, and the transmit audit). The audit covers writes, timed writes,
+  bursts, gaps, a refused late write, two calibrations and a stop part
+  way through a burst; a block found late by the board thread arises only
+  from a race and is left to the TxPath tests. The firmware test was
+  written after its code. On the target remain the SIGKILL run, and
+  whether one transfer (6.5 ms at 20 Msps) is enough margin for the
+  target's scheduling under full duplex; if not, the default is a
+  question for Tom.
 
 ### 7. Timed receive: start at a time, finite bursts
 

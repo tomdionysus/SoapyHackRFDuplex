@@ -35,6 +35,10 @@ public:
     // Paused, no transfer moves either way, so a test can hold the pair
     // inside an operation that waits on the air.
     std::atomic<bool> paused{false};
+    // Keep every byte the transmitter was pulled for; set before it starts.
+    std::atomic<bool> record{false};
+    // After stop(): what was recorded.
+    const std::vector<std::int8_t>& sent() const { return sent_; }
 
 private:
     void run() {
@@ -47,6 +51,9 @@ private:
             const std::vector<std::uint8_t> sent = tx_.pull_tx(tx_.transfer_bytes_value);
             for (const std::uint8_t b : sent) {
                 air_.push_back(coupled ? static_cast<std::int8_t>(b) : 0);
+                if (record) {
+                    sent_.push_back(static_cast<std::int8_t>(b));
+                }
             }
             std::vector<std::uint8_t> heard(sent.size());
             for (std::uint8_t& b : heard) {
@@ -64,6 +71,7 @@ private:
     FakeBoard& tx_;
     FakeBoard& rx_;
     std::deque<std::int8_t> air_;
+    std::vector<std::int8_t> sent_;
     std::atomic<bool> stop_{false};
     std::thread thread_;
 };

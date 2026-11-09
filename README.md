@@ -120,6 +120,7 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `rx_serial` | the lower of two serials | suffix of the serial of the board that receives |
 | `tx_serial` | the higher of two serials | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
 | `time_origin` | `burst` | as the setting of the same name |
+| `tx_underrun_limit` | one transfer | as the setting of the same name |
 | **Stream arguments** | | |
 | `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
 | **Settings** | | |
@@ -127,12 +128,16 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run |
 | `time_origin` | `burst` | how the two streams get one time when both have started: `burst` sends a short calibration burst on the receive frequency, `trigger` starts both boards on one edge through a jumper from the RX board's P28 pin 15 to the TX board's P28 pin 16, `none` gives no shared time; takes effect when the streams next start |
 | `calibrate` | | write any value to send the calibration burst again now; both streams must be running |
+| `tx_underrun_limit` | 131072 (one transfer) | samples: the transmitting board stops by itself once it goes this long without data in one stretch, so it cannot transmit on after its host dies; 0 turns it off; set at every transmit start and cleared after a clean stop |
 
 Unknown keys are tolerated, since some applications pass their whole
 device argument string to every stream and write vendor settings
-blindly: stream setup ignores a key it does not know, writing an unknown
-setting logs a warning and does nothing, and reading one returns an
-empty string.
+blindly: stream setup and writing a setting each log a warning for a key
+they do not know and otherwise ignore it, and reading one returns an
+empty string. Anything else the device cannot do is refused, never
+ignored: a stream flag it cannot honour returns
+`SOAPY_SDR_NOT_SUPPORTED`, and any other call throws, naming why
+([docs/design.md](docs/design.md), The SoapySDR API against the module).
 
 Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
 62 dB in 2 dB steps) and `AMP` (0 or 14 dB); TX `VGA` (0 to 47 dB) and
@@ -170,7 +175,15 @@ so the boards must hear each other at the gains set. A write for a time
 already gone is refused with `SOAPY_SDR_TIME_ERROR`, and
 `readStreamStatus` reports `SOAPY_SDR_TIME_ERROR` once for it, for a
 burst found late on its way out, and for an origin lost when a board
-drops samples on its own (write `calibrate` to find it again). The
+drops samples on its own (write `calibrate` to find it again).
+
+A board that drops samples on its own (a shortfall) is reported once: as
+`SOAPY_SDR_OVERFLOW` from the next read on the receiver, whose
+timestamps have then shifted by an unknown amount, or as
+`SOAPY_SDR_UNDERFLOW` from `readStreamStatus` on the transmitter. A board
+that stops, or is pulled from the bus, turns its stream's reads, writes
+and status into `SOAPY_SDR_STREAM_ERROR` within about 100 ms, until the
+stream is deactivated and activated again. The
 transmit path needs a lead of about five USB transfers (82 ms at
 8 Msps) between a receive timestamp and the transmit time based on it.
 

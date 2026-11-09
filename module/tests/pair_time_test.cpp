@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "burst.hpp"
 #include "fake_board.hpp"
 #include "loopback.hpp"
 #include "pair.hpp"
@@ -397,8 +398,11 @@ TEST_CASE("a trigger origin arms the first stream and starts both on the second"
     CHECK(rig.rx.starts == 1);
 
     // Sync mode goes when the transmitter stops, so a later start does not wait.
+    const std::size_t before_stop = rig.tx.calls.size();
     rig.pair.deactivate(Direction::kTx);
-    CHECK(rig.tx.calls.back() == "set_hardware_sync off");
+    CHECK(std::vector<std::string>(rig.tx.calls.begin() + static_cast<long>(before_stop),
+                                   rig.tx.calls.end()) ==
+          std::vector<std::string>{"stop ", "set_hardware_sync off", "set_tx_underrun_limit 0"});
     CHECK_FALSE(rig.tx.hardware_sync);
 }
 
@@ -419,4 +423,76 @@ TEST_CASE("a trigger start with no edge stops both and names the jumper", "[pair
     CHECK_FALSE(rig.tx.tx_streaming);
     CHECK_FALSE(rig.tx.hardware_sync);
     CHECK_FALSE(rig.pair.tx_of_rx());
+}
+
+TEST_CASE("the transmitter sends what was written, the burst and zeros, nothing else",
+          "[pair][time][safety]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    air.record = true;
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);  // the calibration burst
+    REQUIRE(rig.pair.tx_of_rx());
+
+    // Data with no zero in it, I and Q, so the zeros the board sends
+    // between bursts can be told from it.
+    std::vector<std::int8_t> expected = burst::samples();
+    std::uint32_t seed = 7;
+    const auto make = [&](std::size_t samples) {
+        std::vector<std::int8_t> data(2 * samples);
+        for (std::int8_t& v : data) {
+            seed = seed * 1103515245U + 12345U;
+            v = static_cast<std::int8_t>(1 + (seed >> 16) % 100);
+        }
+        return data;
+    };
+    const auto write = [&](const std::vector<std::int8_t>& data, bool end) {
+        std::size_t done = 0;
+        while (done < data.size() / 2) {
+            done += rig.pair.write(data.data() + 2 * done, data.size() / 2 - done, end, 1s);
+        }
+        expected.insert(expected.end(), data.begin(), data.end());
+    };
+
+    write(make(3000), true);            // a burst
+    std::this_thread::sleep_for(20ms);  // a gap
+    write(make(500), false);            // a stream, then its end
+    write(make(700), true);
+    const std::vector<std::int8_t> timed = make(2000);  // a timed burst
+    REQUIRE(
+        rig.pair.write_at(timed.data(), 1024, false, rig.pair.time_ticks() + 20'000, 1s).status ==
+        TimedStatus::kOk);
+    REQUIRE(rig.pair.write(timed.data() + 2048, 976, true, 1s) == 976);
+    expected.insert(expected.end(), timed.begin(), timed.end());
+    const std::vector<std::int8_t> late = make(100);  // too late: never sent
+    CHECK(rig.pair.write_at(late.data(), 100, true, 0, 1s).status == TimedStatus::kLate);
+    std::this_thread::sleep_for(20ms);
+    rig.pair.calibrate();  // the burst again
+    REQUIRE(rig.pair.tx_of_rx());
+    const std::vector<std::int8_t> again = burst::samples();
+    expected.insert(expected.end(), again.begin(), again.end());
+    const std::vector<std::int8_t> cut = make(6000);  // stopped part way through
+    std::size_t queued = 0;
+    while (queued < 6000) {
+        queued += rig.pair.write(cut.data() + 2 * queued, 6000 - queued, false, 1s);
+    }
+    expected.insert(expected.end(), cut.begin(), cut.end());
+    air.stop();
+    rig.pair.deactivate(Direction::kTx);
+
+    std::vector<std::int8_t> heard;
+    for (const std::int8_t v : air.sent()) {
+        if (v != 0) {
+            heard.push_back(v);
+        }
+    }
+    // Everything up to the cut went out whole and in order; of the cut, a
+    // beginning; nothing more.
+    const auto [h, e] = std::mismatch(heard.begin(), heard.end(), expected.begin(), expected.end());
+    INFO("heard " << heard.size() << " bytes, expected " << expected.size()
+                  << ", first difference at " << (h - heard.begin()));
+    REQUIRE(heard.size() <= expected.size());
+    CHECK(heard.size() >= expected.size() - cut.size());
+    CHECK(h == heard.end());
 }

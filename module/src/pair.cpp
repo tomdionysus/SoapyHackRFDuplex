@@ -291,6 +291,17 @@ void Pair::set_bias_tee(bool on) {
     bias_ = on;
 }
 
+void Pair::set_tx_underrun_limit(std::uint32_t samples) {
+    const std::lock_guard<std::mutex> lock(tx_.mutex);
+    tx_underrun_limit_ = samples;
+}
+
+std::uint32_t Pair::tx_underrun_limit() const {
+    const std::lock_guard<std::mutex> lock(tx_.mutex);
+    return tx_underrun_limit_.value_or(
+        static_cast<std::uint32_t>(tx_.board->transfer_bytes() / kNativeSampleBytes));
+}
+
 void Pair::set_clock_out(ClockOut which) {
     const std::scoped_lock lock(rx_.mutex, tx_.mutex);
     if (which != ClockOut::kRx) {
@@ -379,6 +390,13 @@ void Pair::start_stream(Direction direction) {
         tx_path_->reset();
         if (bias_) {
             s.board->set_bias_tee(true);
+        }
+        const std::uint32_t limit = tx_underrun_limit_.value_or(
+            static_cast<std::uint32_t>(s.board->transfer_bytes() / kNativeSampleBytes));
+        if (!s.board->set_tx_underrun_limit(limit) && limit != 0) {
+            log(LogLevel::kWarning,
+                "the TX board's firmware takes no underrun limit (USB API before 1.06): it "
+                "will transmit on if this process dies while it streams");
         }
         TxPath* path = tx_path_.get();
         s.board->start_tx([path](std::span<std::uint8_t> buffer) { path->on_transfer(buffer); });
@@ -556,8 +574,12 @@ void Pair::deactivate_locked(Direction direction) {
     std::exception_ptr error;
     try {
         s.board->stop();
-        if (direction == Direction::kTx && sync_on_) {
-            s.board->set_hardware_sync(false);
+        if (direction == Direction::kTx) {
+            if (sync_on_) {
+                s.board->set_hardware_sync(false);
+            }
+            // The firmware keeps the limit; leave the board as it was found.
+            s.board->set_tx_underrun_limit(0);
         }
     } catch (const BoardError&) {
         error = std::current_exception();
@@ -679,10 +701,19 @@ bool Pair::poll_boards(bool force) {
                 continue;
             }
             std::uint32_t count = 0;
-            // The shortfall read first: on a board gone from the bus it fails
+            // The health read first: on a board gone from the bus it fails
             // with libhackrf's own account of why.
             try {
-                count = s.board->shortfalls();
+                const StreamHealth health = s.board->stream_health();
+                count = health.shortfalls;
+                if (health.stopped_itself) {
+                    failing.push_back(direction);
+                    reasons.emplace_back(direction == Direction::kTx
+                                             ? "it went without data for longer than its underrun "
+                                               "limit (tx_underrun_limit) and stopped itself"
+                                             : "it stopped itself over a shortfall past its limit");
+                    continue;
+                }
                 if (!s.board->streaming()) {
                     failing.push_back(direction);
                     reasons.emplace_back("its transfers stopped");

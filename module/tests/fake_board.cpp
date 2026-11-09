@@ -95,6 +95,7 @@ void FakeBoard::start_rx(RxHandler handler) {
     ++starts;
     reference_switch_pending = false;
     shortfall_count = 0;
+    stopped_itself = false;
 }
 
 void FakeBoard::start_tx(TxHandler handler) {
@@ -107,13 +108,23 @@ void FakeBoard::start_tx(TxHandler handler) {
     ++starts;
     reference_switch_pending = false;
     shortfall_count = 0;
+    stopped_itself = false;
 }
 
-std::uint32_t FakeBoard::shortfalls() {
+StreamHealth FakeBoard::stream_health() {
     if (unplugged) {
         throw BoardError("read m0 state: HACKRF_ERROR_LIBUSB");
     }
-    return shortfall_count;
+    return StreamHealth{shortfall_count, stopped_itself};
+}
+
+bool FakeBoard::set_tx_underrun_limit(std::uint32_t samples) {
+    record("set_tx_underrun_limit", std::to_string(samples));
+    if (!takes_underrun_limit) {
+        return false;
+    }
+    tx_underrun_limit = samples;
+    return true;
 }
 
 void FakeBoard::stop() {

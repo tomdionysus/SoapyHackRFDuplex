@@ -645,3 +645,94 @@ TEST_CASE("every per-channel call checks its direction and channel", "[soapy][re
         CHECK_THROWS_AS(d.getBandwidthRange(direction, channel), std::invalid_argument);
     }
 }
+
+namespace {
+
+// Index of the first call named `call` at or after `from`, or calls.size().
+std::size_t find_call(const FakeBoard& board, const std::string& call, std::size_t from = 0) {
+    for (std::size_t i = from; i < board.calls.size(); ++i) {
+        if (board.calls[i] == call) {
+            return i;
+        }
+    }
+    return board.calls.size();
+}
+
+}  // namespace
+
+TEST_CASE("the transmit underrun limit is set before every transmit start", "[soapy][safety]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    rig.tx->transfer_bytes_value = 2048;
+    // One transfer's worth by default.
+    CHECK(d.readSetting("tx_underrun_limit") == "1024");
+    bool listed = false;
+    for (const SoapySDR::ArgInfo& info : d.getSettingInfo()) {
+        if (info.key == "tx_underrun_limit") {
+            listed = true;
+            CHECK(info.type == SoapySDR::ArgInfo::INT);
+            CHECK(info.units == "samples");
+        }
+    }
+    CHECK(listed);
+
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    REQUIRE(d.activateStream(tx) == 0);
+    const std::size_t limit = find_call(*rig.tx, "set_tx_underrun_limit 1024");
+    CHECK(limit < find_call(*rig.tx, "start_tx "));
+    // Stopped cleanly, the board is left with no limit, as it was found.
+    REQUIRE(d.deactivateStream(tx) == 0);
+    const std::size_t stop = find_call(*rig.tx, "stop ", limit);
+    CHECK(find_call(*rig.tx, "set_tx_underrun_limit 0", stop) < rig.tx->calls.size());
+
+    d.writeSetting("tx_underrun_limit", "0");
+    CHECK(d.readSetting("tx_underrun_limit") == "0");
+    const std::size_t from = rig.tx->calls.size();
+    REQUIRE(d.activateStream(tx) == 0);
+    CHECK(find_call(*rig.tx, "set_tx_underrun_limit 0", from) <
+          find_call(*rig.tx, "start_tx ", from));
+    d.writeSetting("tx_underrun_limit", "4096");
+    CHECK(d.readSetting("tx_underrun_limit") == "4096");
+    for (const char* bad : {"-1", "abc", "", "5000000000"}) {
+        CAPTURE(bad);
+        CHECK_THROWS_AS(d.writeSetting("tx_underrun_limit", bad), std::invalid_argument);
+    }
+    CHECK(d.readSetting("tx_underrun_limit") == "4096");
+    d.closeStream(tx);
+}
+
+TEST_CASE("the transmit underrun limit is also a device argument", "[soapy][safety]") {
+    SoapyRig rig({{"tx_underrun_limit", "500"}});
+    CHECK(rig.device->readSetting("tx_underrun_limit") == "500");
+    CHECK_THROWS_AS(SoapyRig({{"tx_underrun_limit", "lots"}}), std::invalid_argument);
+}
+
+TEST_CASE("a transmitter that stops itself ends its stream with an error", "[soapy][safety]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    rig.tx->transfer_bytes_value = 2048;
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    REQUIRE(d.activateStream(tx) == 0);
+    rig.tx->stopped_itself = true;
+    std::vector<std::int8_t> buffer(2048, 3);
+    const void* buffs[] = {buffer.data()};
+    const auto start = std::chrono::steady_clock::now();
+    int result = 0;
+    for (int i = 0; i < 64 && result >= 0; ++i) {
+        int flags = 0;
+        result = d.writeStream(tx, buffs, 1024, flags, 0, 2000000);
+    }
+    CHECK(result == SOAPY_SDR_STREAM_ERROR);
+    CHECK(since(start) < std::chrono::milliseconds(500));
+    CHECK(rig.logged(SOAPY_SDR_ERROR, "underrun limit"));
+}
+
+TEST_CASE("firmware that takes no underrun limit is named in the log", "[soapy][safety]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    rig.tx->takes_underrun_limit = false;
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    REQUIRE(d.activateStream(tx) == 0);
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "takes no underrun limit"));
+    d.closeStream(tx);
+}

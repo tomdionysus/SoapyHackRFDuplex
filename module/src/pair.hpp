@@ -106,6 +106,13 @@ public:
     void set_overall_gain(Direction direction, double db);
     double overall_gain(Direction direction) const;
 
+    // How long the transmitting board may go without data, in samples in
+    // one stretch, before it idles itself, so it cannot transmit on after
+    // its host has died. Set before every transmit start and cleared after
+    // a clean stop; 0 turns it off. One transfer's worth unless set.
+    void set_tx_underrun_limit(std::uint32_t samples);
+    std::uint32_t tx_underrun_limit() const;
+
     // Antenna port power on the transmitting board; re-applied whenever
     // transmission starts, since the firmware drops it when idle.
     void set_bias_tee(bool on);
@@ -238,6 +245,8 @@ private:
     Side tx_;
     RxGains rx_gains_;
     TxGains tx_gains_;
+    // Under tx_.mutex; empty for one transfer's worth.
+    std::optional<std::uint32_t> tx_underrun_limit_;
     bool bias_ = false;
     std::unique_ptr<RxPath> rx_path_;
     std::unique_ptr<TxPath> tx_path_;

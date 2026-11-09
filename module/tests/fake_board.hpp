@@ -35,7 +35,8 @@ public:
     void set_clock_out(bool on) override;
     bool start_switches_reference() override { return reference_switch_pending; }
     void set_hardware_sync(bool on) override;
-    std::uint32_t shortfalls() override;
+    StreamHealth stream_health() override;
+    bool set_tx_underrun_limit(std::uint32_t samples) override;
     std::size_t transfer_bytes() const override { return transfer_bytes_value; }
     void start_rx(RxHandler handler) override;
     void start_tx(TxHandler handler) override;
@@ -71,9 +72,14 @@ public:
     // A board whose transfer thread has died reads as not streaming.
     std::atomic<bool> rx_streaming{false};
     std::atomic<bool> tx_streaming{false};
-    // Gone from the bus: not streaming, and shortfalls() and stop() fail as
-    // libhackrf does on a lost device.
+    // Gone from the bus: not streaming, and stream_health() and stop() fail
+    // as libhackrf does on a lost device.
     std::atomic<bool> unplugged{false};
+    // The board went idle by itself, as over its underrun limit.
+    std::atomic<bool> stopped_itself{false};
+    std::uint32_t tx_underrun_limit = 0;
+    // False: firmware too old to take a limit.
+    bool takes_underrun_limit = true;
     int starts = 0;
     int stops = 0;
     // Small, so test vectors stay readable: 8 samples.

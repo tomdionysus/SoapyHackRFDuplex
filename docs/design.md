@@ -141,7 +141,7 @@ channel, 0, each way).
 | clock and time sources | SoapySDR's: none listed (item 8 maps them onto `clkout` and `time_origin`) |
 | master and reference clock rates | refused |
 | sensors | `lo_locked` per channel (item 9 adds device sensors) |
-| settings | `bias_tx`, `clkout`, `time_origin`, `calibrate`; none per channel |
+| settings | `bias_tx`, `clkout`, `time_origin`, `calibrate`, `tx_underrun_limit`; none per channel |
 | frontend mapping, registers, GPIO, I2C, SPI, UART | none listed; writes refused |
 
 ## Threads
@@ -444,3 +444,14 @@ long its timeout.
   `SOAPY_SDR_STREAM_ERROR` until it is deactivated and activated again.
   Deactivating it ends the stream even when the board cannot be told to
   stop, and passes that error on.
+- The transmitter cannot outlive its host. Before every transmit start
+  the pair sets the board's underrun limit (`tx_underrun_limit`, one
+  transfer's worth unless set; 0 turns it off): once the board goes that
+  long without data in one stretch, its M0 drops to idle on its own and
+  records a timeout. The pair never leaves it dry while it runs, since
+  the transmit path pads every transfer, so the limit trips only when
+  the host has stopped feeding it: the process killed, or USB gone. A
+  board that stopped itself so has failed, as above. The firmware keeps
+  the limit across opens, so a clean stop sets it back to 0 and leaves
+  the board as it was found; a killed process cannot, and the next
+  program to transmit on that board inherits the limit.

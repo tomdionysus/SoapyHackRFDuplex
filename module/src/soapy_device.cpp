@@ -56,6 +56,16 @@ void soapy_log(LogLevel level, const std::string& message) {
     throw std::invalid_argument(call + ": " + why);
 }
 
+// A count of samples, as the tx_underrun_limit setting and argument take it.
+std::uint32_t parse_samples(const std::string& key, const std::string& text) {
+    const bool digits = !text.empty() && text.find_first_not_of("0123456789") == std::string::npos;
+    if (!digits || text.size() > 10 || std::stoull(text) > UINT32_MAX) {
+        refuse(key, "a count of samples from 0 to " + std::to_string(UINT32_MAX) + ", not '" +
+                        text + "'");
+    }
+    return static_cast<std::uint32_t>(std::stoull(text));
+}
+
 std::chrono::microseconds timeout_of(long timeout_us) {
     return std::chrono::microseconds(timeout_us < 0 ? 0 : timeout_us);
 }
@@ -78,6 +88,10 @@ SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& arg
     const auto origin = args.find("time_origin");
     if (origin != args.end()) {
         pair_->set_time_origin(parse_time_origin(origin->second));
+    }
+    const auto limit = args.find("tx_underrun_limit");
+    if (limit != args.end()) {
+        pair_->set_tx_underrun_limit(parse_samples("tx_underrun_limit", limit->second));
     }
 }
 
@@ -780,7 +794,18 @@ SoapySDR::ArgInfoList SoapyDevice::getSettingInfo() const {
     calibrate.description =
         "Write any value to send the calibration burst now; both streams must be active.";
     calibrate.type = SoapySDR::ArgInfo::STRING;
-    return {bias, clkout, origin, calibrate};
+
+    SoapySDR::ArgInfo limit;
+    limit.key = "tx_underrun_limit";
+    limit.value = std::to_string(pair_->tx_underrun_limit());
+    limit.name = "TX underrun limit";
+    limit.description =
+        "The transmitting board stops by itself once it goes this many samples without data in "
+        "one stretch, so it cannot transmit on after its host has died. 0 turns it off. Takes "
+        "effect at the next transmit start.";
+    limit.units = "samples";
+    limit.type = SoapySDR::ArgInfo::INT;
+    return {bias, clkout, origin, calibrate, limit};
 }
 
 void SoapyDevice::writeSetting(const std::string& key, const std::string& value) {
@@ -806,6 +831,10 @@ void SoapyDevice::writeSetting(const std::string& key, const std::string& value)
         pair_->calibrate();
         return;
     }
+    if (key == "tx_underrun_limit") {
+        pair_->set_tx_underrun_limit(parse_samples("tx_underrun_limit", value));
+        return;
+    }
     // Applications write vendor settings blindly; one this device lacks is
     // not the caller's error.
     soapy_log(LogLevel::kWarning, "writeSetting: no setting " + key + ", ignored");
@@ -820,6 +849,9 @@ std::string SoapyDevice::readSetting(const std::string& key) const {
     }
     if (key == "time_origin") {
         return time_origin_name(pair_->time_origin());
+    }
+    if (key == "tx_underrun_limit") {
+        return std::to_string(pair_->tx_underrun_limit());
     }
     return {};
 }

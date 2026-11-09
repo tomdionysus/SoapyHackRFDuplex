@@ -226,10 +226,11 @@ TEST_CASE("a start that switches the reference retunes and restarts the board", 
     CHECK(calls_from_start(rig.rx) == std::vector<std::string>{rx_start, "set_frequency 893300000",
                                                                "set_frequency 892300000", "stop ",
                                                                rx_start});
+    // The transmitter's underrun limit goes on before each of its starts.
     const std::string tx_start = "start_tx ";
-    CHECK(calls_from_start(rig.tx) == std::vector<std::string>{tx_start, "set_frequency 869300000",
-                                                               "set_frequency 868300000", "stop ",
-                                                               tx_start});
+    CHECK(calls_from_start(rig.tx) ==
+          std::vector<std::string>{tx_start, "set_frequency 869300000", "set_frequency 868300000",
+                                   "stop ", "set_tx_underrun_limit 8", tx_start});
     CHECK(rig.pair.active(Direction::kRx));
     CHECK(rig.pair.active(Direction::kTx));
     CHECK(rig.rx.rx_streaming);

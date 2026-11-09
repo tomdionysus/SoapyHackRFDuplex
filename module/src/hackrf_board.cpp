@@ -218,14 +218,28 @@ void HackrfBoard::set_hardware_sync(bool on) {
     check(hackrf_set_hw_sync_mode(device_, on ? 1 : 0), "set hardware sync");
 }
 
-std::uint32_t HackrfBoard::shortfalls() {
+StreamHealth HackrfBoard::stream_health() {
     const std::lock_guard<std::mutex> lock(mutex_);
     if (!reports_clkin_) {
-        return 0;
+        return {};
     }
     hackrf_m0_state state{};
     check(hackrf_get_m0_state(device_, &state), "read m0 state");
-    return state.num_shortfalls;
+    // The M0 sets an error (1 receive, 2 transmit timeout) as it drops to
+    // idle over a shortfall past its limit, and clears it at the next start.
+    return StreamHealth{state.num_shortfalls, state.error != 0};
+}
+
+bool HackrfBoard::set_tx_underrun_limit(std::uint32_t samples) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!reports_clkin_) {
+        return false;
+    }
+    // libhackrf counts bytes, two to a sample.
+    const std::uint64_t bytes = std::min<std::uint64_t>(2ULL * samples, UINT32_MAX);
+    check(hackrf_set_tx_underrun_limit(device_, static_cast<std::uint32_t>(bytes)),
+          "set tx underrun limit");
+    return true;
 }
 
 int HackrfBoard::rx_trampoline(hackrf_transfer* transfer) {

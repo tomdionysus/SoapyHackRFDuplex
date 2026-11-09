@@ -52,7 +52,8 @@ public:
     void set_clock_out(bool on) override;
     bool start_switches_reference() override;
     void set_hardware_sync(bool on) override;
-    std::uint32_t shortfalls() override;
+    StreamHealth stream_health() override;
+    bool set_tx_underrun_limit(std::uint32_t samples) override;
 
     std::size_t transfer_bytes() const override { return transfer_bytes_; }
     void start_rx(RxHandler handler) override;
@@ -76,7 +77,8 @@ private:
     std::mutex mutex_;
     hackrf_device* device_ = nullptr;
     std::size_t transfer_bytes_ = 0;
-    // Firmware with USB API 1.06 reports CLKIN status and board revision.
+    // Firmware with USB API 1.06 reports CLKIN status, board revision and
+    // its M0 state, and takes a transmit underrun limit.
     bool reports_clkin_ = false;
     // Boards with id HACKRF1_R9 select CLKIN with a switch in front of
     // PLL A rather than by moving the outputs to PLL B.
