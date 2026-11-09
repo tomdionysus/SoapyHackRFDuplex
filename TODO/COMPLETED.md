@@ -3,6 +3,34 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: the pair brought up on the target
+
+Item 1, accepted on the target (`corvus-macnessa-sdr`, a Raspberry Pi 5,
+Debian 13.7 trixie, each board on its own root port). `vcgencmd
+get_throttled` read `0x50000` before and after every run: under-voltage
+had happened since boot, none during these runs.
+
+- Receive only, `--clkout rx --seconds 10`: 2 Msps 99.9% of nominal and
+  8 Msps 99.9%, 0 overflows, 0 timeouts, both boards `clock: external`.
+- Reference switches, with the 100 kHz tone at TX gain 0: CLKOUT off and
+  on alternately, four starts, each logging "TX board changed reference
+  clock; retuned and restarted" with `lo_locked` true on both channels
+  after it. On the crystal the tone arrived at +87.9 kHz (the TX
+  crystal's 15 ppm) and the burst was not heard (8.2 to 9.1 dB), as
+  documented for free-running boards; on CLKIN it arrived at +0.0 Hz
+  and the origin was found (36.8 and 37.2 dB). The check tool now
+  reports `lo_locked` per channel after activation.
+- Smoke test, `--clkout rx --tx-tone 100e3 --tx-gain 0 --seconds 10`:
+  origin found at 36.8 dB, the tone at -44 dBFS and +0.0 Hz in every one
+  of 10 seconds, image 31 dB down, 0 underflows, 1 overflow (the
+  calibration backlog).
+- `--timed-bursts 81920 --seconds 60`: 3663 written, 3658 of 3658 found
+  at +0 samples, 0 late writes, 0 time errors, 0 underflows, the hardware
+  time inside its reads 3662 of 3662; origin at 44.1 dB.
+- Not done: the optional check through the Radioberry.
+- `docs/design.md` "Measured" now names the host class of every table
+  and opens with the target's figures.
+
 ## 2026-11-09: the build moves to the target; packaging and CI
 
 The build of record moved to a Raspberry Pi 5 on Debian 13.7 trixie

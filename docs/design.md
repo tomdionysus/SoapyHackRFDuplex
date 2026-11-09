@@ -210,6 +210,36 @@ project.
 
 ## Measured
 
+The figures come from two host classes, named with each table: an Intel
+Mac with the boards on USB 2 hubs shared with other devices (the
+workstation, until 2026-11-09), and a Raspberry Pi 5 on Debian trixie
+with each board on its own root port (the target, from 2026-11-09).
+Every section after "On the target" was measured on the workstation.
+
+### On the target
+
+A Raspberry Pi 5, libhackrf 2024.02.1, both boards on firmware
+2026.01.3, `clkout=rx`, 868.3 MHz, TX gain 0 with the amplifier off, the
+boards stacked with stub antennas; `vcgencmd get_throttled` read the
+same before and after every run, with no under-voltage during any.
+
+| Check | Result |
+|---|---|
+| Receive only, 2 and 8 Msps, 10 s each | 99.9% of nominal, 0 overflows, both boards `clock: external` |
+| Reference switch, the TX board onto its crystal (CLKOUT off), twice | switch logged and handled, `lo_locked` true, tone 12.1 kHz low (the crystal) |
+| Reference switch, the TX board back onto CLKIN (CLKOUT on), twice | switch logged and handled, `lo_locked` true, tone at +0.0 Hz |
+| Full duplex, `--tx-tone 100e3 --seconds 10` | origin found (36.8 dB over the median), tone -44 dBFS at +0.0 Hz every second, image 31 dB down, 0 underflows, 1 overflow |
+| `--timed-bursts 81920 --seconds 60` | 3658 of 3658 bursts at +0 samples, 0 late writes, 0 time errors, 0 underflows, hardware time inside its reads 3662 of 3662 |
+
+With transmit, the receive rate reads 102 to 108% of nominal and there is
+one overflow: the receive ring fills while activation calibrates, and
+the check tool's clock starts after that, so the backlog is counted
+within the run. That is the check tool's accounting, not the rate.
+20 Msps receive through the check tool reaches only 81% here, with USB
+alone carrying the full rate (ACTIVE item 11).
+
+### On the workstation
+
 Receive only, `hackrfduplex-check --seconds 10`, one HackRF One r10
 (firmware 2024.02.1) on a USB 2 bus shared with two other devices, an
 Intel Mac host:

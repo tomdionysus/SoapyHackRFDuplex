@@ -32,8 +32,8 @@ the second activation calibrates); and `--timed-bursts 81920 --seconds
 run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
-Work the items in order. Item 1 brings the pair up on the target, item 2
-finishes measuring the hardware time, items 3 to 16 take the module to
+Work the items in order. Item 2 finishes measuring the hardware time
+(item 1, the pair on the target, is done), items 3 to 16 take the module to
 the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
 on hardware Tom does not have yet.
 
@@ -55,7 +55,9 @@ on hardware Tom does not have yet.
   with each board on its own root port. There: `tools/ci.sh` passes; the
   `.deb` builds, installs and is found by `SoapySDRUtil --find`; receive
   at 8 Msps is clean; 20 Msps through the check tool is CPU-bound (81%),
-  while USB alone carries the full rate.
+  while USB alone carries the full rate. Item 1 then brought the pair up
+  there: receive, reference switches each way, the tone and 3658 timed
+  bursts at +0, all clean (COMPLETED.md).
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
@@ -163,20 +165,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   the README and design.
 
 ## Items
-
-### 1. Bring the pair up on the target
-
-- [ ] Receive: `hackrfduplex-check` at 2 and 8 Msps clean for 10 s each,
-  both boards `clock: external` with `clkout=rx`, a reference switch
-  handled each way (CLKOUT off, start, CLKOUT on, start: the
-  `lo_locked` sensor and the log show it). Transmit: the smoke test
-  above (origin found, tone at +0.0 Hz, 0 underflows) and `--timed-bursts
-  81920 --seconds 60` with every burst at +0. Optionally, with the
-  Radioberry receiving over HPSDR (receive only), the HackRF tone seen by
-  a receiver that is not the other HackRF. Acceptance: the figures in
-  COMPLETED.md, with the host named, and `docs/design.md` "Measured"
-  saying which figures came from which host class (an Intel Mac on
-  shared hubs, a Raspberry Pi 5 on root ports).
 
 ### 2. Transmit lead time
 
