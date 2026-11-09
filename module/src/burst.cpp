@@ -41,6 +41,7 @@ std::vector<std::int8_t> samples() {
     std::vector<std::int8_t> out(2 * kChips, 0);
     for (std::size_t k = 0; k < kChips; ++k) {
         out[2 * k] = static_cast<std::int8_t>(c[k] * kAmplitude);
+        out[2 * k + 1] = static_cast<std::int8_t>(c[k] * kAmplitude);
     }
     return out;
 }
@@ -65,12 +66,21 @@ Found find(std::span<const std::int8_t> iq) {
         r = std::conj(r);
     }
 
+    double sum_i = 0;
+    double sum_q = 0;
+    for (std::size_t n = 0; n < count; ++n) {
+        sum_i += iq[2 * n];
+        sum_q += iq[2 * n + 1];
+    }
+    const std::complex<float> dc(static_cast<float>(sum_i / static_cast<double>(count)),
+                                 static_cast<float>(sum_q / static_cast<double>(count)));
+
     std::vector<float> magnitude(lags);
     std::vector<std::complex<float>> block(kFftSize);
     for (std::size_t start = 0; start < lags; start += step) {
         for (std::size_t i = 0; i < kFftSize; ++i) {
             const std::size_t n = start + i;
-            block[i] = n < count ? std::complex<float>(iq[2 * n], iq[2 * n + 1])
+            block[i] = n < count ? std::complex<float>(iq[2 * n], iq[2 * n + 1]) - dc
                                  : std::complex<float>(0, 0);
         }
         fft(block, false);

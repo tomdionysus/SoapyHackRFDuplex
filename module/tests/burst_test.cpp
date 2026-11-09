@@ -6,6 +6,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -15,28 +16,41 @@ using namespace hackrfduplex;
 
 namespace {
 
-// I/Q int8 bytes of complex noise of standard deviation `sigma` per rail.
-std::vector<std::int8_t> noise(std::size_t samples, double sigma, std::uint32_t seed) {
-    std::mt19937 rng(seed);
-    std::normal_distribution<double> gauss(0.0, sigma);
-    std::vector<std::int8_t> out(samples * 2);
-    for (std::int8_t& v : out) {
-        v = static_cast<std::int8_t>(std::clamp(std::lround(gauss(rng)), -127L, 127L));
-    }
-    return out;
-}
+// What a receiver quantises: complex noise of standard deviation `sigma`
+// per rail, a DC offset, and optionally the burst at sample `at`, scaled
+// against its own full scale and rotated by `phase`. Summed in double and
+// rounded once, so a burst far below one step still shows through the
+// noise as it does on a real receiver.
+struct Air {
+    double sigma = 1.0;
+    std::complex<double> dc{0, 0};
+    std::optional<std::size_t> at;
+    double scale = 0;
+    double phase = 0;
+    std::uint32_t seed = 1;
+};
 
-// Adds the burst into `iq` at sample `at`, scaled and rotated by `phase`.
-void add_burst(std::vector<std::int8_t>& iq, std::size_t at, double scale, double phase) {
-    const std::vector<std::int8_t> chips = burst::chips();
-    for (std::size_t k = 0; k < chips.size(); ++k) {
-        const std::complex<double> s = std::polar(scale * chips[k], phase);
-        for (std::size_t rail = 0; rail < 2; ++rail) {
-            const double v = (rail == 0 ? s.real() : s.imag()) + iq[(at + k) * 2 + rail];
-            iq[(at + k) * 2 + rail] =
-                static_cast<std::int8_t>(std::clamp(std::lround(v), -127L, 127L));
+std::vector<std::int8_t> receive(std::size_t samples, const Air& air) {
+    std::mt19937 rng(air.seed);
+    std::normal_distribution<double> gauss(0.0, air.sigma);
+    std::vector<std::complex<double>> x(samples);
+    for (std::complex<double>& v : x) {
+        v = air.dc + std::complex<double>(gauss(rng), gauss(rng));
+    }
+    if (air.at) {
+        const std::vector<std::int8_t> burst = burst::samples();
+        const std::complex<double> turn = std::polar(air.scale, air.phase);
+        for (std::size_t k = 0; k < burst::kChips; ++k) {
+            x[*air.at + k] += turn * std::complex<double>(burst[2 * k], burst[2 * k + 1]);
         }
     }
+    std::vector<std::int8_t> out(2 * samples);
+    for (std::size_t k = 0; k < samples; ++k) {
+        out[2 * k] = static_cast<std::int8_t>(std::clamp(std::lround(x[k].real()), -127L, 127L));
+        out[2 * k + 1] =
+            static_cast<std::int8_t>(std::clamp(std::lround(x[k].imag()), -127L, 127L));
+    }
+    return out;
 }
 
 }  // namespace
@@ -76,12 +90,13 @@ TEST_CASE("the burst is 4096 chips of a maximal-length sequence", "[burst]") {
     }
     CHECK(std::abs(sum) < 200);
 
-    // Its samples: the chips on I at 0.7 of full scale, Q zero.
+    // Its samples: each chip at full scale on both I and Q, the most
+    // energy the converter can put into 4096 samples.
     const std::vector<std::int8_t> samples = burst::samples();
     REQUIRE(samples.size() == 2 * burst::kChips);
     for (std::size_t k = 0; k < burst::kChips; ++k) {
-        CHECK(samples[2 * k] == chips[k] * 89);
-        CHECK(samples[2 * k + 1] == 0);
+        CHECK(samples[2 * k] == chips[k] * 127);
+        CHECK(samples[2 * k + 1] == chips[k] * 127);
     }
 }
 
@@ -110,8 +125,9 @@ TEST_CASE("the burst is found at its offset in noise", "[burst]") {
     const std::size_t length = 300'000;
     for (const std::size_t at :
          {std::size_t{0}, std::size_t{12'345}, std::size_t{12'289}, length - burst::kChips}) {
-        std::vector<std::int8_t> iq = noise(length, 6.0, static_cast<std::uint32_t>(at + 1));
-        add_burst(iq, at, 4.0, 1.1);  // 3.5 dB below the noise per sample
+        // 12 dB below the noise per sample.
+        const std::vector<std::int8_t> iq =
+            receive(length, Air{6.0, {}, at, 0.0119, 1.1, static_cast<std::uint32_t>(at + 1)});
         const burst::Found found = burst::find(iq);
         CHECK(found.found);
         CHECK(found.offset == at);
@@ -119,8 +135,20 @@ TEST_CASE("the burst is found at its offset in noise", "[burst]") {
     }
 }
 
+TEST_CASE("the burst is found under a DC offset many times its size", "[burst]") {
+    // A HackRF receiver's own DC offset dwarfs a weak burst; uncorrected, it
+    // correlates with the chips at every lag and buries the peak.
+    // As on the bench: the burst a fifth of a step, noise under one step
+    // per rail, DC two to three steps.
+    const std::vector<std::int8_t> iq =
+        receive(300'000, Air{0.64, {3.0, -2.0}, 100'000, 0.0016, 0.4, 11});
+    const burst::Found found = burst::find(iq);
+    CHECK(found.found);
+    CHECK(found.offset == 100'000);
+}
+
 TEST_CASE("noise alone finds no burst", "[burst]") {
-    const std::vector<std::int8_t> iq = noise(300'000, 20.0, 7);
+    const std::vector<std::int8_t> iq = receive(300'000, Air{20.0, {}, {}, 0, 0, 7});
     const burst::Found found = burst::find(iq);
     CHECK_FALSE(found.found);
     CHECK(found.peak_over_median_db < 20.0);
