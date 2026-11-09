@@ -34,8 +34,8 @@ test-first loop; the target's result is the one that counts.
 
 Work the items in order. Item 1 brings the pair up on the target, item 2
 finishes measuring the hardware time, items 3 to 16 take the module to
-the 1.0.0 release ("Release 1.0.0" says what that means). "Waits on Tom"
-lists what blocks which item.
+the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
+on hardware Tom does not have yet.
 
 ## Where things stand
 
@@ -61,33 +61,12 @@ lists what blocks which item.
 
 ## Waits on Tom
 
-Each with a recommendation; the items that depend on one say so.
-
-1. Settled 2026-11-09: the target's bench is shielded and the transmit
-   go-ahead covers it; its power supply cannot change, so it is watched
-   (standing decisions).
-2. (Settled with 1.)
-3. **The transmit underrun limit** (item 6): libhackrf can make the
-   transmitting board stop itself after a run of underrun, so a
-   transmitter cannot outlive a crashed or hung host. The module always
-   feeds zeros, so it trips only when the host has truly stopped.
-   Recommended: on by default at one transfer's worth, with a setting.
-   The receive overrun limit stays off: it would stop a receiver whose
-   reader was merely slow.
-4. **Clock and time sources** (item 8): SoapySDR's `setClockSource` and
-   `setTimeSource` are what applications call to share a reference and
-   a time. Recommended: clock sources `internal`, `rx` and `tx` (as
-   `clkout`), time sources `burst`, `trigger` and `none` (as
-   `time_origin`), the settings kept as aliases.
-5. **No signal processing in the stream path**: software DC removal, I/Q
-   balance and frequency correction are DSP, not a device. Recommended:
-   out of scope for 1.0.0; the module answers `hasDCOffsetMode` and the
-   like with false, as now.
-6. **Hardware for coverage**: the trigger jumper (item 14), and a board
-   with id `HACKRF1_R9` for the other reference-switch path, never run.
-   Without them 1.0.0 ships with those paths named as untested.
-7. **The version**: 1.0.0, the SoapySDR surface and the settings then
-   held stable. Recommended.
+Nothing blocks the work. Decided 2026-11-09 and recorded under standing
+decisions: the target's bench, its power, the transmit underrun limit,
+clock and time sources, optional DSP with liquid-dsp, release 0.2.0
+first. Still open: the trigger jumper and a `HACKRF1_R9` board, neither
+available for now (Tom, 2026-11-09); the release names both paths as
+untested against hardware, and item 17 waits for them.
 
 ## Standing decisions
 
@@ -125,8 +104,24 @@ Each with a recommendation; the items that depend on one say so.
   2026-11-09). The default transmits a short calibration burst on the
   receive frequency when the second stream starts. The pair never
   recalibrates on its own.
-- Dependencies: SoapySDR, libhackrf, Catch2. Nothing else without a
+- Dependencies: SoapySDR, libhackrf, Catch2; and liquid-dsp, only in a
+  build that asks for the optional DSP (below). Nothing else without a
   decision recorded here.
+- The transmit underrun limit is on by default at one transfer's worth,
+  with a `tx_underrun_limit` setting; the receive overrun limit stays off
+  (Tom, 2026-11-09).
+- Clock and time sources map onto the existing settings: clock sources
+  `internal`, `rx`, `tx` (as `clkout`), time sources `burst`, `trigger`,
+  `none` (as `time_origin`); the settings stay as aliases (Tom,
+  2026-11-09).
+- Optional DSP (Tom, 2026-11-09: "use liquid-dsp. These features MUST be
+  optional at compile time"): software DC removal and I/Q balance
+  correction on receive, built only with `-DHACKRFDUPLEX_DSP=ON` and
+  liquid-dsp found, off at run time until an application asks. Without
+  the option the module neither links liquid-dsp nor claims the
+  features; the build without it stays the default.
+- The next release is 0.2.0 (Tom, 2026-11-09); 1.0.0, with the SoapySDR
+  surface and settings held stable, comes after 0.2.0 has been used.
 - Transmit tests: Tom's go-ahead for this work on the shielded bench
   ("you may test autonomously until completion"), which the target's
   bench is ("yes, shielded"), both 2026-11-09. Ask before switching the
@@ -140,9 +135,10 @@ Each with a recommendation; the items that depend on one say so.
 - Commits with no Claude text, and pushes to `origin develop`, at any
   time (Tom, 2026-11-09). One logical change per commit.
 
-## Release 1.0.0
+## Release 0.2.0
 
-What "elite" means for this module, and the gate for the tag:
+What "elite" means for this module, and the gate for the tag (0.2.0
+first, by Tom's choice; 1.0.0 after it has been used):
 
 - **The contract, all of it.** Every SoapySDR call behaves as the
   contract says, per direction. What the device cannot do it refuses
@@ -161,7 +157,10 @@ What "elite" means for this module, and the gate for the tag:
 - **Fast and steady.** Full duplex at 20 Msps, measured CPU use, and a
   24-hour soak with the origin held throughout.
 - **Shipped.** A `.deb` that installs on trixie, docs a newcomer can
-  follow, and tag `1.0.0` on `main`.
+  follow, and tag `0.2.0` on `main`.
+- **Named limits.** What could not be tried on hardware (the trigger
+  origin, the `HACKRF1_R9` reference-switch path) is named as such in
+  the README and design.
 
 ## Items
 
@@ -238,9 +237,9 @@ What "elite" means for this module, and the gate for the tag:
 
 ### 6. Safety: the transmitter cannot outlive its host
 
-- [ ] Waits on decision 3. Set the transmitting board's underrun limit at
-  each start (`hackrf_set_tx_underrun_limit`, through a new `Board`
-  call), with a `tx_underrun_limit` setting; detect the board having
+- [ ] Set the transmitting board's underrun limit at each start, one
+  transfer's worth by default (`hackrf_set_tx_underrun_limit`, through a
+  new `Board` call), with a `tx_underrun_limit` setting (0 turns it off); detect the board having
   stopped itself and report it as a stream error (item 4's path). Add a
   transmit audit test: over a run of writes, timed writes, bursts, gaps,
   late drops, calibration and deactivation, the fake transmitter is
@@ -262,7 +261,7 @@ What "elite" means for this module, and the gate for the tag:
 
 ### 8. Clock and time sources through the SoapySDR API
 
-- [ ] Waits on decision 4. `listClockSources`, `setClockSource`,
+- [ ] `listClockSources`, `setClockSource`,
   `getClockSource`, `listTimeSources`, `setTimeSource` and
   `getTimeSource` mapped onto `clkout` and `time_origin`, which stay as
   settings. Before calibrating, check that the boards share a reference
@@ -309,7 +308,26 @@ What "elite" means for this module, and the gate for the tag:
   duplex at 20 Msps both ways for ten minutes on the target with no
   overflow, underflow or shortfall, or the limit and its cause recorded.
 
-### 12. Quality gates
+### 12. Optional DSP: DC removal and I/Q balance on receive
+
+- [ ] Behind `-DHACKRFDUPLEX_DSP=ON` (default off), with liquid-dsp found
+  by CMake (`libliquid-dev` on the target, recorded in the README's
+  install line and `docs/licensing.md`): `hasDCOffsetMode`,
+  `setDCOffsetMode` (automatic removal), `setDCOffset`, `hasIQBalance`,
+  `setIQBalance`, and the automatic I/Q balance mode where the SoapySDR
+  version has it, all on the receive channel, all off until set. The
+  correction runs on the reader's thread in the conversion step, on the
+  samples the application asked for, so the transfer thread is
+  untouched; the calibration tap sees the raw samples. Without the
+  option none of it is compiled, the module does not link liquid-dsp,
+  and the calls answer as now. Acceptance: tests of each call and of the
+  correction against synthetic DC and imbalance, built and run both with
+  and without the option (`tools/ci.sh` builds both); on the target the
+  receiver's DC spike and the tone's image measured with each correction
+  off and on, the figures in `docs/design.md`; CPU cost per rate in item
+  11's table.
+
+### 13. Quality gates
 
 - [ ] Clang thread-safety annotations on every guarded member with
   `-Wthread-safety` on, and the lock order (control, then side, then
@@ -321,7 +339,7 @@ What "elite" means for this module, and the gate for the tag:
   recorded. Acceptance: `tools/ci-pi.sh` passing with all of it, and the
   coverage figure in COMPLETED.md.
 
-### 13. Interoperability
+### 14. Interoperability
 
 - [ ] Run the pair from the applications people use, on the target
   (installing them there with apt), and record what works in
@@ -332,17 +350,6 @@ What "elite" means for this module, and the gate for the tag:
   receive-only application. Each with the version used, what was
   checked, and any quirk. Acceptance: the matrix filled, every failure
   fixed in the module or explained as the application's.
-
-### 14. Trigger origin on the bench
-
-- [ ] Waits on decision 6: a jumper from the RX board's P28 pin 15
-  (trigger out) to the TX board's P28 pin 16 (trigger in), the boards
-  grounded together through the clock cable. Built, unit-tested against
-  the fake, and on 2026-11-09 the start without a jumper failed on the
-  real pair as designed, naming the jumper. Acceptance: with
-  `--time-origin trigger`, `hackrfduplex-check --timed-bursts` lands
-  every burst at one constant offset from the time asked (the origin is
-  0 by construction, so the offset is the boards' pipeline difference).
 
 ### 15. Certification and soak
 
@@ -367,11 +374,22 @@ What "elite" means for this module, and the gate for the tag:
   switches, shortfalls, low rates). A man page for `hackrfduplex-check`
   installed by CMake and the package (lintian's one warning on the
   `.deb`). README brought to its final form, the status table all ticks
-  or named exceptions. Then, on Tom's word (decision 7): version 1.0.0
-  in `CMakeLists.txt` and `debian/changelog`, `tools/ci-pi.sh` passing,
-  the `.deb` rebuilt and installed on the target, `develop` merged to
-  `main`, an annotated tag `1.0.0` on `main`, and `main`, `develop` and
-  the tag pushed to `origin`. Acceptance: a newcomer's path from the
-  README to a timed loopback works as written from a clean clone on the
-  target; `module_version` reads 1.0.0 in `SoapySDRUtil --probe` on the
-  installed package.
+  or named exceptions, the untested hardware paths named. Then: version
+  0.2.0 in `CMakeLists.txt` and `debian/changelog`, `tools/ci-pi.sh`
+  passing, the `.deb` rebuilt and installed on the target, `develop`
+  merged to `main`, an annotated tag `0.2.0` on `main`, and `main`,
+  `develop` and the tag pushed to `origin`. Acceptance: a newcomer's path
+  from the README to a timed loopback works as written from a clean
+  clone on the target; `module_version` reads 0.2.0 in `SoapySDRUtil
+  --probe` on the installed package.
+
+### 17. Trigger origin on the bench
+
+- [ ] Waits on hardware Tom does not have yet (2026-11-09): a jumper from the RX board's P28 pin 15
+  (trigger out) to the TX board's P28 pin 16 (trigger in), the boards
+  grounded together through the clock cable. Built, unit-tested against
+  the fake, and on 2026-11-09 the start without a jumper failed on the
+  real pair as designed, naming the jumper. Acceptance: with
+  `--time-origin trigger`, `hackrfduplex-check --timed-bursts` lands
+  every burst at one constant offset from the time asked (the origin is
+  0 by construction, so the offset is the boards' pipeline difference).

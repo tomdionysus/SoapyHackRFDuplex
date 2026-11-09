@@ -203,12 +203,21 @@ and reports where each one arrived, and any late writes or time errors.
 ## Roadmap
 
 The module does one thing: a pair of HackRF Ones as one full-duplex
-SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
+SoapySDR device. Open work toward the 0.2.0 release is in
+[TODO/ACTIVE.md](TODO/ACTIVE.md):
 
-1. The shortest transmit lead measured across sample rates and ring
-   depths.
-2. The trigger time origin tried on the bench with a jumper fitted.
-3. Debian packaging and a build-and-test script.
+1. The transmit lead measured across sample rates and ring depths.
+2. Faults reported as stream status: lost samples, a lost board, a lost
+   reference; the transmitter stopping itself if its host dies.
+3. The rest of the SoapySDR contract: timed and finite receive, clock
+   and time sources, reference and time sensors, unsupported calls
+   refused rather than ignored.
+4. Shorter activation, measured CPU use, zero-copy reads, full duplex at
+   20 Msps.
+5. Optional receive DC removal and I/Q balance correction, compiled in
+   only on request, using liquid-dsp.
+6. Quality gates, application compatibility, a hardware acceptance
+   battery, a 24-hour soak, and a usage guide.
 
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.
