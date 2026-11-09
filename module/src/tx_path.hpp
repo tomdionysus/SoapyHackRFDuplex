@@ -37,6 +37,8 @@ public:
 
     // Samples per transfer, the most one write() takes.
     std::size_t mtu() const { return ring_.block_bytes() / kNativeSampleBytes; }
+    // Ring depth in transfers.
+    std::size_t slots() const { return ring_.slots(); }
 
     // Writer: up to `samples` from `src`, returning how many were taken;
     // 0 when no block came free within `timeout`. With `end_of_burst`,

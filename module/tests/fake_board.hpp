@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -65,8 +66,9 @@ public:
     bool reference_switch_pending = false;
     bool hardware_sync = false;
     std::uint32_t shortfall_count = 0;
-    bool rx_streaming = false;
-    bool tx_streaming = false;
+    // Atomic, so a thread playing the air between two boards can watch them.
+    std::atomic<bool> rx_streaming{false};
+    std::atomic<bool> tx_streaming{false};
     int starts = 0;
     int stops = 0;
     // Small, so test vectors stay readable: 8 samples.

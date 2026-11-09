@@ -54,7 +54,8 @@ if(HACKRFDUPLEX_BUILD_TESTS)
         tests/tx_path_test.cpp
         tests/pair_test.cpp
         tests/selection_test.cpp
-        tests/burst_test.cpp)
+        tests/burst_test.cpp
+        tests/pair_time_test.cpp)
     target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_core Catch2::Catch2WithMain)
     if(HACKRFDUPLEX_BUILD_MODULE)
         target_sources(hackrfduplex_tests PRIVATE tests/soapy_device_test.cpp)

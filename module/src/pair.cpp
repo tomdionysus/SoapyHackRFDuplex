@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pair.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 #include "bandwidth.hpp"
+#include "burst.hpp"
 
 namespace hackrfduplex {
 
@@ -12,6 +18,56 @@ namespace {
 // Where a board is tuned briefly after its stream starts, before going
 // back to its frequency (Pair::activate).
 constexpr std::uint64_t kRetuneStepHz = 1'000'000;
+
+// How often the boards' shortfall counts are read while an origin holds.
+constexpr auto kShortfallPoll = std::chrono::milliseconds(100);
+// How long a trigger start may take to reach the transmitter.
+constexpr auto kTriggerWait = std::chrono::milliseconds(500);
+// libhackrf keeps this many transfers in flight in each direction.
+constexpr std::size_t kLibhackrfTransfers = 4;
+
+Direction opposite(Direction direction) {
+    return direction == Direction::kRx ? Direction::kTx : Direction::kRx;
+}
+
+// Receive samples captured during calibration, from the first transfer
+// after it starts listening until it holds enough.
+class Capture {
+public:
+    explicit Capture(std::size_t samples) : bytes_(samples * kNativeSampleBytes) {}
+
+    void add(std::uint64_t position, std::span<const std::uint8_t> bytes) {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        if (filled_ == 0) {
+            start_ = position;
+        }
+        const std::size_t take = std::min(bytes.size(), bytes_.size() - filled_);
+        std::copy_n(bytes.begin(), take, bytes_.begin() + static_cast<long>(filled_));
+        filled_ += take;
+        if (filled_ == bytes_.size()) {
+            full_.notify_all();
+        }
+    }
+
+    // True when full within `timeout`.
+    bool wait(std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        return full_.wait_for(lock, timeout, [&] { return filled_ == bytes_.size(); });
+    }
+
+    // After the tap is removed.
+    std::span<const std::int8_t> samples() const {
+        return {reinterpret_cast<const std::int8_t*>(bytes_.data()), filled_};
+    }
+    std::uint64_t start() const { return start_; }
+
+private:
+    std::mutex mutex_;
+    std::condition_variable full_;
+    std::vector<std::uint8_t> bytes_;
+    std::size_t filled_ = 0;
+    std::uint64_t start_ = 0;
+};
 
 }  // namespace
 
@@ -29,6 +85,31 @@ const char* clock_out_name(ClockOut which) {
             return "tx";
     }
     return "?";
+}
+
+const char* time_origin_name(TimeOrigin origin) {
+    switch (origin) {
+        case TimeOrigin::kBurst:
+            return "burst";
+        case TimeOrigin::kTrigger:
+            return "trigger";
+        case TimeOrigin::kNone:
+            return "none";
+    }
+    return "?";
+}
+
+TimeOrigin parse_time_origin(const std::string& name) {
+    if (name == "burst") {
+        return TimeOrigin::kBurst;
+    }
+    if (name == "trigger") {
+        return TimeOrigin::kTrigger;
+    }
+    if (name == "none") {
+        return TimeOrigin::kNone;
+    }
+    throw std::invalid_argument("time origin must be burst, trigger or none, not " + name);
 }
 
 ClockOut parse_clock_out(const std::string& name) {
@@ -108,6 +189,9 @@ void Pair::set_sample_rate(Direction direction, double hz) {
     s.sample_rate_hz = hz;
     if (s.bandwidth_hz != 0) {
         s.board->set_bandwidth(s.bandwidth_hz);
+    }
+    if (s.active) {
+        lose_origin(std::string(direction_name(direction)) + " sample rate changed");
     }
 }
 
@@ -233,6 +317,7 @@ ClockOut Pair::clock_out() {
 }
 
 void Pair::open_stream(Direction direction, Format format, std::size_t slots) {
+    const std::lock_guard<std::mutex> control(control_mutex_);
     Side& s = side(direction);
     const std::lock_guard<std::mutex> lock(s.mutex);
     if (s.open) {
@@ -253,7 +338,8 @@ void Pair::open_stream(Direction direction, Format format, std::size_t slots) {
 }
 
 void Pair::close_stream(Direction direction) {
-    deactivate(direction);
+    const std::lock_guard<std::mutex> control(control_mutex_);
+    deactivate_locked(direction);
     Side& s = side(direction);
     const std::lock_guard<std::mutex> lock(s.mutex);
     if (!s.open) {
@@ -273,64 +359,178 @@ bool Pair::stream_open(Direction direction) const {
     return s.open;
 }
 
-void Pair::activate(Direction direction) {
+void Pair::start_stream(Direction direction) {
     Side& s = side(direction);
-    const std::lock_guard<std::mutex> lock(s.mutex);
-    if (!s.open) {
-        throw std::logic_error(std::string(direction_name(direction)) + " stream not open");
-    }
-    if (s.active) {
-        return;
-    }
-    const auto start = [&] {
-        if (direction == Direction::kRx) {
-            rx_path_->reset();
-            RxPath* path = rx_path_.get();
-            s.board->start_rx(
-                [path](std::span<const std::uint8_t> bytes) { path->on_transfer(bytes); });
-        } else {
-            tx_path_->reset();
-            if (bias_) {
-                s.board->set_bias_tee(true);
-            }
-            TxPath* path = tx_path_.get();
-            s.board->start_tx(
-                [path](std::span<std::uint8_t> buffer) { path->on_transfer(buffer); });
+    if (direction == Direction::kRx) {
+        rx_path_->reset();
+        RxPath* path = rx_path_.get();
+        s.board->start_rx(
+            [path](std::span<const std::uint8_t> bytes) { path->on_transfer(bytes); });
+    } else {
+        tx_path_->reset();
+        if (bias_) {
+            s.board->set_bias_tee(true);
         }
-    };
+        TxPath* path = tx_path_.get();
+        s.board->start_tx([path](std::span<std::uint8_t> buffer) { path->on_transfer(buffer); });
+    }
+}
 
+bool Pair::settle_reference(Direction direction) {
     // The firmware chooses its clock source (CLKIN or its crystal) at every
     // stream start, under RF synthesisers tuned on whatever reference came
     // before. When that switches the reference they do not relock: the
-    // board goes deaf, or transmits nothing. So when the reference changed,
+    // board goes deaf, or transmits nothing. So when the reference changes,
     // retune on the new one and start the stream again on a steady clock.
     // The firmware skips a tune to the frequency it last applied, hence the
     // step away and back. Retuning when nothing switched is not harmless:
     // it left the r10 board's receiver 1.7 kHz off, so it is done only on
     // a switch.
-    const bool switching = s.board->start_switches_reference();
-    if (switching) {
-        // Stays false if handling the switch fails: the synthesisers are
-        // then on a reference that has gone.
-        s.lo_locked = false;
+    Side& s = side(direction);
+    if (!s.board->start_switches_reference()) {
+        return false;
     }
-    start();
-    if (switching) {
-        if (s.frequency_hz != 0) {
-            s.board->set_frequency(s.frequency_hz + kRetuneStepHz);
-            s.board->set_frequency(s.frequency_hz);
+    // Stays false if handling the switch fails: the synthesisers are then
+    // on a reference that has gone.
+    s.lo_locked = false;
+    start_stream(direction);
+    if (s.frequency_hz != 0) {
+        s.board->set_frequency(s.frequency_hz + kRetuneStepHz);
+        s.board->set_frequency(s.frequency_hz);
+    }
+    s.board->stop();
+    log(LogLevel::kInfo, std::string(direction_name(direction)) +
+                             " board changed reference clock; retuned and restarted");
+    return true;
+}
+
+void Pair::activate(Direction direction) {
+    const std::lock_guard<std::mutex> control(control_mutex_);
+    Side& s = side(direction);
+    Side& o = side(opposite(direction));
+    {
+        const std::lock_guard<std::mutex> lock(s.mutex);
+        if (!s.open) {
+            throw std::logic_error(std::string(direction_name(direction)) + " stream not open");
         }
-        s.board->stop();
-        start();
-        s.lo_locked = true;
-        log(LogLevel::kInfo, std::string(direction_name(direction)) +
-                                 " board changed reference clock; retuned and restarted");
+        if (s.active) {
+            return;
+        }
     }
-    s.active = true;
-    log(LogLevel::kDebug, std::string(direction_name(direction)) + " started");
+    bool other_active = false;
+    bool other_armed = false;
+    {
+        const std::lock_guard<std::mutex> lock(o.mutex);
+        other_active = o.active;
+        other_armed = o.armed;
+    }
+    const TimeOrigin mode = time_origin();
+
+    if (mode == TimeOrigin::kTrigger && (!other_active || other_armed)) {
+        {
+            const std::lock_guard<std::mutex> lock(s.mutex);
+            settle_reference(direction);
+            s.lo_locked = true;
+            if (!other_active) {
+                // The first of the two: both start on one edge with the second.
+                s.active = true;
+                s.armed = true;
+                set_origin(OriginState::kPending);
+                log(LogLevel::kDebug,
+                    std::string(direction_name(direction)) + " armed for a trigger start");
+                return;
+            }
+        }
+        start_triggered();
+        return;
+    }
+
+    {
+        const std::lock_guard<std::mutex> lock(s.mutex);
+        settle_reference(direction);
+        start_stream(direction);
+        s.lo_locked = true;
+        s.active = true;
+        log(LogLevel::kDebug, std::string(direction_name(direction)) + " started");
+    }
+    if (!other_active) {
+        set_origin(mode == TimeOrigin::kNone ? OriginState::kAbsent : OriginState::kPending);
+        return;
+    }
+    switch (mode) {
+        case TimeOrigin::kBurst:
+            calibrate_locked();
+            break;
+        case TimeOrigin::kTrigger:
+            log(LogLevel::kWarning,
+                "trigger time origin: the other stream was already running, so the two did not "
+                "start together; no common time");
+            set_origin(OriginState::kAbsent);
+            break;
+        case TimeOrigin::kNone:
+            set_origin(OriginState::kAbsent);
+            break;
+    }
+}
+
+void Pair::start_triggered() {
+    // The transmitter waits in sync mode for an edge; the receiver's start
+    // drives its trigger output, which a jumper takes to the transmitter's
+    // trigger input. Both then start on the same sample clock edge, so
+    // transmit position 0 is on the air at receive position 0.
+    const std::scoped_lock lock(rx_.mutex, tx_.mutex);
+    const auto stop_both = [&] {
+        for (Side* side_of : {&rx_, &tx_}) {
+            try {
+                side_of->board->stop();
+            } catch (const BoardError&) {
+            }
+            side_of->active = false;
+            side_of->armed = false;
+        }
+        try {
+            tx_.board->set_hardware_sync(false);
+        } catch (const BoardError&) {
+        }
+        sync_on_ = false;
+        set_origin(OriginState::kAbsent);
+    };
+    try {
+        tx_.board->set_hardware_sync(true);
+        sync_on_ = true;
+        start_stream(Direction::kTx);
+        const std::uint64_t before = tx_path_->sent();
+        start_stream(Direction::kRx);
+        const std::uint64_t moved = before + 2 * tx_.board->transfer_bytes() / kNativeSampleBytes;
+        const auto deadline = std::chrono::steady_clock::now() + kTriggerWait;
+        while (tx_path_->sent() < moved) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+                throw BoardError(
+                    "trigger start: the transmitting board did not start within 500 ms of the "
+                    "receiving board; a jumper must run from the receiving board's P28 pin 15 "
+                    "(trigger out) to the transmitting board's P28 pin 16 (trigger in)");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    } catch (const BoardError&) {
+        stop_both();
+        throw;
+    }
+    for (Side* side_of : {&rx_, &tx_}) {
+        side_of->active = true;
+        side_of->armed = false;
+    }
+    note_shortfall_baseline();
+    set_origin(OriginState::kValid, 0);
+    log(LogLevel::kInfo, "both boards started on one trigger edge; common time origin set");
 }
 
 void Pair::deactivate(Direction direction) {
+    const std::lock_guard<std::mutex> control(control_mutex_);
+    deactivate_locked(direction);
+}
+
+void Pair::deactivate_locked(Direction direction) {
     Side& s = side(direction);
     const std::lock_guard<std::mutex> lock(s.mutex);
     if (!s.active) {
@@ -338,10 +538,19 @@ void Pair::deactivate(Direction direction) {
     }
     s.board->stop();
     s.active = false;
+    s.armed = false;
+    if (direction == Direction::kTx && sync_on_) {
+        s.board->set_hardware_sync(false);
+        sync_on_ = false;
+    }
     if (direction == Direction::kRx) {
         rx_path_->wake();
     } else {
         tx_path_->wake();
+    }
+    // The origin ties two running streams; it is found again when both run.
+    if (time_origin() != TimeOrigin::kNone) {
+        set_origin(OriginState::kPending);
     }
     log(LogLevel::kDebug, std::string(direction_name(direction)) + " stopped");
 }
@@ -358,10 +567,207 @@ std::size_t Pair::mtu(Direction direction) const {
 
 bool Pair::lo_locked(Direction direction) const { return side(direction).lo_locked.load(); }
 
+// Time
+
+void Pair::set_time_origin(TimeOrigin origin) {
+    const std::lock_guard<std::mutex> lock(time_mutex_);
+    origin_mode_ = origin;
+    log(LogLevel::kInfo, std::string("time origin: ") + time_origin_name(origin));
+}
+
+TimeOrigin Pair::time_origin() const {
+    const std::lock_guard<std::mutex> lock(time_mutex_);
+    return origin_mode_;
+}
+
+std::optional<std::int64_t> Pair::tx_of_rx() const {
+    const std::lock_guard<std::mutex> lock(time_mutex_);
+    if (origin_state_ != OriginState::kValid) {
+        return std::nullopt;
+    }
+    return tx_of_rx_;
+}
+
+std::int64_t Pair::time_ticks() const {
+    return static_cast<std::int64_t>(rx_received()) + time_offset_.load();
+}
+
+void Pair::set_time_ticks(std::int64_t ticks) {
+    time_offset_ = ticks - static_cast<std::int64_t>(rx_received());
+}
+
+void Pair::set_origin(OriginState state, std::int64_t tx_of_rx) {
+    {
+        const std::lock_guard<std::mutex> lock(time_mutex_);
+        origin_state_ = state;
+        tx_of_rx_ = tx_of_rx;
+    }
+    time_changed_.notify_all();
+}
+
+void Pair::lose_origin(const std::string& why) {
+    {
+        const std::lock_guard<std::mutex> lock(time_mutex_);
+        if (origin_state_ != OriginState::kValid) {
+            return;
+        }
+        origin_state_ = OriginState::kAbsent;
+    }
+    time_changed_.notify_all();
+    time_error_ = true;
+    log(LogLevel::kWarning, "common time origin lost: " + why);
+}
+
+void Pair::note_shortfall_baseline() {
+    const std::lock_guard<std::mutex> lock(poll_mutex_);
+    rx_shortfalls_ = rx_.board->shortfalls();
+    tx_shortfalls_ = tx_.board->shortfalls();
+    last_poll_ = std::chrono::steady_clock::now();
+}
+
+void Pair::poll_shortfalls() {
+    {
+        const std::lock_guard<std::mutex> lock(time_mutex_);
+        if (origin_state_ != OriginState::kValid) {
+            return;
+        }
+    }
+    std::uint32_t rx = 0;
+    std::uint32_t tx = 0;
+    {
+        const std::lock_guard<std::mutex> lock(poll_mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_poll_ < kShortfallPoll) {
+            return;
+        }
+        last_poll_ = now;
+        try {
+            rx = rx_.board->shortfalls();
+            tx = tx_.board->shortfalls();
+        } catch (const BoardError& e) {
+            log(LogLevel::kWarning, std::string("reading shortfalls: ") + e.what());
+            return;
+        }
+        if (rx == rx_shortfalls_ && tx == tx_shortfalls_) {
+            return;
+        }
+    }
+    lose_origin("the RX board reports " + std::to_string(rx) + " shortfalls and the TX board " +
+                std::to_string(tx) +
+                ", so samples were lost or delayed; write calibrate to find it "
+                "again");
+}
+
+void Pair::calibrate() {
+    const std::lock_guard<std::mutex> control(control_mutex_);
+    if (!active(Direction::kRx) || !active(Direction::kTx)) {
+        throw std::logic_error("calibrate: both streams must be active");
+    }
+    calibrate_locked();
+}
+
+void Pair::calibrate_locked() {
+    set_origin(OriginState::kPending);
+    const double rx_rate = sample_rate(Direction::kRx);
+    const double tx_rate = sample_rate(Direction::kTx);
+    if (!(rx_rate > 0) || rx_rate != tx_rate) {
+        log(LogLevel::kWarning,
+            "no common time origin: the burst needs both directions at one "
+            "sample rate");
+        set_origin(OriginState::kAbsent);
+        return;
+    }
+
+    // The burst must be heard, so the transmitter goes to the receive
+    // frequency for it. The firmware skips a tune to the frequency it last
+    // applied, so when the two are equal nothing is retuned at all.
+    const std::uint64_t rx_hz = frequency(Direction::kRx);
+    const std::uint64_t tx_hz = frequency(Direction::kTx);
+    const bool retune = rx_hz != 0 && rx_hz != tx_hz;
+    if (retune) {
+        const std::lock_guard<std::mutex> lock(tx_.mutex);
+        tx_.board->set_frequency(rx_hz);
+    }
+
+    // Listen from now for as long as the burst can take to come round: the
+    // transmit ring, libhackrf's transfers in flight, and some margin.
+    const std::size_t transfer = std::max(mtu(Direction::kRx), mtu(Direction::kTx));
+    const std::size_t slots = tx_path_->slots();
+    Capture capture(burst::kChips + (slots + kLibhackrfTransfers + 2) * transfer);
+    rx_path_->set_tap([&capture](std::uint64_t position, std::span<const std::uint8_t> bytes) {
+        capture.add(position, bytes);
+    });
+
+    std::optional<std::uint64_t> sent_at;
+    {
+        const std::lock_guard<std::mutex> lock(write_mutex_);
+        const std::vector<std::int8_t> samples = burst::samples();
+        const std::uint64_t at = tx_path_->queued() + mtu(Direction::kTx);
+        const auto timeout = std::chrono::seconds(2);
+        const TxWrite first =
+            tx_path_->write_at(samples.data(), burst::kChips, Format::kCs8, true, at,
+                               std::chrono::duration_cast<std::chrono::microseconds>(timeout));
+        std::size_t written = first.taken;
+        while (!first.late && written > 0 && written < burst::kChips) {
+            const std::size_t n = tx_path_->write(
+                samples.data() + 2 * written, burst::kChips - written, Format::kCs8, true,
+                std::chrono::duration_cast<std::chrono::microseconds>(timeout));
+            if (n == 0) {
+                break;
+            }
+            written += n;
+        }
+        if (written == burst::kChips) {
+            sent_at = at;
+        }
+    }
+    const double seconds =
+        static_cast<double>(burst::kChips + (slots + kLibhackrfTransfers + 2) * transfer) / rx_rate;
+    const bool full =
+        sent_at &&
+        capture.wait(std::chrono::milliseconds(static_cast<long>(2000.0 * seconds) + 2000));
+    rx_path_->set_tap(nullptr);
+    if (retune) {
+        const std::lock_guard<std::mutex> lock(tx_.mutex);
+        tx_.board->set_frequency(tx_hz);
+    }
+    if (!sent_at) {
+        log(LogLevel::kWarning,
+            "no common time origin: the calibration burst could not be "
+            "written to the transmit stream");
+        set_origin(OriginState::kAbsent);
+        return;
+    }
+    if (!full) {
+        log(LogLevel::kWarning, "calibration: the receive stream delivered less than expected");
+    }
+
+    const burst::Found found = burst::find(capture.samples());
+    char level[64];
+    std::snprintf(level, sizeof(level), "%.1f dB", found.peak_over_median_db);
+    if (!found.found) {
+        log(LogLevel::kWarning, std::string("no common time origin: the calibration burst was "
+                                            "not heard (best correlation ") +
+                                    level + " over the median, " +
+                                    std::to_string(static_cast<int>(burst::kMinPeakOverMedianDb)) +
+                                    " needed)");
+        set_origin(OriginState::kAbsent);
+        return;
+    }
+    const auto rx_at = static_cast<std::int64_t>(capture.start() + found.offset);
+    const std::int64_t value = static_cast<std::int64_t>(*sent_at) - rx_at;
+    note_shortfall_baseline();
+    set_origin(OriginState::kValid, value);
+    log(LogLevel::kInfo, "common time origin from the calibration burst (" + std::string(level) +
+                             " over the median): transmit position = receive position " +
+                             (value < 0 ? "- " : "+ ") + std::to_string(std::llabs(value)));
+}
+
 RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout) {
     if (!rx_path_) {
         throw std::logic_error("RX stream not open");
     }
+    poll_shortfalls();
     return rx_path_->read(dst, max_samples, rx_.format, timeout);
 }
 
@@ -370,10 +776,53 @@ std::size_t Pair::write(const void* src, std::size_t samples, bool end_of_burst,
     if (!tx_path_) {
         throw std::logic_error("TX stream not open");
     }
+    const std::lock_guard<std::mutex> lock(write_mutex_);
     return tx_path_->write(src, samples, tx_.format, end_of_burst, timeout);
 }
 
+TimedWrite Pair::write_at(const void* src, std::size_t samples, bool end_of_burst,
+                          std::int64_t ticks, std::chrono::microseconds timeout) {
+    if (!tx_path_) {
+        throw std::logic_error("TX stream not open");
+    }
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    std::int64_t position = 0;
+    {
+        std::unique_lock<std::mutex> lock(time_mutex_);
+        time_changed_.wait_until(lock, deadline,
+                                 [&] { return origin_state_ != OriginState::kPending; });
+        if (origin_state_ == OriginState::kPending) {
+            return TimedWrite{0, TimedStatus::kTimeout};
+        }
+        if (origin_state_ == OriginState::kAbsent) {
+            return TimedWrite{0, TimedStatus::kNoTime};
+        }
+        position = ticks - time_offset_.load() + tx_of_rx_;
+    }
+    const std::lock_guard<std::mutex> lock(write_mutex_);
+    if (position < 0) {
+        time_error_ = true;
+        return TimedWrite{0, TimedStatus::kLate};
+    }
+    const auto left = std::chrono::duration_cast<std::chrono::microseconds>(std::max(
+        deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero()));
+    const TxWrite result = tx_path_->write_at(src, samples, tx_.format, end_of_burst,
+                                              static_cast<std::uint64_t>(position), left);
+    if (result.late) {
+        return TimedWrite{0, TimedStatus::kLate};
+    }
+    return TimedWrite{result.taken, result.taken == 0 ? TimedStatus::kTimeout : TimedStatus::kOk};
+}
+
 bool Pair::take_tx_underflow() { return tx_path_ ? tx_path_->take_underflow() : false; }
+
+bool Pair::take_time_error() {
+    poll_shortfalls();
+    if (time_error_.exchange(false)) {
+        return true;
+    }
+    return tx_path_ ? tx_path_->take_late() : false;
+}
 
 std::uint64_t Pair::rx_received() const { return rx_path_ ? rx_path_->received() : 0; }
 std::uint64_t Pair::rx_dropped() const { return rx_path_ ? rx_path_->dropped() : 0; }
