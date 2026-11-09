@@ -38,8 +38,53 @@ struct Options {
     double seconds = 5;
     // Empty: leave the boards' CLKOUT as they are.
     std::string clkout;
+    std::string tx_format = SOAPY_SDR_CF32;
     bool help = false;
 };
+
+std::size_t format_bytes(const std::string& format) {
+    if (format == SOAPY_SDR_CS8) {
+        return 2;
+    }
+    if (format == SOAPY_SDR_CS16) {
+        return 4;
+    }
+    if (format == SOAPY_SDR_CF32) {
+        return 8;
+    }
+    if (format == SOAPY_SDR_CF64) {
+        return 16;
+    }
+    throw std::invalid_argument("--tx-format must be CS8, CS16, CF32 or CF64, not " + format);
+}
+
+// Writes `samples` into `out` in `format`, full scale 1.0 for the floats
+// and the type's maximum for the integers.
+void pack(const std::vector<std::complex<float>>& samples, const std::string& format,
+          std::vector<std::uint8_t>& out) {
+    out.resize(samples.size() * format_bytes(format));
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const float re = samples[i].real();
+        const float im = samples[i].imag();
+        if (format == SOAPY_SDR_CS8) {
+            auto* p = reinterpret_cast<std::int8_t*>(out.data()) + i * 2;
+            p[0] = static_cast<std::int8_t>(std::lround(re * 127.0f));
+            p[1] = static_cast<std::int8_t>(std::lround(im * 127.0f));
+        } else if (format == SOAPY_SDR_CS16) {
+            auto* p = reinterpret_cast<std::int16_t*>(out.data()) + i * 2;
+            p[0] = static_cast<std::int16_t>(std::lround(re * 32767.0f));
+            p[1] = static_cast<std::int16_t>(std::lround(im * 32767.0f));
+        } else if (format == SOAPY_SDR_CF32) {
+            auto* p = reinterpret_cast<float*>(out.data()) + i * 2;
+            p[0] = re;
+            p[1] = im;
+        } else {
+            auto* p = reinterpret_cast<double*>(out.data()) + i * 2;
+            p[0] = re;
+            p[1] = im;
+        }
+    }
+}
 
 const char* const kUsage =
     "usage: hackrfduplex-check [options]\n"
@@ -58,6 +103,7 @@ const char* const kUsage =
     "  --seconds S       how long to run (default 5)\n"
     "  --clkout WHICH    off, rx or tx: which board drives 10 MHz to the other's CLKIN\n"
     "                    (default: leave as is)\n"
+    "  --tx-format F     CS8, CS16, CF32 or CF64 for the transmit stream (default CF32)\n"
     "  --help\n";
 
 void parse(int argc, char** argv, Options& options) {
@@ -91,6 +137,9 @@ void parse(int argc, char** argv, Options& options) {
             options.seconds = std::stod(value());
         } else if (arg == "--clkout") {
             options.clkout = value();
+        } else if (arg == "--tx-format") {
+            options.tx_format = value();
+            format_bytes(options.tx_format);
         } else {
             throw std::invalid_argument("unknown option " + arg);
         }
@@ -387,14 +436,14 @@ int main(int argc, char** argv) {
                       << device->getGain(SOAPY_SDR_TX, 0) << " dB (VGA "
                       << device->getGain(SOAPY_SDR_TX, 0, "VGA") << ", AMP "
                       << device->getGain(SOAPY_SDR_TX, 0, "AMP") << "), tone at "
-                      << options.tx_tone_hz / 1e3 << " kHz\n";
+                      << options.tx_tone_hz / 1e3 << " kHz, " << options.tx_format << "\n";
         } else {
             std::cout << "tx: off (give --tx-tone to transmit)\n";
         }
 
         SoapySDR::Stream* rx = device->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32);
         SoapySDR::Stream* tx =
-            transmit ? device->setupStream(SOAPY_SDR_TX, SOAPY_SDR_CF32) : nullptr;
+            transmit ? device->setupStream(SOAPY_SDR_TX, options.tx_format) : nullptr;
         const std::size_t rx_mtu = device->getStreamMTU(rx);
 
         const double expected_offset =
@@ -413,6 +462,8 @@ int main(int argc, char** argv) {
             tx_thread = std::thread([&] {
                 const std::size_t mtu = device->getStreamMTU(tx);
                 std::vector<std::complex<float>> buffer(mtu);
+                std::vector<std::uint8_t> packed;
+                const std::size_t stride = format_bytes(options.tx_format);
                 const double step = 2.0 * std::numbers::pi * options.tx_tone_hz / options.rate_hz;
                 double phase = 0;
                 while (!stop) {
@@ -423,10 +474,11 @@ int main(int argc, char** argv) {
                             phase -= 2.0 * std::numbers::pi;
                         }
                     }
+                    pack(buffer, options.tx_format, packed);
                     std::size_t sent = 0;
                     while (sent < buffer.size() && !stop) {
                         int flags = 0;
-                        const void* buffs[] = {buffer.data() + sent};
+                        const void* buffs[] = {packed.data() + sent * stride};
                         const int n =
                             device->writeStream(tx, buffs, buffer.size() - sent, flags, 0, 200000);
                         if (n == SOAPY_SDR_TIMEOUT) {
