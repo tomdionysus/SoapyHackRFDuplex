@@ -99,17 +99,14 @@ the end of their serials:
 SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 ```
 
-| Device argument | Meaning |
-|---|---|
-| `rx_serial` | suffix of the serial of the board that receives |
-| `tx_serial` | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
-
-| Stream argument | Default | Meaning |
+| Key | Default | Meaning |
 |---|---|---|
+| **Device arguments** | | |
+| `rx_serial` | the lower of two serials | suffix of the serial of the board that receives |
+| `tx_serial` | the higher of two serials | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
+| **Stream arguments** | | |
 | `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
-
-| Setting | Default | Meaning |
-|---|---|---|
+| **Settings** | | |
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
 
 Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
