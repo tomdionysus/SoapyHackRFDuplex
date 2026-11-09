@@ -64,6 +64,21 @@ struct SoapyRig {
 
 }  // namespace
 
+TEST_CASE("an unknown setting written is logged and otherwise ignored", "[soapy]") {
+    // Applications pass whole device argument strings around and write
+    // vendor settings this device does not have.
+    SoapyRig rig;
+    CHECK_NOTHROW(rig.device->writeSetting("biastee", "true"));
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "biastee"));
+    CHECK_FALSE(rig.tx->bias);
+    CHECK(rig.device->readSetting("bias_tx") == "false");
+}
+
+TEST_CASE("an unknown setting reads as an empty string", "[soapy]") {
+    SoapyRig rig;
+    CHECK(rig.device->readSetting("no_such_setting").empty());
+}
+
 TEST_CASE("the known settings still work through the device", "[soapy]") {
     SoapyRig rig;
     rig.device->writeSetting("bias_tx", "true");

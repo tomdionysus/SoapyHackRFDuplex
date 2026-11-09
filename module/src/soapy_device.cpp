@@ -513,7 +513,9 @@ void SoapyDevice::writeSetting(const std::string& key, const std::string& value)
         pair_->set_clock_out(parse_clock_out(value));
         return;
     }
-    throw std::invalid_argument("writeSetting: unknown setting " + key);
+    // Applications write vendor settings blindly; one this device lacks is
+    // not the caller's error.
+    soapy_log(LogLevel::kWarning, "writeSetting: no setting " + key + ", ignored");
 }
 
 std::string SoapyDevice::readSetting(const std::string& key) const {
@@ -523,7 +525,7 @@ std::string SoapyDevice::readSetting(const std::string& key) const {
     if (key == "clkout") {
         return clock_out_name(pair_->clock_out());
     }
-    throw std::invalid_argument("readSetting: unknown setting " + key);
+    return {};
 }
 
 }  // namespace hackrfduplex

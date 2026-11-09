@@ -111,6 +111,12 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
 | `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run |
 
+Unknown keys are tolerated, since some applications pass their whole
+device argument string to every stream and write vendor settings
+blindly: stream setup ignores a key it does not know, writing an unknown
+setting logs a warning and does nothing, and reading one returns an
+empty string.
+
 Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
 62 dB in 2 dB steps) and `AMP` (0 or 14 dB); TX `VGA` (0 to 47 dB) and
 `AMP` (0 or 14 dB). Setting one overall gain spreads it over the stages
@@ -160,8 +166,7 @@ SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
    timestamps and timed transmit share that origin, late transmissions
    are reported, and the shortest transmit lead the pair can honour is
    measured.
-4. An `lo_locked` sensor, and unknown settings ignored rather than
-   refused.
+4. An `lo_locked` sensor.
 
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.

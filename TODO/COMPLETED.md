@@ -3,6 +3,16 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: settings applications write blindly
+
+`writeSetting` with an unknown key logs a warning and returns;
+`readSetting` with one returns an empty string. The README says so
+under the settings table. To test it, `SoapyDevice` moved into a static
+library of its own with a constructor over a ready-made pair, so the
+SoapySDR surface is now tested over fake boards (three new test cases,
+54 in all). `SoapySDRUtil --probe` on the pair is unchanged apart from
+the version string.
+
 ## 2026-11-09: reference switches at stream start
 
 The free-running tone that went missing turned out to be a firmware

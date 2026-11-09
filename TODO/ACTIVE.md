@@ -174,16 +174,6 @@ is right and the note is corrected.
 
 ## Items
 
-### 1. Settings applications write blindly
-
-- [ ] Some applications pass their whole device argument string as stream
-  arguments and write vendor settings the device does not have. Stream
-  setup already ignores unknown keys. `writeSetting` with an unknown key
-  logs a warning and returns; `readSetting` with an unknown key returns
-  an empty string, as the SoapySDR defaults do. The README's settings
-  table says so. Acceptance: tests for both; `SoapySDRUtil --probe`
-  unchanged.
-
 ### 2. LO lock sensor
 
 - [ ] A `lo_locked` channel sensor per direction: `listSensors`,
