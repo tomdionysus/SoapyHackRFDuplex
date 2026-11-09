@@ -3,6 +3,22 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: clock and time sources through the SoapySDR API
+
+Item 8. `listClockSources`, `setClockSource`, `getClockSource` map onto
+`clkout` (`internal` for off, `rx`, `tx`) and `listTimeSources`,
+`setTimeSource`, `getTimeSource` onto `time_origin` (`burst`, `trigger`,
+`none`); both settings stay. Calibration is refused, with a log line
+naming `clkout`, unless the boards share a reference: each board's CLKIN
+and CLKOUT are read while it is idle at its activation (the clock chip,
+and on the older boards the CLKIN status with it, reads as zero while a
+board streams), and CLKOUT changes through the pair are followed.
+Tests: the two mappings, the refusal with each board on its crystal and
+with a fed board whose source is not driven, each board driving the
+other, and CLKOUT switched off under running streams; the time-test
+rigs now put both boards on CLKIN, as the bench is. 124 test cases. The
+probe listing the sources waits for the boards, with item 5's.
+
 ## 2026-11-09: calibration restores the transmit frequency the pair holds
 
 Item 3. When the transmitter was retuned to the receive frequency for

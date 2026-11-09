@@ -128,6 +128,16 @@ public:
     long long getHardwareTime(const std::string& what) const override;
     void setHardwareTime(const long long timeNs, const std::string& what) override;
 
+    // Clock and time sources: the clkout and time_origin settings by the
+    // names SoapySDR gives them. Clock sources: internal (clkout off), rx,
+    // tx. Time sources: burst, trigger, none.
+    std::vector<std::string> listClockSources() const override;
+    void setClockSource(const std::string& source) override;
+    std::string getClockSource() const override;
+    std::vector<std::string> listTimeSources() const override;
+    void setTimeSource(const std::string& source) override;
+    std::string getTimeSource() const override;
+
     // Sensors
     using SoapySDR::Device::getSensorInfo;
     using SoapySDR::Device::listSensors;

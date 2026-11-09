@@ -755,6 +755,35 @@ void SoapyDevice::setHardwareTime(const long long timeNs, const std::string& wha
     pair_->set_time_ticks(SoapySDR::timeNsToTicks(timeNs, rate));
 }
 
+// Clock and time sources
+
+std::vector<std::string> SoapyDevice::listClockSources() const { return {"internal", "rx", "tx"}; }
+
+void SoapyDevice::setClockSource(const std::string& source) {
+    if (source == "internal") {
+        pair_->set_clock_out(ClockOut::kOff);
+    } else if (source == "rx" || source == "tx") {
+        pair_->set_clock_out(parse_clock_out(source));
+    } else {
+        refuse("setClockSource", "the clock sources are internal, rx and tx, not " + source);
+    }
+}
+
+std::string SoapyDevice::getClockSource() const {
+    const ClockOut which = pair_->clock_out();
+    return which == ClockOut::kOff ? "internal" : clock_out_name(which);
+}
+
+std::vector<std::string> SoapyDevice::listTimeSources() const {
+    return {"burst", "trigger", "none"};
+}
+
+void SoapyDevice::setTimeSource(const std::string& source) {
+    pair_->set_time_origin(parse_time_origin(source));
+}
+
+std::string SoapyDevice::getTimeSource() const { return time_origin_name(pair_->time_origin()); }
+
 // Sensors
 
 std::vector<std::string> SoapyDevice::listSensors(const int direction, const size_t channel) const {

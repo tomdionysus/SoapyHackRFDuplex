@@ -155,6 +155,9 @@ struct TimedRig : SoapyRig {
     explicit TimedRig(const SoapySDR::Kwargs& args = {}) : SoapyRig(args) {
         rx->transfer_bytes_value = 2048;
         tx->transfer_bytes_value = 2048;
+        // The bench: both boards on one reference.
+        rx->external_clock = true;
+        tx->external_clock = true;
         SoapySDR::Device& d = *device;
         d.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
         d.setSampleRate(SOAPY_SDR_TX, 0, 8e6);
@@ -916,4 +919,40 @@ TEST_CASE("receive burst flags must come with their count", "[soapy][timed-rx]")
     CHECK(d.activateStream(rig.stream, 0, 0, 100) == SOAPY_SDR_NOT_SUPPORTED);
     CHECK(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME, 0, 100) == SOAPY_SDR_NOT_SUPPORTED);
     CHECK_FALSE(rig.rx->rx_streaming);
+}
+
+TEST_CASE("clock sources are the clkout setting by another name", "[soapy][sources]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK(d.listClockSources() == std::vector<std::string>{"internal", "rx", "tx"});
+    CHECK(d.getClockSource() == "internal");
+    d.setClockSource("rx");
+    CHECK(rig.rx->clock_out);
+    CHECK_FALSE(rig.tx->clock_out);
+    CHECK(d.getClockSource() == "rx");
+    CHECK(d.readSetting("clkout") == "rx");
+    d.setClockSource("tx");
+    CHECK_FALSE(rig.rx->clock_out);
+    CHECK(rig.tx->clock_out);
+    CHECK(d.getClockSource() == "tx");
+    d.setClockSource("internal");
+    CHECK_FALSE(rig.rx->clock_out);
+    CHECK_FALSE(rig.tx->clock_out);
+    CHECK(d.readSetting("clkout") == "off");
+    CHECK_THROWS_AS(d.setClockSource("external"), std::invalid_argument);
+    CHECK_THROWS_AS(d.setClockSource("off"), std::invalid_argument);
+}
+
+TEST_CASE("time sources are the time_origin setting by another name", "[soapy][sources]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK(d.listTimeSources() == std::vector<std::string>{"burst", "trigger", "none"});
+    CHECK(d.getTimeSource() == "burst");
+    d.setTimeSource("trigger");
+    CHECK(d.getTimeSource() == "trigger");
+    CHECK(d.readSetting("time_origin") == "trigger");
+    d.writeSetting("time_origin", "none");
+    CHECK(d.getTimeSource() == "none");
+    CHECK_THROWS_AS(d.setTimeSource("pps"), std::invalid_argument);
+    CHECK(d.getTimeSource() == "none");
 }

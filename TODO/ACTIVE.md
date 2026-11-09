@@ -260,18 +260,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   keeps the origin; `hackrfduplex-check --timed-window US` built. The run
   on the target remains, once the lead sweep frees the boards.
 
-### 8. Clock and time sources through the SoapySDR API
-
-- [ ] `listClockSources`, `setClockSource`,
-  `getClockSource`, `listTimeSources`, `setTimeSource` and
-  `getTimeSource` mapped onto `clkout` and `time_origin`, which stay as
-  settings. Before calibrating, check that the boards share a reference
-  (the fed board reports CLKIN) and refuse with a log line naming the
-  `clkout` setting rather than send a burst that cannot be heard:
-  free-running, the crystals turn the chips over within the burst.
-  Acceptance: tests for the mapping and the refusal; the probe listing
-  them.
-
 ### 9. Device-level sensors
 
 - [ ] Beside the per-channel `lo_locked`: `ref_locked` (the boards share

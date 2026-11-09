@@ -279,10 +279,12 @@ TEST_CASE("the LO reads unlocked only while a reference switch is being handled"
     rig.pair.activate(Direction::kRx);
     rig.rx.on_call = nullptr;
 
-    // From the first start until the second, the switch is being handled.
-    CHECK(seen == std::vector<std::string>{"start_rx  unlocked", "set_frequency 893300000 unlocked",
-                                           "set_frequency 892300000 unlocked", "stop  unlocked",
-                                           "start_rx  unlocked"});
+    // The board's reference is read while idle, before anything is known to
+    // have switched; from the first start until the second, the switch is
+    // being handled.
+    CHECK(seen == std::vector<std::string>{
+                      "info  locked", "start_rx  unlocked", "set_frequency 893300000 unlocked",
+                      "set_frequency 892300000 unlocked", "stop  unlocked", "start_rx  unlocked"});
     CHECK(rig.pair.lo_locked(Direction::kRx));
     CHECK(rig.pair.lo_locked(Direction::kTx));
 }

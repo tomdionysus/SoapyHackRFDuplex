@@ -138,7 +138,8 @@ channel, 0, each way).
 | DC offset, I/Q balance, frequency correction | none: the neutral value (off, zero) accepted, any other refused (item 12 adds DC and I/Q on receive as a build option) |
 | hardware time | the receive count plus an offset; no named time sources |
 | `setCommandTime` | refused: settings act at once |
-| clock and time sources | SoapySDR's: none listed (item 8 maps them onto `clkout` and `time_origin`) |
+| clock sources | `internal`, `rx`, `tx`: the `clkout` setting (`internal` is off) |
+| time sources | `burst`, `trigger`, `none`: the `time_origin` setting |
 | master and reference clock rates | refused |
 | sensors | `lo_locked` per channel (item 9 adds device sensors) |
 | settings | `bias_tx`, `clkout`, `time_origin`, `calibrate`, `tx_underrun_limit`; none per channel |
@@ -192,7 +193,14 @@ two ways:
   since the firmware skips a tune to the frequency it last applied. The
   burst needs both directions at one sample rate and the boards on one
   reference: free-running, the crystals' offset turns the chips over
-  within the burst.
+  within the burst. So it is not sent unless the boards share one: the
+  fed board started on CLKIN while the other drives CLKOUT, or both
+  started on CLKIN, taken to be one source. Each board's CLKIN and
+  CLKOUT are read while it is idle at its activation, because the clock
+  chip reads as zero while a board streams (on the older boards even the
+  CLKIN status is a clock-chip register), and the firmware chooses its
+  reference at the start anyway; CLKOUT changes through the pair are
+  followed. Refused, the log says why and names `clkout`.
 - `trigger`: the first stream's activation only arms it; the second
   starts the transmitting board in hardware sync mode and then the
   receiving board, whose start drives its trigger output into the

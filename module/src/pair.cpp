@@ -315,6 +315,8 @@ void Pair::set_clock_out(ClockOut which) {
     } else if (which == ClockOut::kTx) {
         tx_.board->set_clock_out(true);
     }
+    rx_.drives_clkout = which == ClockOut::kRx;
+    tx_.drives_clkout = which == ClockOut::kTx;
     log(LogLevel::kInfo, std::string("clock out: ") + clock_out_name(which));
 }
 
@@ -404,6 +406,13 @@ void Pair::start_stream(Direction direction) {
     s.running = true;
 }
 
+void Pair::note_reference(Direction direction) {
+    Side& s = side(direction);
+    const BoardInfo info = s.board->info();
+    s.on_clkin = info.external_clock;
+    s.drives_clkout = info.clock_out;
+}
+
 bool Pair::settle_reference(Direction direction) {
     // The firmware chooses its clock source (CLKIN or its crystal) at every
     // stream start, under RF synthesisers tuned on whatever reference came
@@ -458,6 +467,7 @@ void Pair::activate(Direction direction) {
     if (mode == TimeOrigin::kTrigger && (!other_active || other_armed)) {
         {
             const std::lock_guard<std::mutex> lock(s.mutex);
+            note_reference(direction);
             settle_reference(direction);
             s.lo_locked = true;
             if (!other_active) {
@@ -476,6 +486,7 @@ void Pair::activate(Direction direction) {
 
     {
         const std::lock_guard<std::mutex> lock(s.mutex);
+        note_reference(direction);
         settle_reference(direction);
         start_stream(direction);
         s.lo_locked = true;
@@ -774,6 +785,27 @@ void Pair::calibrate_locked() {
             "sample rate");
         set_origin(OriginState::kAbsent);
         return;
+    }
+    // Free-running, the crystals' offset turns the chips over within the
+    // burst, so it cannot be heard: say why rather than send it.
+    {
+        const std::scoped_lock lock(rx_.mutex, tx_.mutex);
+        const bool shared = (rx_.on_clkin && tx_.on_clkin) || (tx_.on_clkin && rx_.drives_clkout) ||
+                            (rx_.on_clkin && tx_.drives_clkout);
+        if (!shared) {
+            const auto describe = [](const Side& s) {
+                return std::string(s.on_clkin ? "on CLKIN" : "on its own crystal") +
+                       (s.drives_clkout ? ", driving CLKOUT" : "");
+            };
+            log(LogLevel::kWarning,
+                "no common time origin: the boards do not share a reference (RX " + describe(rx_) +
+                    ", TX " + describe(tx_) +
+                    "), so the calibration burst would not be heard; cable one board's CLKOUT "
+                    "to the other's CLKIN and set clkout to that board, rx or tx, before the "
+                    "streams start");
+            set_origin(OriginState::kAbsent);
+            return;
+        }
     }
 
     // The burst must be heard, so the transmitter goes to the receive

@@ -30,6 +30,9 @@ struct Rig {
     Rig() {
         rx.transfer_bytes_value = kTransferSamples * 2;
         tx.transfer_bytes_value = kTransferSamples * 2;
+        // The bench: both boards on one reference.
+        rx.external_clock = true;
+        tx.external_clock = true;
     }
     std::unique_ptr<FakeBoard> rx_owner =
         std::make_unique<FakeBoard>("00000000000000000000000000000001");
@@ -495,4 +498,62 @@ TEST_CASE("the transmitter sends what was written, the burst and zeros, nothing 
     REQUIRE(heard.size() <= expected.size());
     CHECK(heard.size() >= expected.size() - cut.size());
     CHECK(h == heard.end());
+}
+
+TEST_CASE("the burst is not sent unless the boards share a reference", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    SECTION("each on its own crystal") {
+        rig.rx.external_clock = false;
+        rig.tx.external_clock = false;
+    }
+    SECTION("the TX board fed, but nothing drives its CLKIN's source") {
+        rig.rx.external_clock = false;
+    }
+    rig.pair.activate(Direction::kRx);
+    const std::size_t before = rig.tx.calls.size();
+    rig.pair.activate(Direction::kTx);
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("do not share a reference"));
+    CHECK(rig.logged("clkout"));
+    // Nothing timed was sent: no retune, and the transmitter only started.
+    CHECK(frequency_calls(rig.tx, before).empty());
+    air.stop();
+}
+
+TEST_CASE("a board fed from the other's CLKOUT shares its reference", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    SECTION("RX drives the TX board") {
+        rig.rx.external_clock = false;
+        rig.pair.set_clock_out(ClockOut::kRx);
+    }
+    SECTION("TX drives the RX board") {
+        rig.tx.external_clock = false;
+        rig.pair.set_clock_out(ClockOut::kTx);
+    }
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    CHECK(*rig.pair.tx_of_rx() == -300);
+    air.stop();
+}
+
+TEST_CASE("CLKOUT switched off under running streams leaves no reference to share",
+          "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.rx.external_clock = false;
+    rig.pair.set_clock_out(ClockOut::kRx);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    rig.pair.set_clock_out(ClockOut::kOff);
+    rig.pair.calibrate();
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("do not share a reference"));
+    air.stop();
 }

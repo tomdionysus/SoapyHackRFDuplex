@@ -215,6 +215,12 @@ private:
         // Shortfalls already accounted for since the board started; under
         // poll_mutex_.
         std::uint32_t shortfalls_seen = 0;
+        // Read while idle at each activation, since the clock chip reads as
+        // zero while a board streams: whether the board found a clock on
+        // CLKIN, which it then runs from, and whether it drives CLKOUT
+        // (kept up to date by set_clock_out).
+        bool on_clkin = false;
+        bool drives_clkout = false;
     };
 
     enum class OriginState { kPending, kValid, kAbsent };
@@ -228,6 +234,8 @@ private:
     void deactivate_locked(Direction direction);
     // The board's stream started, with the path reset. Side mutex held.
     void start_stream(Direction direction);
+    // Notes the idle board's CLKIN and CLKOUT. Side mutex held.
+    void note_reference(Direction direction);
     // When the next start moves the board to another reference: starts it,
     // retunes on the new reference and stops it. Side mutex held.
     bool settle_reference(Direction direction);

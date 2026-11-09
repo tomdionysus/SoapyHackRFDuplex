@@ -125,8 +125,8 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
 | **Settings** | | |
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
-| `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run |
-| `time_origin` | `burst` | how the two streams get one time when both have started: `burst` sends a short calibration burst on the receive frequency, `trigger` starts both boards on one edge through a jumper from the RX board's P28 pin 15 to the TX board's P28 pin 16, `none` gives no shared time; takes effect when the streams next start |
+| `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run; also the SoapySDR clock source, `internal` for off |
+| `time_origin` | `burst` | how the two streams get one time when both have started: `burst` sends a short calibration burst on the receive frequency, `trigger` starts both boards on one edge through a jumper from the RX board's P28 pin 15 to the TX board's P28 pin 16, `none` gives no shared time; takes effect when the streams next start; also the SoapySDR time source |
 | `calibrate` | | write any value to send the calibration burst again now; both streams must be running |
 | `tx_underrun_limit` | 131072 (one transfer) | samples: the transmitting board stops by itself once it goes this long without data in one stretch, so it cannot transmit on after its host dies; 0 turns it off; set at every transmit start and cleared after a clean stop |
 
