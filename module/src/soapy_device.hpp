@@ -19,6 +19,9 @@ public:
     // Opens the boards `args` select (selection.hpp). Throws
     // std::runtime_error when they cannot be chosen or opened.
     explicit SoapyDevice(const SoapySDR::Kwargs& args);
+    // Over a pair already made, which is how the tests use it; `args` are
+    // the device arguments beyond the board selection.
+    SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& args);
     ~SoapyDevice() override;
 
     // Identification

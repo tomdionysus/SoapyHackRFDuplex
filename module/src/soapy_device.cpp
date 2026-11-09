@@ -51,12 +51,21 @@ std::chrono::microseconds timeout_of(long timeout_us) {
     return std::chrono::microseconds(timeout_us < 0 ? 0 : timeout_us);
 }
 
+std::unique_ptr<Pair> open_pair(const SoapySDR::Kwargs& args) {
+    const Selection selection = select_pair(args, list_boards());
+    return std::make_unique<Pair>(std::make_unique<HackrfBoard>(selection.rx),
+                                  std::make_unique<HackrfBoard>(selection.tx), &soapy_log);
+}
+
 }  // namespace
 
-SoapyDevice::SoapyDevice(const SoapySDR::Kwargs& args) {
-    const Selection selection = select_pair(args, list_boards());
-    pair_ = std::make_unique<Pair>(std::make_unique<HackrfBoard>(selection.rx),
-                                   std::make_unique<HackrfBoard>(selection.tx), &soapy_log);
+SoapyDevice::SoapyDevice(const SoapySDR::Kwargs& args) : SoapyDevice(open_pair(args), args) {}
+
+SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs&)
+    : pair_(std::move(pair)) {
+    if (!pair_) {
+        throw std::invalid_argument("a device needs a pair");
+    }
 }
 
 SoapyDevice::~SoapyDevice() = default;

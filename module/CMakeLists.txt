@@ -25,13 +25,19 @@ add_library(hackrfduplex_hackrf STATIC src/hackrf_board.cpp)
 target_link_libraries(hackrfduplex_hackrf PUBLIC hackrfduplex_core libhackrf::libhackrf)
 
 if(HACKRFDUPLEX_BUILD_MODULE)
+    # The SoapySDR translation, apart from the registry entry so the tests
+    # can drive it over fake boards.
+    add_library(hackrfduplex_soapy STATIC src/soapy_device.cpp)
+    # SoapySDR's headers are not held to this tree's warning flags.
+    target_include_directories(hackrfduplex_soapy SYSTEM PUBLIC ${SoapySDR_INCLUDE_DIRS})
+    target_link_libraries(hackrfduplex_soapy PUBLIC hackrfduplex_hackrf ${SoapySDR_LIBRARIES})
+
     # SoapySDR's helper makes the MODULE library and installs it into the
     # SoapySDR modules directory under the install prefix.
     SOAPY_SDR_MODULE_UTIL(
         TARGET HackRFDuplexSupport
-        SOURCES src/soapy_device.cpp src/registration.cpp
-        LIBRARIES hackrfduplex_hackrf)
-    # SoapySDR's headers are not held to this tree's warning flags.
+        SOURCES src/registration.cpp
+        LIBRARIES hackrfduplex_soapy)
     target_include_directories(HackRFDuplexSupport SYSTEM PRIVATE ${SoapySDR_INCLUDE_DIRS})
 endif()
 
@@ -47,5 +53,9 @@ if(HACKRFDUPLEX_BUILD_TESTS)
         tests/pair_test.cpp
         tests/selection_test.cpp)
     target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_core Catch2::Catch2WithMain)
+    if(HACKRFDUPLEX_BUILD_MODULE)
+        target_sources(hackrfduplex_tests PRIVATE tests/soapy_device_test.cpp)
+        target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_soapy)
+    endif()
     catch_discover_tests(hackrfduplex_tests)
 endif()
