@@ -46,16 +46,17 @@ item is removed from here and recorded at the top of
 
 ## Items
 
-### 1. Losing the reference
+### 1. The free-running tone
 
-- [ ] `clkout=off` with the fed board powered leaves it without a clock
-  ([docs/design.md](../docs/design.md), Measured). Find out what the
-  firmware does when CLKIN goes away (reset needed, or a call that
-  re-selects the crystal), then make `clkout` safe: either refuse to turn
-  off a source that is feeding a board in the pair, or reset the fed
-  board after. Acceptance: after `clkout=off`, a tone from the fed board
-  is received within its crystal's tolerance of where it was sent, with
-  Tom's go-ahead for the run.
+- [ ] Settled: the firmware falls back to the board's crystal at each
+  stream start when CLKIN goes quiet, and the fed board receives
+  normally on it. Open: a tone sent from the fed board on its own crystal
+  was not found at +-4 MHz. Next, with Tom's go-ahead: send it again with
+  `clkout=off` and read the whole-band spectrum for where it lands.
+  Acceptance: the tone found and its offset recorded as the crystal's
+  error, or a cause found if it is not there. Then decide whether
+  `clkout` should refuse to change while a stream is active, since the
+  firmware only re-chooses its source at stream start.
 
 ### 3. Synchronised start
 

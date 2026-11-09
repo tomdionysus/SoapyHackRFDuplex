@@ -183,11 +183,17 @@ cable radiates the reference. A shorter cable took it from -64.3 to
 comes mostly from the boards' own references. A centre frequency away
 from multiples of 10 MHz avoids it entirely.
 
-Switching `clkout` off while the fed board is powered leaves that board
-without a clock rather than on its own crystal: a tone sent then was not
-found anywhere in the band. The firmware chooses its clock source when
-the board initialises, so a fed board needs the reference present from
-power-up or a reset after it goes away.
+The firmware re-chooses its clock source every time a stream starts
+(`activate_best_clock_source`, called from `transceiver_startup`): the
+CLKIN reference if the Si5351 sees one, otherwise the board's own
+crystal. Checked on the fed board: with `clkout` off it moved its PLLs
+from source B (CLKIN) to source A (crystal) and received at the full rate.
+So `clkout` may be switched while both boards are idle, and takes effect
+at each board's next stream start; switching it under a running stream
+is not handled by the firmware until that stream restarts.
+
+A tone sent from the fed board running on its own crystal was not found
+within the band searched; why is still open (TODO/ACTIVE.md item 1).
 
 ## Failure handling
 
