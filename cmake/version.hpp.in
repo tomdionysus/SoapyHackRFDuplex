@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+namespace hackrfduplex {
+
+inline constexpr const char* kVersion = "@HACKRFDUPLEX_VERSION@";
+
+}  // namespace hackrfduplex

@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <span>
+#include <stdexcept>
+#include <string>
+
+namespace hackrfduplex {
+
+// A libhackrf call that failed, with hackrf_error_name's text.
+class BoardError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+// A board seen on the bus, without opening it.
+struct ListedBoard {
+    std::string serial;  // 32 hex digits as libhackrf prints them
+    std::string name;    // from the USB product id
+};
+
+struct BoardInfo {
+    std::string serial;
+    std::string board;     // hackrf_board_id_name
+    std::string revision;  // hackrf_board_rev_name, or "unknown" on old firmware
+    std::string firmware;  // version string
+    std::string usb_api;   // "1.08"
+    // The firmware reports a clock on CLKIN, so the board runs from it
+    // rather than its own crystal. Firmware before USB API 1.06 cannot
+    // say, and reports false.
+    bool external_clock = false;
+};
+
+// Called on the board's transfer thread with each received transfer's
+// bytes: interleaved int8 I/Q.
+using RxHandler = std::function<void(std::span<const std::uint8_t>)>;
+// Called on the board's transfer thread to fill a whole transfer.
+using TxHandler = std::function<void(std::span<std::uint8_t>)>;
+
+// One HackRF, behind an interface so the pair is tested against fakes.
+// Every method but the handlers runs on the caller's thread; the
+// settings take effect at once and persist across start and stop, except
+// the bias tee, which the firmware drops whenever the board goes idle.
+// Failures throw BoardError.
+class Board {
+public:
+    virtual ~Board() = default;
+
+    virtual std::string serial() const = 0;
+    virtual BoardInfo info() = 0;
+
+    virtual void set_frequency(std::uint64_t hz) = 0;
+    // Also resets the baseband filter to the firmware's default for the rate.
+    virtual void set_sample_rate(double hz) = 0;
+    virtual void set_bandwidth(std::uint32_t hz) = 0;
+    virtual void set_amp(bool on) = 0;
+    virtual void set_lna_gain(unsigned db) = 0;
+    virtual void set_vga_gain(unsigned db) = 0;
+    virtual void set_tx_vga_gain(unsigned db) = 0;
+    virtual void set_bias_tee(bool on) = 0;
+
+    // Bytes per transfer; every RX handler call carries at most this
+    // many and every TX call exactly this many.
+    virtual std::size_t transfer_bytes() const = 0;
+    virtual void start_rx(RxHandler handler) = 0;
+    virtual void start_tx(TxHandler handler) = 0;
+    // After it returns no handler runs again.
+    virtual void stop() = 0;
+    virtual bool streaming() = 0;
+};
+
+}  // namespace hackrfduplex
