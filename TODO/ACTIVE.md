@@ -328,7 +328,7 @@ and applications built on the pair. Items 10 to 22, in order:
   checked-in configuration, clean. A coverage report with the core at
   or near complete line coverage, gaps listed and justified. `tools/ci.sh`
   gains the tsan run and the coverage summary. A full review of the
-  diff since 0.1.0 (`/code-review`), findings fixed or recorded.
+  diff since 0.1.0, findings fixed or recorded.
   Acceptance: `tools/ci.sh` passing with all of it, and the coverage
   figure in COMPLETED.md.
 
