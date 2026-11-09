@@ -3,6 +3,28 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: sample rates below 2 Msps
+
+At 1.92 Msps both ways, 10 s: 1.918 Msps received (99.9%), 0 overflows,
+0 underflows, the tone at +0.0 Hz every second, -59.5 dBFS. The same at
+1.6 and 1.2 Msps.
+
+Stepping down, with `hackrfduplex-check --tx-rate` (new) holding the
+other direction at a rate it handles and each board tried in each role:
+
+- Receive is clean on both boards to 200 ksps, the tone at its offset
+  every second and no overflow; image rejection drops 2 to 6 dB from
+  its 8 Msps figure. The clock chip's divider ends near 195 ksps.
+- Transmit is clean at 1.1 and 1.08 Msps. At 1.05 Msps and below the
+  stream runs without an underflow but the older board puts out
+  nothing and the r10 only one of I and Q (the tone and its image at
+  equal level, found with the image report the check tool now prints).
+
+The two directions are advertised apart, which SoapySDR allows:
+0.2 to 20 Msps receive, 1.2 to 20 Msps transmit (a margin above the
+transmit failure), with 1.92 Msps listed for both. One new test case,
+59 in all. Figures in `docs/design.md`, Low sample rates.
+
 ## 2026-11-09: LO lock sensor
 
 An `lo_locked` sensor on each channel, a boolean, from `Pair::lo_locked`:

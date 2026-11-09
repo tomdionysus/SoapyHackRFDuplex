@@ -7,6 +7,7 @@
 #include <SoapySDR/Errors.hpp>
 #include <SoapySDR/Formats.hpp>
 #include <SoapySDR/Logger.hpp>
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <string>
@@ -111,6 +112,29 @@ TEST_CASE("lo_locked reads false while a reference switch is handled", "[soapy]"
     CHECK(during == std::vector<std::string>{"false", "true", "false", "true"});
     CHECK(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked") == "true");
     device.closeStream(tx);
+}
+
+TEST_CASE("each direction advertises the sample rates measured to work", "[soapy]") {
+    // Measured on two boards: receive is clean down to 200 ksps, the
+    // transmitter fails between 1.05 and 1.1 Msps.
+    SoapyRig rig;
+    const SoapySDR::RangeList rx = rig.device->getSampleRateRange(SOAPY_SDR_RX, 0);
+    const SoapySDR::RangeList tx = rig.device->getSampleRateRange(SOAPY_SDR_TX, 0);
+    REQUIRE(rx.size() == 1);
+    REQUIRE(tx.size() == 1);
+    CHECK(rx[0].minimum() == 200e3);
+    CHECK(rx[0].maximum() == 20e6);
+    CHECK(tx[0].minimum() == 1.2e6);
+    CHECK(tx[0].maximum() == 20e6);
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        const SoapySDR::Range range = rig.device->getSampleRateRange(direction, 0)[0];
+        const std::vector<double> rates = rig.device->listSampleRates(direction, 0);
+        CHECK(std::find(rates.begin(), rates.end(), 1.92e6) != rates.end());
+        for (const double rate : rates) {
+            CHECK(rate >= range.minimum());
+            CHECK(rate <= range.maximum());
+        }
+    }
 }
 
 TEST_CASE("the known settings still work through the device", "[soapy]") {

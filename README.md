@@ -121,9 +121,12 @@ Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
 62 dB in 2 dB steps) and `AMP` (0 or 14 dB); TX `VGA` (0 to 47 dB) and
 `AMP` (0 or 14 dB). Setting one overall gain spreads it over the stages
 and switches the amplifier on only when the others cannot reach it.
-Sample rates 2 to 20 Msps; the baseband filter follows the rate at three
-quarters of it until set, and a set bandwidth rounds down to the nearest
-of the MAX2837's filters.
+Sample rates 0.2 to 20 Msps for receive and 1.2 to 20 Msps for
+transmit, as measured ([docs/design.md](docs/design.md), Low sample
+rates); 8 Msps and up give the cleanest spectrum. The baseband filter
+follows the rate at three quarters of it until set, never narrower than
+1.75 MHz, and a set bandwidth rounds down to the nearest of the
+MAX2837's filters.
 
 Each channel has an `lo_locked` sensor. libhackrf cannot report
 synthesiser lock, so it is the module's own account: false only while a
@@ -164,8 +167,7 @@ The module does one thing: a pair of HackRF Ones as one full-duplex
 SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
 
 1. Debian packaging and a build-and-test script.
-2. Sample rates below 2 Msps, measured and advertised.
-3. A hardware time: both streams on one origin, chosen by a
+2. A hardware time: both streams on one origin, chosen by a
    `time_origin` setting. By default the pair calibrates with a short
    burst when both streams start; with a jumper on the boards' internal
    trigger header it can start them on one edge instead. Receive

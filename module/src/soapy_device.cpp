@@ -23,7 +23,11 @@ namespace hackrfduplex {
 namespace {
 
 constexpr std::size_t kDefaultBuffers = 15;
-constexpr double kMinSampleRate = 2e6;
+// Measured (docs/design.md): receive is clean down to 200 ksps, about
+// where the clock chip's divider runs out; the transmitter goes silent or
+// loses a channel between 1.05 and 1.1 Msps, so its floor keeps a margin.
+constexpr double kMinRxSampleRate = 200e3;
+constexpr double kMinTxSampleRate = 1.2e6;
 constexpr double kMaxSampleRate = 20e6;
 constexpr double kMinFrequency = 1e6;
 constexpr double kMaxFrequency = 6e9;
@@ -446,12 +450,17 @@ double SoapyDevice::getSampleRate(const int direction, const size_t channel) con
     return pair_->sample_rate(direction_of(direction));
 }
 
-std::vector<double> SoapyDevice::listSampleRates(const int, const size_t) const {
-    return {2e6, 4e6, 8e6, 10e6, 12.5e6, 16e6, 20e6};
+std::vector<double> SoapyDevice::listSampleRates(const int direction, const size_t) const {
+    if (direction_of(direction) == Direction::kRx) {
+        return {250e3, 500e3, 1e6, 1.92e6, 2e6, 4e6, 8e6, 10e6, 12.5e6, 16e6, 20e6};
+    }
+    return {1.92e6, 2e6, 4e6, 8e6, 10e6, 12.5e6, 16e6, 20e6};
 }
 
-SoapySDR::RangeList SoapyDevice::getSampleRateRange(const int, const size_t) const {
-    return {SoapySDR::Range(kMinSampleRate, kMaxSampleRate)};
+SoapySDR::RangeList SoapyDevice::getSampleRateRange(const int direction, const size_t) const {
+    const double minimum =
+        direction_of(direction) == Direction::kRx ? kMinRxSampleRate : kMinTxSampleRate;
+    return {SoapySDR::Range(minimum, kMaxSampleRate)};
 }
 
 void SoapyDevice::setBandwidth(const int direction, const size_t channel, const double bw) {

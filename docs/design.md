@@ -127,6 +127,8 @@ firmware itself moves 16 KiB at a time. Per direction that is:
 
 | Sample rate | 16 KiB firmware chunk | 256 KiB libhackrf transfer |
 |---|---|---|
+| 0.2 Msps | 41 ms | 655 ms |
+| 1.2 Msps | 6.8 ms | 109 ms |
 | 2 Msps | 4.1 ms | 65.5 ms |
 | 8 Msps | 1.0 ms | 16.4 ms |
 | 10 Msps | 0.8 ms | 13.1 ms |
@@ -183,6 +185,33 @@ cable radiates the reference. A shorter cable took it from -64.3 to
 -69.3 dBFS, within 3.3 dB of its level with CLKOUT off; what remains
 comes mostly from the boards' own references. A centre frequency away
 from multiples of 10 MHz avoids it entirely.
+
+### Low sample rates
+
+The HackRF documentation recommends 8 Msps and up, since the MAX5864
+converter is not specified below that and the narrowest baseband filter
+is 1.75 MHz. Below 2 Msps, measured with `hackrfduplex-check --tx-tone
+40e3 --tx-gain 0 --seconds 10`, each board in each role, the other
+direction held at a rate it handles, both boards on one reference:
+
+| Direction | Rate | Result on both boards |
+|---|---|---|
+| both | 1.92, 1.6, 1.2 Msps | tone at its sent offset, 0.0 Hz every second, 0 overflows and underflows |
+| receive | 1.0, 0.8, 0.4, 0.2 Msps | tone at its sent offset every second, 0 overflows; image rejection 2 to 6 dB worse than at 8 Msps |
+| transmit | 1.1, 1.08 Msps | tone at its sent offset, image 16 dB down |
+| transmit | 1.05, 1.0 Msps and below | streams without an underflow but one board puts out nothing and the other only one of I and Q (tone and image level) |
+
+Below 1.05 Msps the transmitters fail while the sample clock is right and
+the stream is healthy, so the limit is in the converter. Receive is
+limited by the clock chip: the firmware divides an 800 MHz PLL by at
+most 2048 to make twice the sample rate, about 195 ksps at the
+slowest. The module advertises 0.2 to 20 Msps for receive and 1.2 to
+20 Msps for transmit, the transmit floor keeping a margin above the
+failure, and passes any other rate through untouched.
+
+At these rates one transfer takes long: 655 ms at 200 ksps, 109 ms at
+1.2 Msps. A read or write timeout shorter than that returns
+`SOAPY_SDR_TIMEOUT` between transfers.
 
 ### Reference switches
 

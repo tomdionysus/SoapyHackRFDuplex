@@ -63,9 +63,10 @@ and 9 close the project out.
   No role swapping, no single-board fallback.
 - The RF amplifier is presented as 14 dB, as every SoapySDR HackRF driver
   has, although libhackrf documents about 11 dB.
-- Sample rates: libhackrf documents 2 to 20 Msps; the module passes what
-  it is given through without clamping, and advertises what item 3
-  measures.
+- Sample rates: the module passes what it is given through without
+  clamping, and advertises what was measured: 0.2 to 20 Msps for
+  receive, 1.2 to 20 Msps for transmit (docs/design.md, Low sample
+  rates).
 - A requested bandwidth rounds down to a filter width, never up.
 - Discovery never opens a board.
 - Stream positions are sample counts from each stream's activation and
@@ -173,16 +174,6 @@ is right and the note is corrected.
   acceptance test of items 4, 6 and 7.
 
 ## Items
-
-### 3. Sample rates below 2 Msps
-
-- [ ] Applications commonly open a device at 1.92 Msps before moving to
-  their working rate. Measure receive and transmit at 1.92 Msps, then
-  downward in steps to the lowest rate both stream cleanly for 10 s, and
-  advertise that range from `getSampleRateRange` and `listSampleRates`.
-  Acceptance: a tone sent and received at 1.92 Msps at its sent offset,
-  0 overflows and underflows; the advertised range matching the
-  measurements, recorded in `docs/design.md` "Measured".
 
 ### 4. A common time origin
 
