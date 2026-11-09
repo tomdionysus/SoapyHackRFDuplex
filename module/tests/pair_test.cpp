@@ -196,6 +196,71 @@ TEST_CASE("a board failure reaches the caller", "[pair]") {
     CHECK_FALSE(rig.pair.active(Direction::kTx));
 }
 
+namespace {
+
+// The calls a board saw from its first start onwards.
+std::vector<std::string> calls_from_start(const FakeBoard& board) {
+    const auto start = std::find_if(board.calls.begin(), board.calls.end(),
+                                    [](const std::string& c) { return c.rfind("start_", 0) == 0; });
+    return {start, board.calls.end()};
+}
+
+}  // namespace
+
+TEST_CASE("a start that switches the reference retunes and restarts the board", "[pair]") {
+    // The firmware picks its clock source at stream start, under synthesisers
+    // tuned on the old reference, which then do not relock.
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.pair.set_frequency(Direction::kTx, 868'300'000);
+    rig.rx.reference_switch_pending = true;
+    rig.tx.reference_switch_pending = true;
+    rig.pair.open_stream(Direction::kRx, Format::kCs8, 2);
+    rig.pair.open_stream(Direction::kTx, Format::kCs8, 2);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+
+    // A step away first, because the firmware skips a tune to the frequency
+    // it last applied; then back, a stop, and a second start.
+    const std::string rx_start = "start_rx ";
+    CHECK(calls_from_start(rig.rx) == std::vector<std::string>{rx_start, "set_frequency 893300000",
+                                                               "set_frequency 892300000", "stop ",
+                                                               rx_start});
+    const std::string tx_start = "start_tx ";
+    CHECK(calls_from_start(rig.tx) == std::vector<std::string>{tx_start, "set_frequency 869300000",
+                                                               "set_frequency 868300000", "stop ",
+                                                               tx_start});
+    CHECK(rig.pair.active(Direction::kRx));
+    CHECK(rig.pair.active(Direction::kTx));
+    CHECK(rig.rx.rx_streaming);
+    CHECK(rig.tx.tx_streaming);
+    CHECK(rig.rx.frequency_hz == 892'300'000);
+
+    // The restarted stream still delivers.
+    std::array<std::uint8_t, 16> bytes{};
+    rig.rx.deliver_rx(bytes);
+    std::array<std::uint8_t, 16> dst{};
+    CHECK(rig.pair.read(dst.data(), 8, 0us).samples == 8);
+}
+
+TEST_CASE("a start on the same reference neither retunes nor restarts", "[pair]") {
+    // Retuning when nothing switched left a real board's receiver 1.7 kHz off.
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.pair.open_stream(Direction::kRx, Format::kCs8, 2);
+    rig.pair.activate(Direction::kRx);
+    CHECK(calls_from_start(rig.rx) == std::vector<std::string>{"start_rx "});
+    CHECK(rig.rx.starts == 1);
+}
+
+TEST_CASE("a switch on a board never tuned restarts without tuning", "[pair]") {
+    Rig rig;
+    rig.rx.reference_switch_pending = true;
+    rig.pair.open_stream(Direction::kRx, Format::kCs8, 2);
+    rig.pair.activate(Direction::kRx);
+    CHECK(calls_from_start(rig.rx) == std::vector<std::string>{"start_rx ", "stop ", "start_rx "});
+}
+
 TEST_CASE("the reference clock out goes to one board at a time and is read back", "[pair]") {
     Rig rig;
     CHECK(rig.pair.clock_out() == ClockOut::kOff);

@@ -85,6 +85,7 @@ void FakeBoard::start_rx(RxHandler handler) {
     rx_ = std::move(handler);
     rx_streaming = true;
     ++starts;
+    reference_switch_pending = false;
 }
 
 void FakeBoard::start_tx(TxHandler handler) {
@@ -95,6 +96,7 @@ void FakeBoard::start_tx(TxHandler handler) {
     tx_ = std::move(handler);
     tx_streaming = true;
     ++starts;
+    reference_switch_pending = false;
 }
 
 void FakeBoard::stop() {

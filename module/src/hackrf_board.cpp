@@ -15,6 +15,11 @@ unsigned g_sessions = 0;
 // HackRF One and bit 7 powers it down.
 constexpr std::uint16_t kSi5351Clk3Control = 19;
 constexpr std::uint16_t kSi5351PowerDown = 0x80;
+constexpr std::uint16_t kSi5351Clk0Control = 16;
+constexpr std::uint16_t kSi5351PllSourceB = 0x20;
+// MSNA_P1 bits 15..8: 0x0E for 25 MHz in, 0x26 for 10 MHz in (si5351c.c).
+constexpr std::uint16_t kSi5351PllAMultiplier = 29;
+constexpr std::uint16_t kSi5351PllAMultiplierClkin = 0x26;
 
 }  // namespace
 
@@ -69,6 +74,15 @@ void HackrfBoard::check(int result, const char* what) {
 HackrfBoard::HackrfBoard(const std::string& serial) : serial_(serial) {
     open();
     transfer_bytes_ = hackrf_get_transfer_buffer_size(device_);
+    std::uint16_t api = 0;
+    check(hackrf_usb_api_version_read(device_, &api), "usb api version");
+    reports_clkin_ = api >= 0x0106;
+    // The firmware picks its clocking by board id, not revision: a board
+    // that reports revision r10 but id HACKRF1_OG (as clones do) is clocked
+    // the older way.
+    std::uint8_t board_id = BOARD_ID_UNDETECTED;
+    check(hackrf_board_id_read(device_, &board_id), "board id");
+    r9_clocking_ = board_id == BOARD_ID_HACKRF1_R9;
 }
 
 HackrfBoard::~HackrfBoard() {
@@ -172,6 +186,31 @@ void HackrfBoard::set_bias_tee(bool on) {
 void HackrfBoard::set_clock_out(bool on) {
     const std::lock_guard<std::mutex> lock(mutex_);
     check(hackrf_set_clkout_enable(device_, on ? 1 : 0), "set clock out");
+}
+
+bool HackrfBoard::start_switches_reference() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!reports_clkin_) {
+        return false;
+    }
+    std::uint8_t clkin = 0;
+    check(hackrf_get_clkin_status(device_, &clkin), "clkin status");
+    // What the board runs on now. Before r9 the firmware moves the outputs
+    // between PLL A (crystal) and PLL B (CLKIN), which shows in CLK0's
+    // control byte. From r9 it keeps PLL A and sets its multiplier for a
+    // 10 MHz or a 25 MHz input.
+    bool on_clkin = false;
+    if (r9_clocking_) {
+        std::uint16_t multiplier = 0;
+        check(hackrf_si5351c_read(device_, kSi5351PllAMultiplier, &multiplier),
+              "read pll multiplier");
+        on_clkin = multiplier == kSi5351PllAMultiplierClkin;
+    } else {
+        std::uint16_t clk0 = 0;
+        check(hackrf_si5351c_read(device_, kSi5351Clk0Control, &clk0), "read clock control");
+        on_clkin = (clk0 & kSi5351PllSourceB) != 0;
+    }
+    return on_clkin != (clkin != 0);
 }
 
 int HackrfBoard::rx_trampoline(hackrf_transfer* transfer) {

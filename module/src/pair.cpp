@@ -7,6 +7,14 @@
 
 namespace hackrfduplex {
 
+namespace {
+
+// Where a board is tuned briefly after its stream starts, before going
+// back to its frequency (Pair::activate).
+constexpr std::uint64_t kRetuneStepHz = 1'000'000;
+
+}  // namespace
+
 const char* direction_name(Direction direction) {
     return direction == Direction::kRx ? "RX" : "TX";
 }
@@ -274,18 +282,43 @@ void Pair::activate(Direction direction) {
     if (s.active) {
         return;
     }
-    if (direction == Direction::kRx) {
-        rx_path_->reset();
-        RxPath* path = rx_path_.get();
-        s.board->start_rx(
-            [path](std::span<const std::uint8_t> bytes) { path->on_transfer(bytes); });
-    } else {
-        tx_path_->reset();
-        if (bias_) {
-            s.board->set_bias_tee(true);
+    const auto start = [&] {
+        if (direction == Direction::kRx) {
+            rx_path_->reset();
+            RxPath* path = rx_path_.get();
+            s.board->start_rx(
+                [path](std::span<const std::uint8_t> bytes) { path->on_transfer(bytes); });
+        } else {
+            tx_path_->reset();
+            if (bias_) {
+                s.board->set_bias_tee(true);
+            }
+            TxPath* path = tx_path_.get();
+            s.board->start_tx(
+                [path](std::span<std::uint8_t> buffer) { path->on_transfer(buffer); });
         }
-        TxPath* path = tx_path_.get();
-        s.board->start_tx([path](std::span<std::uint8_t> buffer) { path->on_transfer(buffer); });
+    };
+
+    // The firmware chooses its clock source (CLKIN or its crystal) at every
+    // stream start, under RF synthesisers tuned on whatever reference came
+    // before. When that switches the reference they do not relock: the
+    // board goes deaf, or transmits nothing. So when the reference changed,
+    // retune on the new one and start the stream again on a steady clock.
+    // The firmware skips a tune to the frequency it last applied, hence the
+    // step away and back. Retuning when nothing switched is not harmless:
+    // it left the r10 board's receiver 1.7 kHz off, so it is done only on
+    // a switch.
+    const bool switching = s.board->start_switches_reference();
+    start();
+    if (switching) {
+        if (s.frequency_hz != 0) {
+            s.board->set_frequency(s.frequency_hz + kRetuneStepHz);
+            s.board->set_frequency(s.frequency_hz);
+        }
+        s.board->stop();
+        start();
+        log(LogLevel::kInfo, std::string(direction_name(direction)) +
+                                 " board changed reference clock; retuned and restarted");
     }
     s.active = true;
     log(LogLevel::kDebug, std::string(direction_name(direction)) + " started");

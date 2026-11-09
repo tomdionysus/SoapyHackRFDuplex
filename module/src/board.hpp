@@ -66,6 +66,11 @@ public:
     virtual void set_bias_tee(bool on) = 0;
     // 10 MHz on the CLKOUT connector, for another board's CLKIN.
     virtual void set_clock_out(bool on) = 0;
+    // Whether the next stream start will move the board to another
+    // reference: the firmware uses CLKIN when it sees a clock there and its
+    // crystal otherwise, choosing at each start. Asked while idle, when the
+    // clock chip reads reliably.
+    virtual bool start_switches_reference() = 0;
 
     // Bytes per transfer; every RX handler call carries at most this
     // many and every TX call exactly this many.

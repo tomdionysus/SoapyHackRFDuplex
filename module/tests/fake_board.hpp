@@ -31,6 +31,7 @@ public:
     void set_tx_vga_gain(unsigned db) override;
     void set_bias_tee(bool on) override;
     void set_clock_out(bool on) override;
+    bool start_switches_reference() override { return reference_switch_pending; }
     std::size_t transfer_bytes() const override { return transfer_bytes_value; }
     void start_rx(RxHandler handler) override;
     void start_tx(TxHandler handler) override;
@@ -56,6 +57,9 @@ public:
     bool bias = false;
     bool clock_out = false;
     bool external_clock = false;
+    // The next start moves the board to another reference, as the firmware
+    // does when CLKIN has come or gone; the start clears it.
+    bool reference_switch_pending = false;
     bool rx_streaming = false;
     bool tx_streaming = false;
     int starts = 0;

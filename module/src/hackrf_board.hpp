@@ -50,6 +50,7 @@ public:
     void set_tx_vga_gain(unsigned db) override;
     void set_bias_tee(bool on) override;
     void set_clock_out(bool on) override;
+    bool start_switches_reference() override;
 
     std::size_t transfer_bytes() const override { return transfer_bytes_; }
     void start_rx(RxHandler handler) override;
@@ -73,6 +74,11 @@ private:
     std::mutex mutex_;
     hackrf_device* device_ = nullptr;
     std::size_t transfer_bytes_ = 0;
+    // Firmware with USB API 1.06 reports CLKIN status and board revision.
+    bool reports_clkin_ = false;
+    // Boards with id HACKRF1_R9 select CLKIN with a switch in front of
+    // PLL A rather than by moving the outputs to PLL B.
+    bool r9_clocking_ = false;
     RxHandler rx_;
     TxHandler tx_;
     bool streaming_ = false;
