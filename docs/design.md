@@ -116,9 +116,9 @@ direction's board; the two directions share no lock.
 The receive stream carries a time: the sample position since activation,
 converted at the sample rate, with `SOAPY_SDR_HAS_TIME` set. It is the
 board's clock, not the host's, and it is honest across drops. The
-transmit stream has no time yet. Giving it one needs an origin shared
-with the receive stream, which the hardware can supply through its
-trigger pins; that is the roadmap's second item.
+transmit stream has no time. Giving it one needs an origin shared with
+the receive stream, which the hardware can supply through its trigger
+pins; that is optional work in [TODO/ACTIVE.md](../TODO/ACTIVE.md).
 
 ## Latency
 
@@ -136,8 +136,9 @@ The ring adds up to `buffers` transfers of latency on the transmit side
 only when the writer runs ahead; the receive side's ring is slack, not
 delay. An application that needs a short loop between what it receives
 and what it transmits is bounded by the transfer size, which is a
-compile-time constant of libhackrf; the roadmap's fourth item is to
-measure and then shrink it.
+compile-time constant of libhackrf. The module uses libhackrf as it is
+built; shrinking the transfers is a libhackrf change, outside this
+project.
 
 ## Measured
 

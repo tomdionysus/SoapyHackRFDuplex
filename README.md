@@ -10,9 +10,8 @@ that run at the same time, each tuned, filtered and gained on its own.
 The driver key is `hackrfduplex`.
 
 The HackRF One is a half-duplex radio. Two of them, with this module, are
-the cheapest full-duplex SoapySDR device there is, and the first step
-towards running an FDD system such as an LTE test cell on them
-([Roadmap](#roadmap)).
+the cheapest full-duplex SoapySDR device there is. The module works with
+stock HackRF firmware and stock libhackrf.
 
 The code is C++20, tested with Catch2. The dependencies are SoapySDR,
 libhackrf and Catch2.
@@ -21,7 +20,7 @@ Documentation:
 
 | Document | Contents |
 |---|---|
-| [docs/design.md](docs/design.md) | how the module is built: the pair, the stream paths, threads, timestamps, latency |
+| [docs/design.md](docs/design.md) | how the module is built: the pair, the stream paths, threads, timestamps, latency, reference switches, measurements |
 | [docs/licensing.md](docs/licensing.md) | licence and third-party works |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | repository layout, conventions, transmit safety |
 | [TODO/ACTIVE.md](TODO/ACTIVE.md) | open work, in order |
@@ -38,7 +37,7 @@ Documentation:
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
 | Transmit verified on two boards | ✓ | a tone in each of CS8, CS16, CF32 and CF64 received at exactly its sent offset, levels within 0.3 dB, 0 underflows |
 | Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a board whose reference changes at a stream start is retuned and restarted, so it can be switched freely between runs |
-| Transmit timestamps, synchronised start | ✗ | the LTE items in the roadmap |
+| Hardware time: synchronised start, timed transmit | ✗ | optional; needs the boards' trigger pins wired together ([Roadmap](#roadmap)) |
 
 ## Hardware
 
@@ -57,9 +56,7 @@ local oscillators locked: an SMA cable from one board's CLKOUT to the
 other's CLKIN, and the `clkout` setting naming the source board. The fed
 board then reports `clock: external` in the hardware information and
 the source `clkout: on`. A board with a TCXO module on its CLKIN header
-cannot also be fed by cable; take the module off the fed board. The
-hardware trigger pins that start two boards together are not used yet
-([Roadmap](#roadmap)).
+cannot also be fed by cable; take the module off the fed board.
 
 ## Build and install
 
@@ -151,23 +148,17 @@ confirms both halves of the pair in one run.
 
 ## Roadmap
 
-The aim is an LTE FDD test cell on two HackRFs, as can be done today with
-one BladeRF. What the pair lacks for that, in the order it will be
-tackled:
+The module does one thing: a pair of HackRF Ones as one full-duplex
+SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
 
-1. A synchronised start on the hardware trigger pins, so the transmit
-   stream's sample count and the receive stream's share one origin. The
-   shared reference that makes this worthwhile is in place (`clkout`).
-2. Transmit timestamps against that origin, so a sample asked for at a
-   time goes out at that time.
-3. Latency: libhackrf moves 256 KiB per transfer, which at LTE sample
-   rates is far more than the HARQ timeline allows, and the firmware's
-   own 16 KiB granularity sets the floor. Measure, then rebuild libhackrf
-   with smaller transfers.
-4. An srsRAN eNB on the pair at 10 MHz bandwidth.
+1. Debian packaging and a build-and-test script.
+2. Optionally, a hardware time: both streams started on one edge of the
+   boards' trigger pins, so receive timestamps and timed transmit share
+   an origin. A device feature, but one that needs a wire between the
+   boards, so it waits for an application that wants it.
 
-The HackRF's 8-bit converters bound this to a bench demonstration at
-modest modulation orders.
+Applications built on the pair, and changes to the HackRF firmware or
+libhackrf, are out of scope.
 
 ## AI
 
