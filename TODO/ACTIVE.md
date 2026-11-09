@@ -63,14 +63,10 @@ lists what blocks which item.
 
 Each with a recommendation; the items that depend on one say so.
 
-1. **Transmitting from the target.** The boards moved to the Pi; is it
-   the same shielded bench, so the standing go-ahead carries over? Until
-   then only receive work runs there (items 1 and 2 have transmit parts).
-2. **The Pi's power supply.** `vcgencmd get_throttled` read `0x50000`:
-   under-voltage has happened since boot. Unless it is the 5 A supply, a
-   Pi 5 limits USB to 600 mA in all, which two HackRFs can exceed, and a
-   sagging supply looks exactly like a board shortfall. Recommended: the
-   5 A supply, or the boards on a powered hub on the root ports.
+1. Settled 2026-11-09: the target's bench is shielded and the transmit
+   go-ahead covers it; its power supply cannot change, so it is watched
+   (standing decisions).
+2. (Settled with 1.)
 3. **The transmit underrun limit** (item 6): libhackrf can make the
    transmitting board stop itself after a run of underrun, so a
    transmitter cannot outlive a crashed or hung host. The module always
@@ -132,10 +128,15 @@ Each with a recommendation; the items that depend on one say so.
 - Dependencies: SoapySDR, libhackrf, Catch2. Nothing else without a
   decision recorded here.
 - Transmit tests: Tom's go-ahead for this work on the shielded bench
-  ("you may test autonomously until completion", 2026-11-09); whether
-  it covers the target's bench waits on Tom (above). Ask before
-  switching the amplifier on. The Radioberry on the target may be used
-  for receive tests only (Tom, 2026-11-09).
+  ("you may test autonomously until completion"), which the target's
+  bench is ("yes, shielded"), both 2026-11-09. Ask before switching the
+  amplifier on. The Radioberry on the target may be used for receive
+  tests only.
+- The target's power supply may sag under two HackRFs and cannot be
+  changed (Tom, 2026-11-09: "Watch that power"). Every hardware run
+  reads `vcgencmd get_throttled` before and after and records it; a run
+  that saw under-voltage is repeated before any shortfall, overflow or
+  lost origin in it is put down to the module.
 - Commits with no Claude text, and pushes to `origin develop`, at any
   time (Tom, 2026-11-09). One logical change per commit.
 
@@ -166,8 +167,7 @@ What "elite" means for this module, and the gate for the tag:
 
 ### 1. Bring the pair up on the target
 
-- [ ] Receive now; transmit once Tom confirms the bench (waits on 1).
-  Receive: `hackrfduplex-check` at 2 and 8 Msps clean for 10 s each,
+- [ ] Receive: `hackrfduplex-check` at 2 and 8 Msps clean for 10 s each,
   both boards `clock: external` with `clkout=rx`, a reference switch
   handled each way (CLKOUT off, start, CLKOUT on, start: the
   `lo_locked` sensor and the log show it). Transmit: the smoke test
@@ -184,7 +184,7 @@ What "elite" means for this module, and the gate for the tag:
 - [ ] With `--timed-bursts`, the smallest delay from a receive timestamp
   to a transmit time that gives no late reports over ten minutes, at 2,
   8, 11.52, 15.36 and 20 Msps, at the default `buffers` and at 4, on the
-  target (waits on 1 for transmit). Method used so far: step the delay
+  target. Method used so far: step the delay
   up in quarter transfers (131072 samples) from 4.5 with 30 s runs, then
   confirm the first clean one for 600 s, stepping on if it fails; a
   script to do it is a candidate for `tools/` or a check-tool mode.
@@ -247,7 +247,7 @@ What "elite" means for this module, and the gate for the tag:
   handed exactly the written samples, the calibration burst and zeros,
   nothing else. Acceptance: those tests, and on the target a check run
   killed with SIGKILL mid-transmit leaving the TX board idle within the
-  limit (waits on 1 for transmit).
+  limit.
 
 ### 7. Timed receive: start at a time, finite bursts
 
