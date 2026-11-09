@@ -10,8 +10,9 @@ before starting. Do not reopen a standing decision in
 ```
 docs/      design, licensing
 module/    the SoapySDR module: src/ and its Catch2 tests in tests/
-tools/     hackrfduplex-check
+tools/     hackrfduplex-check, and ci.sh, the checks a change must pass
 cmake/     version header, sanitizer and coverage builds, libhackrf lookup
+debian/    Debian packaging: the module and the check tool
 TODO/      ACTIVE.md (open work) and COMPLETED.md (done work)
 ```
 
@@ -59,6 +60,11 @@ cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build
 ```
+
+`tools/ci.sh` runs what a change must pass: the format check, the
+licence line on every source file, the release build and its tests, and
+the sanitizer build and its tests (`--quick` stops after the release
+tests). Run it before a commit that touches code.
 
 `cmake --preset asan` and `cmake --preset coverage` build the sanitizer
 and coverage variants; `cmake --build --preset coverage --target
