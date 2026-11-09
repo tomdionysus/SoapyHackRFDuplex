@@ -452,6 +452,17 @@ SoapySDR::Kwargs stream_args(const Options& options) {
     return args;
 }
 
+// The per-channel sensor that says whether each running board's synthesisers
+// are locked to the reference it now runs on.
+void report_lo_locked(SoapySDR::Device* device, bool transmit) {
+    std::printf("sensors: rx lo_locked %s",
+                device->readSensor(SOAPY_SDR_RX, 0, "lo_locked").c_str());
+    if (transmit) {
+        std::printf(", tx lo_locked %s", device->readSensor(SOAPY_SDR_TX, 0, "lo_locked").c_str());
+    }
+    std::printf("\n");
+}
+
 // The origin found when both streams started, then `count` more
 // calibrations, each reported, and their spread.
 void run_calibrations(SoapySDR::Device* device, int count) {
@@ -509,6 +520,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     if (device->activateStream(tx) != 0 || device->activateStream(rx) != 0) {
         throw std::runtime_error("the streams did not activate");
     }
+    report_lo_locked(device, true);
     run_calibrations(device, options.calibrations);
     if (!device->hasHardwareTime()) {
         std::printf("timed: no common time origin, which timed bursts need\n");
@@ -840,6 +852,7 @@ int main(int argc, char** argv) {
         if (device->activateStream(rx) != 0) {
             throw std::runtime_error("RX stream did not activate");
         }
+        report_lo_locked(device, transmit);
         if (transmit) {
             run_calibrations(device, options.calibrations);
         }
