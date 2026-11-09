@@ -38,7 +38,7 @@ item is removed from here and recorded at the top of
 - A requested bandwidth rounds down to a filter width, never up.
 - Discovery never opens a board.
 - The receive stream has a sample-count time from activation; the
-  transmit stream has none unless item 3 is taken up.
+  transmit stream gains a time on a common origin (items 4 to 6).
 - Dependencies: SoapySDR, libhackrf, Catch2. Nothing else without a
   recorded decision here.
 - Transmit tests: Tom's standing go-ahead for this work, on the shielded
@@ -62,14 +62,84 @@ item is removed from here and recorded at the top of
   Acceptance: a `.deb` that installs on Debian trixie and
   `SoapySDRUtil --find` sees the module.
 
-### 3. Hardware time (optional, Tom to decide)
+### 3. Sample rates below 2 Msps
 
-- [ ] SoapySDR devices may offer a hardware time: `hasHardwareTime`,
-  receive timestamps that share an origin with timed transmit. For the
-  pair that means hardware sync mode on both boards with their trigger
-  pins wired, so both streams start on one edge, then `writeStream` with
-  `SOAPY_SDR_HAS_TIME` placing samples at a stream position. It is a
-  device feature, within scope, but needs a wire between the boards and
-  is only worth doing if an application wants it. Acceptance, if taken
-  up: a burst written for time T is received at T plus a constant,
-  repeatable to a few samples across ten starts.
+- [ ] Applications commonly open a device at 1.92 Msps before moving to
+  their working rate. libhackrf documents 2 to 20 Msps but accepts lower.
+  Measure the receive and transmit paths at 1.92 Msps, and at the lowest
+  rate the boards stream cleanly, then set `getSampleRateRange` and
+  `listSampleRates` to what was measured. Acceptance: a tone sent and
+  received at 1.92 Msps at its sent offset, 0 overflows and underflows,
+  and the advertised range matching the measurements.
+
+### 4. A common time origin
+
+- [ ] Both streams count samples from one instant, so a receive timestamp
+  and a transmit time mean the same thing. Hardware sync mode on both
+  boards, their trigger pins wired together (the wiring documented in
+  the README's Hardware section), and the pair arming both before
+  either stream starts so the first sample of each falls on the same
+  edge. Without the wire, the origin is the later of the two starts and
+  the offset between the streams is unknown; the device says so through
+  `hasHardwareTime`. Confirm on the bench with `hackrf_transfer -H` that
+  the transmitting board honours the trigger before building on it.
+  Acceptance: a tone burst written at transmit position P is received at
+  receive position P plus a constant, the same to a few samples across
+  ten starts, and the constant recorded in `docs/design.md`.
+
+### 5. Hardware time API
+
+- [ ] `hasHardwareTime`, `getHardwareTime` and `setHardwareTime` on the
+  common origin from item 4: the time is the receive stream's sample
+  position converted at the sample rate, and setting it shifts the
+  origin the timestamps are reported against. Receive timestamps keep
+  their present meaning on that origin. Acceptance: tests against the
+  fake board for the conversions and the shift; on the bench, the
+  hardware time read between two reads lies between their timestamps.
+
+### 6. Timed transmit
+
+- [ ] `writeStream` with `SOAPY_SDR_HAS_TIME` places the first sample at
+  the stream position for `timeNs` on the common origin, filling the gap
+  before it with zeros, and later samples follow it without a time. A
+  time already in the past is not sent: the call returns
+  `SOAPY_SDR_TIME_ERROR` and `readStreamStatus` reports it once, as it
+  reports an underflow. `SOAPY_SDR_END_BURST` keeps its present meaning,
+  and `SOAPY_SDR_ONE_PACKET` is accepted as a burst in one call. Bursts
+  may be sent back to back or with gaps; the stream stays running
+  between them and sends zeros, which is not an underflow. Acceptance:
+  tests against the fake board for placement, zero filling, late times,
+  back-to-back and gapped bursts; on the bench, bursts written for
+  receive time T plus a fixed delay arrive at that receive time plus the
+  item 4 constant, every time over a minute of continuous bursts, with
+  no late or underflow reports at a delay of a few USB transfers.
+
+### 7. Transmit lead time
+
+- [ ] A writer that stamps each burst a fixed time after the receive
+  timestamp it is answering needs to know the shortest lead the pair can
+  honour. Measure the smallest delay between a receive timestamp and a
+  transmit time that gives no late reports over ten minutes, at 2, 8,
+  11.52, 15.36 and 20 Msps, with the default and with fewer `buffers`.
+  Acceptance: the table in `docs/design.md`, and the `buffers` default
+  revisited in its light.
+
+### 8. LO lock sensor
+
+- [ ] A `lo_locked` channel sensor per direction, as applications check
+  after tuning: `listSensors` per channel and `readSensor` returning
+  `"true"` or `"false"`. libhackrf does not report synthesiser lock, so
+  the answer is the pair's own: false while a board's reference is
+  switching and its retune and restart are under way, true otherwise.
+  Acceptance: tests against the fake board; on the bench the sensor
+  reads true after tuning in both directions.
+
+### 9. Settings and stream arguments applications pass blindly
+
+- [ ] Some applications pass their whole device argument string as stream
+  arguments and write vendor settings they cannot know the device lacks.
+  Stream setup already ignores keys it does not know. Make
+  `writeSetting` with an unknown key log a warning and return instead of
+  throwing, and `readSetting` with an unknown key return an empty
+  string, as the SoapySDR defaults do. Acceptance: tests for both, and
+  the README's settings table saying so.

@@ -37,7 +37,7 @@ Documentation:
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
 | Transmit verified on two boards | ✓ | a tone in each of CS8, CS16, CF32 and CF64 received at exactly its sent offset, levels within 0.3 dB, 0 underflows |
 | Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a board whose reference changes at a stream start is retuned and restarted, so it can be switched freely between runs |
-| Hardware time: synchronised start, timed transmit | ✗ | optional; needs the boards' trigger pins wired together ([Roadmap](#roadmap)) |
+| Hardware time: synchronised start, timed transmit | ✗ | planned; needs the boards' trigger pins wired together ([Roadmap](#roadmap)) |
 
 ## Hardware
 
@@ -152,10 +152,13 @@ The module does one thing: a pair of HackRF Ones as one full-duplex
 SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
 
 1. Debian packaging and a build-and-test script.
-2. Optionally, a hardware time: both streams started on one edge of the
-   boards' trigger pins, so receive timestamps and timed transmit share
-   an origin. A device feature, but one that needs a wire between the
-   boards, so it waits for an application that wants it.
+2. Sample rates below 2 Msps, measured and advertised.
+3. A hardware time: both streams started on one edge of the boards'
+   trigger pins, receive timestamps and timed transmit on that origin,
+   with late transmissions reported, and the shortest transmit lead the
+   pair can honour measured.
+4. An `lo_locked` sensor, and unknown settings ignored rather than
+   refused.
 
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.
