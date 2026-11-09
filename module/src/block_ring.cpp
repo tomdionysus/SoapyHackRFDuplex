@@ -58,6 +58,7 @@ void BlockRing::pop() {
         Block& block = slots_[tail_];
         block.size = 0;
         block.end_of_burst = false;
+        block.timed = false;
         tail_ = (tail_ + 1) % slots_.size();
         --count_;
     }
@@ -85,6 +86,7 @@ void BlockRing::reset() {
         block.size = 0;
         block.position = 0;
         block.end_of_burst = false;
+        block.timed = false;
     }
     head_ = 0;
     tail_ = 0;

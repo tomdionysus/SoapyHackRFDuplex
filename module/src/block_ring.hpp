@@ -21,6 +21,9 @@ struct Block {
     // TX: the writer closed a burst with this block, so silence after it
     // is expected rather than an underflow.
     bool end_of_burst = false;
+    // TX: `position` is where the block must go out; the board sends
+    // silence until then, and drops the block if it is already past.
+    bool timed = false;
 };
 
 // Single-producer single-consumer ring of preallocated blocks between a
