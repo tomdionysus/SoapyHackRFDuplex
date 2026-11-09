@@ -29,6 +29,8 @@ struct Options {
     std::string rx_serial;
     std::string tx_serial;
     double rate_hz = 8e6;
+    // 0: the same as rate_hz.
+    double tx_rate_hz = 0;
     double rx_frequency_hz = 868.3e6;
     double tx_frequency_hz = 868.3e6;
     double rx_gain_db = 32;
@@ -95,6 +97,7 @@ const char* const kUsage =
     "  --rx-serial S     board that receives (suffix of its serial)\n"
     "  --tx-serial S     board that transmits\n"
     "  --rate HZ         sample rate, both directions (default 8e6)\n"
+    "  --tx-rate HZ      transmit sample rate, if not the same as --rate\n"
     "  --rx-freq HZ      receive centre frequency (default 868.3e6)\n"
     "  --tx-freq HZ      transmit centre frequency (default 868.3e6)\n"
     "  --rx-gain DB      overall receive gain (default 32)\n"
@@ -123,6 +126,8 @@ void parse(int argc, char** argv, Options& options) {
             options.tx_serial = value();
         } else if (arg == "--rate") {
             options.rate_hz = std::stod(value());
+        } else if (arg == "--tx-rate") {
+            options.tx_rate_hz = std::stod(value());
         } else if (arg == "--rx-freq") {
             options.rx_frequency_hz = std::stod(value());
         } else if (arg == "--tx-freq") {
@@ -385,6 +390,9 @@ int main(int argc, char** argv) {
         std::cout << kUsage;
         return 0;
     }
+    if (options.tx_rate_hz == 0) {
+        options.tx_rate_hz = options.rate_hz;
+    }
 
     SoapySDR::Kwargs args;
     args["driver"] = "hackrfduplex";
@@ -427,7 +435,7 @@ int main(int argc, char** argv) {
 
         const bool transmit = options.tx_tone_hz != 0;
         if (transmit) {
-            device->setSampleRate(SOAPY_SDR_TX, 0, options.rate_hz);
+            device->setSampleRate(SOAPY_SDR_TX, 0, options.tx_rate_hz);
             device->setFrequency(SOAPY_SDR_TX, 0, options.tx_frequency_hz);
             device->setGain(SOAPY_SDR_TX, 0, options.tx_gain_db);
             std::cout << "tx: " << device->getSampleRate(SOAPY_SDR_TX, 0) / 1e6 << " Msps, "
@@ -464,7 +472,8 @@ int main(int argc, char** argv) {
                 std::vector<std::complex<float>> buffer(mtu);
                 std::vector<std::uint8_t> packed;
                 const std::size_t stride = format_bytes(options.tx_format);
-                const double step = 2.0 * std::numbers::pi * options.tx_tone_hz / options.rate_hz;
+                const double step =
+                    2.0 * std::numbers::pi * options.tx_tone_hz / options.tx_rate_hz;
                 double phase = 0;
                 while (!stop) {
                     for (auto& s : buffer) {
@@ -577,6 +586,13 @@ int main(int argc, char** argv) {
             std::printf("tone: expected at %+.1f kHz: %.1f dBFS in its %.0f Hz bin\n",
                         expected_offset / 1e3, spectrum.level_at(expected_offset),
                         options.rate_hz / static_cast<double>(Spectrum::kBins));
+            // The transmitter's I/Q imbalance mirrors the tone about the TX
+            // centre; a healthy pair keeps it about 20 dB down.
+            const double image_offset =
+                (options.tx_frequency_hz - options.rx_frequency_hz) - options.tx_tone_hz;
+            std::printf("tone: image at %+.1f kHz: %.1f dBFS, %.1f dB below the tone\n",
+                        image_offset / 1e3, spectrum.level_at(image_offset),
+                        spectrum.level_at(expected_offset) - spectrum.level_at(image_offset));
             std::printf("tone: strongest within %.0f Hz of it, per second:\n", ToneFinder::kSpanHz);
             const auto peaks = finder.peaks();
             double lowest = 1e9;
