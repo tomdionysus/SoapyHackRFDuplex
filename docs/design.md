@@ -183,17 +183,45 @@ cable radiates the reference. A shorter cable took it from -64.3 to
 comes mostly from the boards' own references. A centre frequency away
 from multiples of 10 MHz avoids it entirely.
 
+### Reference switches
+
 The firmware re-chooses its clock source every time a stream starts
 (`activate_best_clock_source`, called from `transceiver_startup`): the
 CLKIN reference if the Si5351 sees one, otherwise the board's own
-crystal. Checked on the fed board: with `clkout` off it moved its PLLs
-from source B (CLKIN) to source A (crystal) and received at the full rate.
-So `clkout` may be switched while both boards are idle, and takes effect
-at each board's next stream start; switching it under a running stream
-is not handled by the firmware until that stream restarts.
+crystal. It does so after tuning, so when the reference actually changes
+the RF synthesisers are left locked to nothing: a board receiving goes
+deaf and a board transmitting puts out no signal at all, while its
+sample clock, already on the new reference, streams at the full rate as
+if nothing were wrong. Retuning cures it, but the firmware also skips a
+tune to the frequency it last applied (`applied_freq` in `radio.c`).
 
-A tone sent from the fed board running on its own crystal was not found
-within the band searched; why is still open (TODO/ACTIVE.md item 1).
+So `Pair::activate` asks the board, while still idle, whether this
+start will switch its reference: the CLKIN status the firmware is about
+to act on, against what the clock chip runs on now (CLK0's PLL source
+bit, or for boards with id `HACKRF1_R9` the PLL A multiplier). Clock
+chip registers read as zero while a board streams, which is why the
+question is asked before the start rather than answered after it. If it
+will switch, the board is started, tuned 1 MHz away and back, stopped
+and started again. If not, nothing extra happens: retuning a running
+board without a switch left one board's receiver 1.7 kHz off until it
+was reset.
+
+The firmware chooses its clocking scheme by board id, not by revision.
+One of the boards here reports revision r10 but id `HACKRF1_OG`, as
+clones do, and is clocked the older way.
+
+Measured with the switch handled, both boards on one reference unless
+free-running:
+
+| On the crystal board | Reference | Result |
+|---|---|---|
+| Transmit, 4 runs | shared | tone at the sent offset, 0.0 Hz every run |
+| Transmit, 3 runs | own crystal | tone 13.1 kHz low every run |
+| Receive, 2 runs | shared | outside carriers at their true offset |
+| Receive, 2 runs | own crystal | the same carriers 13.7 kHz high |
+
+The two crystal figures are the same error, about 15 ppm slow at
+868-892 MHz, seen once from each side.
 
 ## Failure handling
 

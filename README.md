@@ -37,7 +37,7 @@ Documentation:
 | `hackrfduplex-check` | ✓ | receives, optionally transmits a tone, and reports rates, drops and levels |
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
 | Transmit verified on two boards | ✓ | a tone in each of CS8, CS16, CF32 and CF64 received at exactly its sent offset, levels within 0.3 dB, 0 underflows |
-| Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a change takes effect at each board's next stream start |
+| Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a board whose reference changes at a stream start is retuned and restarted, so it can be switched freely between runs |
 | Transmit timestamps, synchronised start | ✗ | the LTE items in the roadmap |
 
 ## Hardware

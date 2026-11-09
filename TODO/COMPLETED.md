@@ -3,6 +3,31 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: reference switches at stream start
+
+The free-running tone that went missing turned out to be a firmware
+behaviour, found in the 2026.01.3 source and proved on the bench:
+
+- The firmware picks CLKIN or its crystal at each stream start, after
+  tuning, and does not retune; a board whose reference changes goes deaf
+  or mute while its sample stream looks healthy. A reset, which boots
+  and tunes on the crystal from the start, cured it, which is how the
+  cause was separated from a bad crystal.
+- It skips a tune to the frequency it last applied, so a plain retune
+  did nothing.
+- A retune when nothing switched left the clone board's receiver 1.7 kHz
+  off, held until that board was reset; that was the 1 Hz-step version.
+- Clock chip registers read as zero while streaming, and the clone r10
+  board is clocked by its id (`HACKRF1_OG`), not its revision.
+
+The module now asks each board before a start whether the start will
+switch its reference, and only then retunes 1 MHz away and back and
+restarts the stream. Four new test cases; 51 in all pass. On the bench,
+with clean boards, every locked run read 0.0 Hz and every free-running
+run showed the crystal's steady 15 ppm, transmitting and receiving, and
+the restart fired exactly on the starts that switched
+(`docs/design.md`, Reference switches).
+
 ## 2026-11-09: transmit in every format
 
 With Tom's go-ahead, `hackrfduplex-check --tx-format` (new) sent the same

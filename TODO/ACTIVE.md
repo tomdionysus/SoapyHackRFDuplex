@@ -18,8 +18,13 @@ item is removed from here and recorded at the top of
   flashed to the 2026.01.3 release firmware (USB API 1.10) and the pair
   probes with both reporting their TCXO as an external clock.
 - Full duplex verified on the air the same day with the boards on one
-  reference: a CF32 tone sent at +100 kHz arrived at exactly +100 kHz,
-  steady for 9 s, 0 overflows, 0 underflows (TODO/COMPLETED.md).
+  reference: a tone in every sample format sent at +100 kHz arrived at
+  exactly +100 kHz, 0 overflows, 0 underflows (TODO/COMPLETED.md).
+- A board whose reference changes at stream start is retuned and
+  restarted, so `clkout` may be switched freely between runs; verified
+  in both directions on both boards.
+- Tom gave standing permission on 2026-11-09 to run transmit tests
+  autonomously until this work is complete; the bench is shielded.
 - Two boards are attached to the workstation (`CLAUDE.local.md`).
 
 ## Standing decisions
@@ -46,17 +51,14 @@ item is removed from here and recorded at the top of
 
 ## Items
 
-### 1. The free-running tone
+### 1. Report the firmware's reference-switch behaviour upstream
 
-- [ ] Settled: the firmware falls back to the board's crystal at each
-  stream start when CLKIN goes quiet, and the fed board receives
-  normally on it. Open: a tone sent from the fed board on its own crystal
-  was not found at +-4 MHz. Next, with Tom's go-ahead: send it again with
-  `clkout=off` and read the whole-band spectrum for where it lands.
-  Acceptance: the tone found and its offset recorded as the crystal's
-  error, or a cause found if it is not there. Then decide whether
-  `clkout` should refuse to change while a stream is active, since the
-  firmware only re-chooses its source at stream start.
+- [ ] The firmware switches clock source after tuning and does not
+  retune, and caches the applied frequency so a retune to the same value
+  is skipped ([docs/design.md](../docs/design.md), Reference switches).
+  The module works around both. Draft an issue for Great Scott Gadgets
+  with the reproduction, for Tom to file if he wants. Acceptance: the
+  draft in `TODO/`, nothing posted.
 
 ### 3. Synchronised start
 
