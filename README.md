@@ -37,7 +37,9 @@ Documentation:
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
 | Transmit verified on two boards | ✓ | a tone in each of CS8, CS16, CF32 and CF64 received at exactly its sent offset, levels within 0.3 dB, 0 underflows |
 | Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a board whose reference changes at a stream start is retuned and restarted, so it can be switched freely between runs |
-| Hardware time: synchronised start, timed transmit | ✗ | planned; by the internal trigger header or by a calibration burst ([Roadmap](#roadmap)) |
+| Hardware time and timed transmit | ✓ | one time for both streams, from a calibration burst when both start; timed bursts land at the sample asked for |
+| Trigger time origin | built | both boards started on one edge through a jumper; tested against the fake board, not yet on the bench |
+| `lo_locked` sensor, low sample rates | ✓ | the module's own account of synthesiser lock; receive from 0.2 Msps, transmit from 1.2 Msps |
 
 ## Hardware
 
@@ -105,11 +107,14 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | **Device arguments** | | |
 | `rx_serial` | the lower of two serials | suffix of the serial of the board that receives |
 | `tx_serial` | the higher of two serials | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
+| `time_origin` | `burst` | as the setting of the same name |
 | **Stream arguments** | | |
 | `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
 | **Settings** | | |
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
 | `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run |
+| `time_origin` | `burst` | how the two streams get one time when both have started: `burst` sends a short calibration burst on the receive frequency, `trigger` starts both boards on one edge through a jumper from the RX board's P28 pin 15 to the TX board's P28 pin 16, `none` gives no shared time; takes effect when the streams next start |
+| `calibrate` | | write any value to send the calibration burst again now; both streams must be running |
 
 Unknown keys are tolerated, since some applications pass their whole
 device argument string to every stream and write vendor settings
@@ -136,8 +141,26 @@ otherwise.
 
 The receive stream carries a time, counted in samples from the moment the
 stream started, so a gap left by a dropped transfer shows in the
-timestamps as well as in the overflow return. The transmit stream ignores
-timestamps for now.
+timestamps as well as in the overflow return. `setHardwareTime` moves
+that clock and `getHardwareTime` reads it.
+
+Once both streams are running the module finds a common time origin
+for them, by default by sending a 4096-sample calibration burst at the
+transmit gain set and finding it in the receive stream, which takes a
+moment inside the second `activateStream` (about 0.4 s at 8 Msps; a
+receive reader not yet running sees one overflow at its start, with the
+gap in its timestamps). From then on
+`hasHardwareTime` is true and a write with `SOAPY_SDR_HAS_TIME` goes out
+at exactly that receive time: a burst stamped T is received at T. The
+calibration needs both directions at one sample rate, the boards on one
+reference (the `clkout` setting), and the burst to reach the receiver,
+so the boards must hear each other at the gains set. A write for a time
+already gone is refused with `SOAPY_SDR_TIME_ERROR`, and
+`readStreamStatus` reports `SOAPY_SDR_TIME_ERROR` once for it, for a
+burst found late on its way out, and for an origin lost when a board
+drops samples on its own (write `calibrate` to find it again). The
+transmit path needs a lead of about five USB transfers (82 ms at
+8 Msps) between a receive timestamp and the transmit time based on it.
 
 `hackrfduplex-check` exercises the whole path as a SoapySDR client. It
 receives by default and transmits nothing:
@@ -145,11 +168,15 @@ receives by default and transmits nothing:
 ```
 hackrfduplex-check --seconds 5
 hackrfduplex-check --tx-tone 100e3 --tx-gain 0 --seconds 5
+hackrfduplex-check --timed-bursts 81920 --tx-gain 0 --seconds 60
 ```
 
 With `--tx-tone` it transmits a tone that far from the TX centre and
 reports its level at the receiver, which with two antennas or a cable
-confirms both halves of the pair in one run.
+confirms both halves of the pair in one run. With `--timed-bursts US` it
+transmits a burst at each receive timestamp plus that many microseconds
+and reports where each one arrived, and any late writes or time errors.
+`--help` lists the rest.
 
 ## Build options
 
@@ -166,14 +193,10 @@ confirms both halves of the pair in one run.
 The module does one thing: a pair of HackRF Ones as one full-duplex
 SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
 
-1. Debian packaging and a build-and-test script.
-2. A hardware time: both streams on one origin, chosen by a
-   `time_origin` setting. By default the pair calibrates with a short
-   burst when both streams start; with a jumper on the boards' internal
-   trigger header it can start them on one edge instead. Receive
-   timestamps and timed transmit share that origin, late transmissions
-   are reported, and the shortest transmit lead the pair can honour is
-   measured.
+1. The shortest transmit lead measured across sample rates and ring
+   depths.
+2. The trigger time origin tried on the bench with a jumper fitted.
+3. Debian packaging and a build-and-test script.
 
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.

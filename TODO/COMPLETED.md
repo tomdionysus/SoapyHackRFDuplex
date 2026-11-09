@@ -3,6 +3,43 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: a common time origin, the hardware time API, timed transmit
+
+Items 4, 5 and 6, built together since each needed the others' parts:
+the calibration burst and its correlator (`burst.*`, `fft.*`), a tap on
+the receive path, timed blocks placed by the transmit path's board
+thread, the origin in `Pair` with the trigger alternative, shortfall
+polling, and the SoapySDR surface (`hasHardwareTime`,
+`getHardwareTime`, `setHardwareTime`, timestamps with the offset,
+`SOAPY_SDR_HAS_TIME` writes, `ONE_PACKET`, `SOAPY_SDR_TIME_ERROR` in the
+stream status, the `time_origin` argument and setting, the `calibrate`
+setting). The check tool gained `--time-origin`, `--buffers`,
+`--calibrations` and `--timed-bursts`. 37 new test cases, 96 in all,
+the time tests run 20 times over without a failure; the trigger origin
+is tested against the fake board only.
+
+On the bench, 8 Msps, TX gain 0, amplifier off, boards on one
+reference:
+
+- Origin: found at 20 starts of 20, ten tuned alike and ten with the
+  transmitter 45 MHz below the receiver (retuned for the burst and
+  back), 27.5 to 30.2 dB over the median. Repeat calibrations within a
+  start agreed to 0 samples every time (three findings in each of the
+  20 starts, and ten in a row once each way). The origin itself differs
+  per start, 0.1 to 1.6 ms, as the host's start timing does.
+- The first burst as planned (0.7 of full scale on I) was not found:
+  12.4 dB over the median, buried by the receiver's DC offset. Removing
+  the capture's mean and sending the chips at full scale on I and Q
+  gave the figures above.
+- Timed transmit, `--timed-bursts 81920 --seconds 60` (five transfers):
+  3658 of 3658 bursts at +0 samples from the time asked, 0 late writes,
+  0 time errors, 0 underflows. At 4.5 transfers every write was late,
+  at 5, 6 and 8 transfers none were.
+- Hardware time: read between two live reads, it lay between their
+  timestamps 3662 times of 3662.
+
+The plan's corrections are recorded in ACTIVE.md.
+
 ## 2026-11-09: sample rates below 2 Msps
 
 At 1.92 Msps both ways, 10 s: 1.918 Msps received (99.9%), 0 overflows,

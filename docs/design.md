@@ -19,9 +19,13 @@ HackrfBoard        HackrfBoard         the interface over libhackrf
 ```
 
 Everything above `HackrfBoard` and below `soapy_device.cpp` is the core,
-`hackrfduplex_core`, and includes neither libhackrf nor SoapySDR. The
-tests drive it through `FakeBoard`, which records settings and lets the
-test deliver and pull transfers by hand.
+`hackrfduplex_core`, and includes neither libhackrf nor SoapySDR; beside
+the pair and the paths it holds `burst.*` and `fft.*`, the calibration
+burst and its correlator (Time, below). The tests drive it through
+`FakeBoard`, which records settings and lets the test deliver and pull
+transfers by hand, and drive `SoapyDevice` the same way over a pair of
+fakes; `tests/loopback.hpp` plays the air between two fakes for the
+time tests.
 
 ### Board
 
@@ -84,7 +88,8 @@ the reader reaches a block whose position is not what it expected, the
 gap is reported once as an overflow, before the data that follows it.
 
 `TxPath`: the writer fills a block in the board's format, publishing it
-when full or when the caller marks the end of a burst. The board's thread
+when full or when the caller marks the end of a burst, or starts a new
+one at a stream position for a timed write (Time, below). The board's thread
 concatenates blocks into each transfer. A transfer that runs dry is
 padded with zeros and counted as an underflow, unless nothing has been
 written yet or the last block ended a burst, in which case silence is
@@ -109,16 +114,77 @@ Per board, libhackrf runs one transfer thread that calls the handler. The
 handlers only touch the rings. The SoapySDR client calls settings from
 any thread (serialised per board) and reads or writes each stream from
 one thread, as SoapySDR requires. Tuning one direction locks only that
-direction's board; the two directions share no lock.
+direction's board; the two directions share no lock. Opening, closing,
+activating and deactivating streams, and calibrating, are serialised on
+one lock of their own, and the transmit writer shares one with the
+calibration burst, which is written into the same stream. Calibration
+runs on the thread that activated the second stream, before
+`activateStream` returns; a receive reader already running is not
+disturbed, since the burst is heard through a tap beside it.
 
 ## Time
 
-The receive stream carries a time: the sample position since activation,
-converted at the sample rate, with `SOAPY_SDR_HAS_TIME` set. It is the
-board's clock, not the host's, and it is honest across drops. The
-transmit stream has no time. Giving it one needs an origin shared with
-the receive stream, which the hardware can supply through its trigger
-pins; that is optional work in [TODO/ACTIVE.md](../TODO/ACTIVE.md).
+Time is counted on the receiving board's sample clock. The hardware time
+is the number of samples the receiver has delivered since its stream
+started plus an offset `setHardwareTime` sets, converted at the receive
+rate; each receive read is stamped with its first sample's position plus
+the same offset. It is the board's clock, not the host's, and honest
+across drops, since a dropped transfer still advances the position.
+
+The transmit stream counts positions the same way: every sample handed
+to the board, silence included. What ties the two together is the
+origin, one number: the transmit position on the air at the instant of
+receive position 0. A transmit time T then goes out at transmit position
+`rx_position(T) + origin`. The origin exists once both streams are
+running and is found, according to the `time_origin` setting, in one of
+two ways:
+
+- `burst` (the default): when the second stream starts, the pair sends
+  a calibration burst and listens for it. The burst is 4096 chips of a
+  13-bit maximal-length sequence, one chip per sample at full scale on
+  I and Q, taken from the point in the sequence where its aperiodic
+  autocorrelation's sidelobes are lowest (32 dB under the peak). It is
+  written to the transmit stream as a timed block at a known position,
+  a tap beside the receive reader captures enough of the receive stream
+  to hold it however full the transmit ring was, and an overlap-save
+  correlation over a hand-written FFT finds it; the capture's mean is
+  removed first, because the receiver's DC offset can be many times the
+  burst. A peak 20 dB over the median correlation is accepted; anything
+  less leaves no origin and logs the level found. If the two directions
+  are tuned apart, the transmitter is retuned to the receive frequency
+  for the burst and back afterwards; tuned alike it is not touched,
+  since the firmware skips a tune to the frequency it last applied. The
+  burst needs both directions at one sample rate and the boards on one
+  reference: free-running, the crystals' offset turns the chips over
+  within the burst.
+- `trigger`: the first stream's activation only arms it; the second
+  starts the transmitting board in hardware sync mode and then the
+  receiving board, whose start drives its trigger output into the
+  transmitter's trigger input through a jumper (P28 pin 15 to pin 16).
+  Both start on one edge, so the origin is 0. If the transmitter has not
+  moved two transfers within 500 ms, no edge arrived: both stop and the
+  error names the jumper. Built and tested against the fake board; not
+  yet tried on the bench.
+- `none`: no origin.
+
+A timed write places its first sample at its position, and the board's
+transfer thread, not the writer, does the placing: it sends silence
+until the block's position comes round, which is not an underflow, and
+drops a block it reaches too late, with the rest of its burst. Placement
+belongs there because only that thread knows where silence it inserted
+into an empty ring has moved later samples. A write whose position is
+already queued or sent is refused at once with `SOAPY_SDR_TIME_ERROR`.
+A timed write while the origin is still to come waits for it up to its
+timeout; with no origin to come it is refused.
+
+The origin is lost, reported once through `readStreamStatus` as
+`SOAPY_SDR_TIME_ERROR` and logged, when either board reports a
+shortfall (its own buffer ran full or empty, losing or delaying samples
+the positions cannot see; read at most every 100 ms from the reader and
+the status calls) or a sample rate changes while streaming. Stopping
+either stream leaves it to be found again when both run. Writing the
+`calibrate` setting runs the burst again at any time. `hasHardwareTime`
+is true while an origin holds.
 
 ## Latency
 
@@ -185,6 +251,35 @@ cable radiates the reference. A shorter cable took it from -64.3 to
 -69.3 dBFS, within 3.3 dB of its level with CLKOUT off; what remains
 comes mostly from the boards' own references. A centre frequency away
 from multiples of 10 MHz avoids it entirely.
+
+### Time origin and timed transmit
+
+The calibration burst at 8 Msps, 868.3 MHz, TX gain 0, amplifier off,
+the boards on one reference, `hackrfduplex-check --tx-tone 100e3
+--calibrations 2`:
+
+| Measure | Tuned alike | TX 45 MHz below RX |
+|---|---|---|
+| Starts with an origin found | 10 of 10 | 10 of 10 |
+| Correlation peak over the median | 27.8 to 30.2 dB | 27.5 to 30.1 dB |
+| Spread of the origin within one start, 3 findings each | 0 samples every start | 0 samples every start |
+| Spread within one start, 10 findings | 0 samples | 0 samples |
+
+The origin itself differs from start to start, by 0.1 to 1.6 ms here,
+since it holds how far apart the host started the two streams. Before
+the capture's mean was removed the same burst, then at 0.7 of full scale
+on I only, stood 12.4 dB over the median, under the receiver's DC
+offset.
+
+Timed bursts, `hackrfduplex-check --timed-bursts 81920 --seconds 60`:
+the 4096-chip sequence written for each live receive timestamp plus
+81.92 ms (five transfers at 8 Msps) and found again by correlation:
+3658 of 3658 bursts landed at +0 samples from the time asked, with no
+late write, no time error and no underflow, and the hardware time read
+between two reads lay between their timestamps all 3662 times. The
+check tool does not stamp bursts from reads out of a backlog: the
+receive ring fills while activation calibrates, and its first 15 reads
+are old.
 
 ### Low sample rates
 

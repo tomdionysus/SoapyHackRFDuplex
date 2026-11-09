@@ -22,17 +22,18 @@ export SOAPY_SDR_PLUGIN_PATH=$PWD/build/module
 ```
 
 The last line is the smoke test of the whole pair: it should report the
-tone at +0.0 Hz in every second and 0 overflows and underflows. The bench
+origin found at start, the tone at +0.0 Hz in every second, 0
+underflows, and at most 1 overflow (the receive ring fills while the
+second activation calibrates). `--timed-bursts 81920 --seconds 60`
+checks the hardware time: every burst at +0 samples. The bench
 is shielded and Tom has given a standing go-ahead for transmit tests for
 this work (standing decisions, below); keep TX gain at 0 and the
 amplifier off unless an item says otherwise, and leave `clkout=rx` set at
 the end of a run so the boards stay on one reference.
 
-Work the items in order. Items 1 to 3 are small and independent and need
-no new hardware knowledge. Items 4 to 7 are the hardware time, one
-design, built in four steps; "How the time work fits the code" below
-holds the decisions already taken so they are not re-derived. Items 8
-and 9 close the project out.
+Work the items in order. Item 7 measures the hardware time built in
+items 4 to 6 (docs/design.md, Time); items 8 and 9 close the project
+out. The trigger item waits on a jumper Tom has not fitted.
 
 ## Where things stand
 
@@ -44,8 +45,12 @@ and 9 close the project out.
   the boards on one reference; a board whose reference changes at stream
   start is retuned and restarted, both ways on both boards
   (TODO/COMPLETED.md, docs/design.md "Measured").
-- Not yet built: anything to do with time on the transmit side, sensors,
-  tolerance of unknown settings, rates below 2 Msps, packaging.
+- Also done on 2026-11-09 (TODO/COMPLETED.md): unknown settings ignored,
+  the `lo_locked` sensor, rates below 2 Msps measured and advertised, and
+  the hardware time: a common origin from the calibration burst, the
+  hardware time API, timed transmit. 96 test cases pass.
+- Not yet done: the transmit lead measured (item 7), the trigger origin
+  on the bench, the upstream report draft, packaging.
 
 ## Standing decisions
 
@@ -85,130 +90,30 @@ and 9 close the project out.
 - Commits with no Claude text, and pushes to `origin develop`, at any
   time (Tom, 2026-11-09). One logical change per commit.
 
-## How the time work fits the code
+## Corrections to the time plan
 
-Decisions for items 4 to 7, taken 2026-11-09, so the next session builds
-rather than designs. Where the code disagrees with a note here, the code
-is right and the note is corrected.
+The plan for items 4 to 7 was written before the code; where they
+differed the code was right (docs/design.md, Time, holds the design as
+built). For the record:
 
-- **Positions.** `RxPath::read` returns `RxRead::position`, the sample
-  index of the first delivered sample since activation; `RxPath::received()`
-  is the board's count so far, dropped included. `TxPath::sent()` counts
-  samples handed to the board, zeros included. Add to `TxPath` a
-  `queued()` count: samples the writer has committed to the stream
-  (published blocks plus the partial one), which is where the next
-  written sample will land. All three are on their own board's sample
-  clock; with `clkout` set they tick together.
-- **The origin.** One signed number in `Pair`, `tx_of_rx_`: the transmit
-  position that is on the air at the same instant as receive position 0,
-  as `std::optional<std::int64_t>`. Empty means no common origin
-  (`hasHardwareTime` false). A transmit time T maps to transmit position
-  `rx_position(T) + tx_of_rx_`.
-- **Hardware time.** `getHardwareTime()` is `RxPath::received()` plus a
-  `time_offset_` set by `setHardwareTime`, converted with
-  `SoapySDR::ticksToTimeNs` at the receive rate. Receive timestamps add
-  the same offset. `hasHardwareTime("")` is true while `tx_of_rx_` holds a
-  value.
-- **The burst.** A fixed BPSK sequence of 4096 chips from a 13-bit
-  maximal-length shift register, one chip per sample, amplitude 0.7, so
-  its autocorrelation peak stands 30 dB over its sidelobes at any rate
-  (test this property in isolation). Sent by `Pair` through its own
-  `TxPath::write`, noting `queued()` just before as the burst's transmit
-  position. Found by a tap on `RxPath`: an optional handler called from
-  `on_transfer` with the transfer's position and bytes, installed only
-  during calibration, that copies samples into a buffer long enough for
-  the burst plus the longest plausible delay (the ring depth plus
-  libhackrf's four transfers, in samples). Correlate at native int8
-  precision on the host thread after the tap has filled; the peak's
-  receive position less the burst's transmit position gives `tx_of_rx_`.
-  Accept only a peak at least 20 dB above the median of the correlation;
-  otherwise leave `tx_of_rx_` empty and log the level found.
-- **Retune for the burst.** If the two directions are tuned apart, set
-  the transmitting board to the receive frequency, send the burst, set
-  it back. The firmware skips a tune to the frequency it last applied,
-  so when the two are already equal, do not retune at all. Sample
-  positions run on through both retunes.
-- **Where calibration runs.** In `Pair::activate`, after the second of
-  the two streams starts and its reference-switch handling is done, on
-  the calling thread, before `activate` returns. The application's read
-  thread may already be running on the receive stream; the tap does not
-  disturb it. A timed `write` arriving while `tx_of_rx_` is empty waits
-  on a condition variable up to its timeout, then returns
-  `SOAPY_SDR_TIMEOUT`.
-- **Losing the origin.** `Board` gains `shortfalls()`, the board's own
-  dropped or late sample count (`hackrf_get_m0_state`,
-  `hackrf_m0_state::num_shortfalls`, USB API 1.06 and later; the fake
-  gets a settable counter). `Pair` reads both boards' counts at the end
-  of calibration and again from `readStreamStatus` and from `read` at
-  most every 100 ms; a count that moved clears `tx_of_rx_`, logs it,
-  and makes the next `readStreamStatus` report `SOAPY_SDR_TIME_ERROR`
-  once. Timed writes then return `SOAPY_SDR_TIME_ERROR`. The `calibrate`
-  setting (write any value) runs the burst again on demand.
-- **Trigger.** `Board` gains `set_hardware_sync(bool)` (hackrf_set_hw_sync_mode).
-  With `time_origin=trigger`, `Pair::activate` of the first stream only
-  arms and records; both boards start in `activate` of the second: the
-  transmitting board first, in sync mode, then the receiving board,
-  whose start emits the edge. `tx_of_rx_` is then 0 by construction. The
-  transmitting board not streaming within 500 ms after the receiving
-  board started means no edge arrived: stop both, throw a BoardError
-  naming the P28 pin 15 to pin 16 jumper. Deactivating either stream
-  leaves the other running; the origin is lost when either restarts.
-- **Timed transmit.** In `TxPath::write`, a target position: if below
-  `queued()` the write is late, return a distinct result the device maps
-  to `SOAPY_SDR_TIME_ERROR` and `Pair` records for `readStreamStatus`;
-  otherwise write zeros from `queued()` up to the target (through the
-  normal blocking ring writes, in transfer-sized pieces), then the
-  samples. Zeros written this way are not an underflow, and neither is
-  the silence after `SOAPY_SDR_END_BURST`, which `TxPath` already
-  handles. `SOAPY_SDR_ONE_PACKET` is `END_BURST` on the same call.
-- **SoapySDR surface.** `hasHardwareTime`, `getHardwareTime`,
-  `setHardwareTime`; `listSensors`, `getSensorInfo`, `readSensor` per
-  channel for `lo_locked`; settings `time_origin`, `calibrate`; the
-  `time_origin` device argument read in the `SoapyDevice` constructor.
-  `readStreamStatus` gains `SOAPY_SDR_TIME_ERROR` beside
-  `SOAPY_SDR_UNDERFLOW`, each reported once per event.
-- **The check tool.** `--time-origin`, and `--timed-bursts DELAY_US`: a
-  mode that reads, stamps a short tone burst at each receive timestamp
-  plus the delay, and reports where each burst arrived against where it
-  was asked for, with counts of late and time errors. It is the bench
-  acceptance test of items 4, 6 and 7.
+- The burst goes out at full scale on I and Q, not 0.7 on I, and the
+  capture's mean is removed before correlating: at TX gain 0 on this
+  bench the planned burst stood 12.4 dB over the median, under the
+  receiver's DC offset; as built it stands 27 to 30 dB.
+- Timed blocks are placed by the board's transfer thread, not by the
+  writer writing zeros up to the target: silence the board inserts into
+  an empty ring moves later samples, which only that thread knows.
+- The origin is transmit position less receive position, so a transmit
+  time T goes out at `rx_position(T) + origin`.
+- The origin differs from start to start (it holds how far apart the
+  host started the streams), so "ten starts give the same origin" was
+  replaced by: an origin found at every start, and repeat calibrations
+  within a start agreeing.
+- The lead a timed write needs is about five USB transfers, not four:
+  libhackrf keeps four transmit transfers ahead of the air, and a
+  receive timestamp is up to one transfer old when read.
 
 ## Items
-
-### 4. A common time origin
-
-- [ ] The `time_origin` setting and device argument, `burst` by default:
-  the burst, the tap, the correlation, the retune around the burst, the
-  wait for calibration, shortfall polling, and the `calibrate` setting,
-  as "How the time work fits the code" lays out. `trigger` as laid out
-  there, built but marked untested until the jumper exists. `none`
-  leaves `tx_of_rx_` empty. Acceptance: tests against the fake board for
-  the burst's autocorrelation, the correlation finding a burst at a
-  known offset in noise, the retune rule, the wait, the shortfall
-  invalidation and `calibrate`; on the bench with `burst`, ten starts
-  give the same `tx_of_rx_` to within two samples, the figure recorded
-  in `docs/design.md`, also with the two directions tuned 45 MHz apart.
-  `trigger` is accepted on the bench only when the jumper is fitted;
-  until then its acceptance is the unit tests and a note here.
-
-### 5. Hardware time API
-
-- [ ] `hasHardwareTime`, `getHardwareTime`, `setHardwareTime` as laid out
-  above; receive timestamps carry the same offset. Acceptance: tests for
-  the conversions, the offset and the false case; on the bench the
-  hardware time read between two reads lies between their timestamps.
-
-### 6. Timed transmit
-
-- [ ] `writeStream` with `SOAPY_SDR_HAS_TIME` as laid out above: placement
-  at the target position with zeros before it, late writes refused with
-  `SOAPY_SDR_TIME_ERROR` and reported once through `readStreamStatus`,
-  `END_BURST` and `ONE_PACKET`, bursts back to back and with gaps with no
-  underflow between them. `hackrfduplex-check --timed-bursts`.
-  Acceptance: tests against the fake board for each behaviour; on the
-  bench, bursts stamped at each receive timestamp plus a delay of four
-  USB transfers arrive at receive position plus `tx_of_rx_` every time
-  for a minute, with no late or time-error reports.
 
 ### 7. Transmit lead time
 
@@ -218,6 +123,17 @@ is right and the note is corrected.
   and at 4. Acceptance: the table in `docs/design.md` "Measured", the
   `buffers` default revisited in its light, and the README's hardware
   time paragraph stating the lead a writer should allow.
+
+### Trigger origin on the bench
+
+- [ ] Waits on a jumper from the RX board's P28 pin 15 (trigger out) to
+  the TX board's P28 pin 16 (trigger in), boards grounded together
+  through the clock cable. The trigger origin is built and its unit
+  tests pass against the fake board. Acceptance: with
+  `--time-origin trigger`, `hackrfduplex-check --timed-bursts` lands
+  every burst at one constant offset from the time asked (the trigger
+  origin is 0 by construction, so the offset is the boards' pipeline
+  difference), and without the jumper the start fails naming it.
 
 ### 8. Report the firmware's reference-switch behaviour upstream
 
