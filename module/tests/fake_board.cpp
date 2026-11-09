@@ -12,6 +12,9 @@ FakeBoard::FakeBoard(std::string serial, int* stop_count)
 
 void FakeBoard::record(const std::string& name, const std::string& value) {
     calls.push_back(name + " " + value);
+    if (on_call) {
+        on_call(calls.back());
+    }
     if (fail_on == name) {
         fail_on.clear();
         throw BoardError(name + ": HACKRF_ERROR_LIBUSB");

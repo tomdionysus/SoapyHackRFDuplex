@@ -481,6 +481,42 @@ SoapySDR::RangeList SoapyDevice::getBandwidthRange(const int, const size_t) cons
     return list;
 }
 
+// Sensors
+
+std::vector<std::string> SoapyDevice::listSensors(const int direction, const size_t channel) const {
+    direction_of(direction);
+    check_channel(channel);
+    return {"lo_locked"};
+}
+
+SoapySDR::ArgInfo SoapyDevice::getSensorInfo(const int direction, const size_t channel,
+                                             const std::string& key) const {
+    direction_of(direction);
+    check_channel(channel);
+    if (key != "lo_locked") {
+        throw std::invalid_argument("getSensorInfo: no sensor " + key);
+    }
+    SoapySDR::ArgInfo info;
+    info.key = "lo_locked";
+    info.value = "true";
+    info.name = "LO locked";
+    info.description =
+        "The synthesisers are tuned on the reference the board runs from. False only while a "
+        "reference switch at stream start is being handled.";
+    info.type = SoapySDR::ArgInfo::BOOL;
+    return info;
+}
+
+std::string SoapyDevice::readSensor(const int direction, const size_t channel,
+                                    const std::string& key) const {
+    const Direction dir = direction_of(direction);
+    check_channel(channel);
+    if (key != "lo_locked") {
+        throw std::invalid_argument("readSensor: no sensor " + key);
+    }
+    return pair_->lo_locked(dir) ? "true" : "false";
+}
+
 // Settings
 
 SoapySDR::ArgInfoList SoapyDevice::getSettingInfo() const {

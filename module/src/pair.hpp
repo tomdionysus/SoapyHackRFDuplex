@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -99,6 +100,12 @@ public:
     // Samples per transfer, the unit a stream moves in.
     std::size_t mtu(Direction direction) const;
 
+    // Whether the direction's synthesisers are tuned on the reference the
+    // board runs from. libhackrf cannot report lock, so this is the pair's
+    // own account: false only while activate() handles a reference switch.
+    // Lock-free, so it can be read from any thread during activate().
+    bool lo_locked(Direction direction) const;
+
     // Reader thread. Throws std::logic_error with no RX stream open.
     RxRead read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout);
     // Writer thread. Throws std::logic_error with no TX stream open.
@@ -122,6 +129,7 @@ private:
         bool open = false;
         bool active = false;
         Format format = Format::kCs8;
+        std::atomic<bool> lo_locked{true};
     };
 
     Side& side(Direction direction);

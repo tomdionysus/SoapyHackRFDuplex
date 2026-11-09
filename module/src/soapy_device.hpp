@@ -99,6 +99,16 @@ public:
     std::vector<double> listBandwidths(const int direction, const size_t channel) const override;
     SoapySDR::RangeList getBandwidthRange(const int direction, const size_t channel) const override;
 
+    // Sensors
+    using SoapySDR::Device::getSensorInfo;
+    using SoapySDR::Device::listSensors;
+    using SoapySDR::Device::readSensor;
+    std::vector<std::string> listSensors(const int direction, const size_t channel) const override;
+    SoapySDR::ArgInfo getSensorInfo(const int direction, const size_t channel,
+                                    const std::string& key) const override;
+    std::string readSensor(const int direction, const size_t channel,
+                           const std::string& key) const override;
+
     // Settings
     using SoapySDR::Device::getSettingInfo;
     using SoapySDR::Device::readSetting;

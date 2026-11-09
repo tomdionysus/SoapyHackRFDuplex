@@ -261,6 +261,46 @@ TEST_CASE("a switch on a board never tuned restarts without tuning", "[pair]") {
     CHECK(calls_from_start(rig.rx) == std::vector<std::string>{"start_rx ", "stop ", "start_rx "});
 }
 
+TEST_CASE("the LO reads unlocked only while a reference switch is being handled", "[pair]") {
+    // libhackrf cannot report synthesiser lock; the pair knows when its
+    // synthesisers are tuned on a reference that has gone.
+    Rig rig;
+    CHECK(rig.pair.lo_locked(Direction::kRx));
+    CHECK(rig.pair.lo_locked(Direction::kTx));
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.rx.reference_switch_pending = true;
+    rig.pair.open_stream(Direction::kRx, Format::kCs8, 2);
+
+    std::vector<std::string> seen;
+    rig.rx.on_call = [&](const std::string& call) {
+        seen.push_back(call + (rig.pair.lo_locked(Direction::kRx) ? " locked" : " unlocked"));
+    };
+    rig.pair.activate(Direction::kRx);
+    rig.rx.on_call = nullptr;
+
+    // From the first start until the second, the switch is being handled.
+    CHECK(seen == std::vector<std::string>{"start_rx  unlocked", "set_frequency 893300000 unlocked",
+                                           "set_frequency 892300000 unlocked", "stop  unlocked",
+                                           "start_rx  unlocked"});
+    CHECK(rig.pair.lo_locked(Direction::kRx));
+    CHECK(rig.pair.lo_locked(Direction::kTx));
+}
+
+TEST_CASE("the LO reads locked through a start that switches nothing", "[pair]") {
+    Rig rig;
+    rig.pair.open_stream(Direction::kTx, Format::kCs8, 2);
+    bool always_locked = true;
+    rig.tx.on_call = [&](const std::string&) {
+        always_locked = always_locked && rig.pair.lo_locked(Direction::kTx);
+    };
+    rig.pair.activate(Direction::kTx);
+    rig.tx.on_call = nullptr;
+    CHECK(always_locked);
+    CHECK(rig.pair.lo_locked(Direction::kTx));
+    rig.pair.deactivate(Direction::kTx);
+    CHECK(rig.pair.lo_locked(Direction::kTx));
+}
+
 TEST_CASE("the reference clock out goes to one board at a time and is read back", "[pair]") {
     Rig rig;
     CHECK(rig.pair.clock_out() == ClockOut::kOff);

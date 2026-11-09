@@ -79,6 +79,40 @@ TEST_CASE("an unknown setting reads as an empty string", "[soapy]") {
     CHECK(rig.device->readSetting("no_such_setting").empty());
 }
 
+TEST_CASE("each direction has an lo_locked sensor", "[soapy]") {
+    SoapyRig rig;
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CHECK(rig.device->listSensors(direction, 0) == std::vector<std::string>{"lo_locked"});
+        const SoapySDR::ArgInfo info = rig.device->getSensorInfo(direction, 0, "lo_locked");
+        CHECK(info.key == "lo_locked");
+        CHECK(info.type == SoapySDR::ArgInfo::BOOL);
+        CHECK(rig.device->readSensor(direction, 0, "lo_locked") == "true");
+        CHECK_THROWS_AS(rig.device->readSensor(direction, 0, "temperature"), std::invalid_argument);
+        CHECK_THROWS_AS(rig.device->readSensor(direction, 1, "lo_locked"), std::invalid_argument);
+    }
+    CHECK(rig.device->listSensors().empty());
+}
+
+TEST_CASE("lo_locked reads false while a reference switch is handled", "[soapy]") {
+    SoapyRig rig;
+    SoapySDR::Device& device = *rig.device;
+    device.setFrequency(SOAPY_SDR_TX, 0, 868.3e6);
+    rig.tx->reference_switch_pending = true;
+    SoapySDR::Stream* tx = device.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    std::vector<std::string> during;
+    rig.tx->on_call = [&](const std::string& call) {
+        if (call.rfind("set_frequency", 0) == 0) {
+            during.push_back(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked"));
+            during.push_back(device.readSensor(SOAPY_SDR_RX, 0, "lo_locked"));
+        }
+    };
+    CHECK(device.activateStream(tx) == 0);
+    rig.tx->on_call = nullptr;
+    CHECK(during == std::vector<std::string>{"false", "true", "false", "true"});
+    CHECK(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked") == "true");
+    device.closeStream(tx);
+}
+
 TEST_CASE("the known settings still work through the device", "[soapy]") {
     SoapyRig rig;
     rig.device->writeSetting("bias_tx", "true");

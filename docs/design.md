@@ -205,7 +205,9 @@ question is asked before the start rather than answered after it. If it
 will switch, the board is started, tuned 1 MHz away and back, stopped
 and started again. If not, nothing extra happens: retuning a running
 board without a switch left one board's receiver 1.7 kHz off until it
-was reset.
+was reset. The `lo_locked` sensor reads false from the moment a switch
+is detected until the restart is done, and stays false if handling it
+fails.
 
 The firmware chooses its clocking scheme by board id, not by revision.
 One of the boards here reports revision r10 but id `HACKRF1_OG`, as

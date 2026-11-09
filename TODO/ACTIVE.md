@@ -174,17 +174,6 @@ is right and the note is corrected.
 
 ## Items
 
-### 2. LO lock sensor
-
-- [ ] A `lo_locked` channel sensor per direction: `listSensors`,
-  `getSensorInfo` (a boolean) and `readSensor` returning `"true"` or
-  `"false"`. libhackrf does not report synthesiser lock, so the answer
-  is the pair's own: false from the moment a board's reference switch is
-  detected in `activate` until its retune and restart are done, true
-  otherwise, including when the stream is not active. Acceptance: tests
-  against the fake board for both states; `SoapySDRUtil --probe` lists
-  the sensor and reads true after tuning in both directions.
-
 ### 3. Sample rates below 2 Msps
 
 - [ ] Applications commonly open a device at 1.92 Msps before moving to

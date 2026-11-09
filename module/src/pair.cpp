@@ -309,6 +309,11 @@ void Pair::activate(Direction direction) {
     // it left the r10 board's receiver 1.7 kHz off, so it is done only on
     // a switch.
     const bool switching = s.board->start_switches_reference();
+    if (switching) {
+        // Stays false if handling the switch fails: the synthesisers are
+        // then on a reference that has gone.
+        s.lo_locked = false;
+    }
     start();
     if (switching) {
         if (s.frequency_hz != 0) {
@@ -317,6 +322,7 @@ void Pair::activate(Direction direction) {
         }
         s.board->stop();
         start();
+        s.lo_locked = true;
         log(LogLevel::kInfo, std::string(direction_name(direction)) +
                                  " board changed reference clock; retuned and restarted");
     }
@@ -349,6 +355,8 @@ bool Pair::active(Direction direction) const {
 std::size_t Pair::mtu(Direction direction) const {
     return side(direction).board->transfer_bytes() / kNativeSampleBytes;
 }
+
+bool Pair::lo_locked(Direction direction) const { return side(direction).lo_locked.load(); }
 
 RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout) {
     if (!rx_path_) {

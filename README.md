@@ -125,6 +125,12 @@ Sample rates 2 to 20 Msps; the baseband filter follows the rate at three
 quarters of it until set, and a set bandwidth rounds down to the nearest
 of the MAX2837's filters.
 
+Each channel has an `lo_locked` sensor. libhackrf cannot report
+synthesiser lock, so it is the module's own account: false only while a
+board whose reference clock changed at stream start is being retuned
+(see [docs/design.md](docs/design.md), Reference switches), true
+otherwise.
+
 The receive stream carries a time, counted in samples from the moment the
 stream started, so a gap left by a dropped transfer shows in the
 timestamps as well as in the overflow return. The transmit stream ignores
@@ -166,7 +172,6 @@ SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
    timestamps and timed transmit share that origin, late transmissions
    are reported, and the shortest transmit lead the pair can honour is
    measured.
-4. An `lo_locked` sensor.
 
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.

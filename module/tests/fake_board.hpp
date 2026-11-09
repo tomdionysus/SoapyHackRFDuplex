@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -68,6 +69,9 @@ public:
     std::size_t transfer_bytes_value = 16;
     // The next call of this name throws BoardError.
     std::string fail_on;
+    // Called with each call's "name value" as it is recorded, so a test
+    // can look at the pair from inside one of its operations.
+    std::function<void(const std::string&)> on_call;
 
 private:
     void record(const std::string& name, const std::string& value);

@@ -3,6 +3,18 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: LO lock sensor
+
+An `lo_locked` sensor on each channel, a boolean, from `Pair::lo_locked`:
+false from the moment `activate` detects a reference switch until the
+retune and restart are done (and left false if that fails), true
+otherwise. Four new test cases, 58 in all: the two states through the
+pair, watched from inside `activate` through a new `FakeBoard::on_call`
+hook, and the sensor's listing, info and readings through the SoapySDR
+device. On the pair, `SoapySDRUtil --probe` lists `lo_locked` on both
+channels, and after tuning both directions to 868.3 MHz both read
+`true`.
+
 ## 2026-11-09: settings applications write blindly
 
 `writeSetting` with an unknown key logs a warning and returns;
