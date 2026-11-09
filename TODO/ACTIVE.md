@@ -75,17 +75,32 @@ item is removed from here and recorded at the top of
 ### 4. A common time origin
 
 - [ ] Both streams count samples from one instant, so a receive timestamp
-  and a transmit time mean the same thing. Hardware sync mode on both
-  boards, their trigger pins wired together (the wiring documented in
-  the README's Hardware section), and the pair arming both before
-  either stream starts so the first sample of each falls on the same
-  edge. Without the wire, the origin is the later of the two starts and
-  the offset between the streams is unknown; the device says so through
-  `hasHardwareTime`. Confirm on the bench with `hackrf_transfer -H` that
-  the transmitting board honours the trigger before building on it.
-  Acceptance: a tone burst written at transmit position P is received at
-  receive position P plus a constant, the same to a few samples across
-  ten starts, and the constant recorded in `docs/design.md`.
+  and a transmit time mean the same thing. With the reference shared
+  (`clkout`), the offset between the two streams is fixed for as long as
+  both run without a drop, so it only has to be found once per start.
+  Two routes, the first preferred, the module offering whichever the
+  bench allows:
+
+  - Wired: hardware sync mode on both boards with a jumper from one
+    board's P28 pin 15 (trigger out) to the other's P28 pin 16 (trigger
+    in), the ground shared through the clock cable. The header is inside
+    the case. The pair arms both boards before either stream starts, so
+    their first samples fall on one edge, within a sample. Confirm with
+    `hackrf_transfer -H` that the transmitting board honours the trigger
+    before building on it.
+  - Calibrated, no wire: once both streams are running, the pair sends a
+    short known burst and finds it in the receive stream by correlation,
+    which gives the offset to a sample. It transmits, so it is a setting,
+    off by default, and needs the receiver to hear the transmitter
+    (antennas near each other, or an attenuated cable). An overflow or
+    underflow invalidates the offset; the pair reports it and the
+    application recalibrates or restarts.
+
+  With neither, the device reports no hardware time. Acceptance, for
+  each route the bench allows: a tone burst written at transmit position
+  P is received at receive position P plus a constant, the same to a
+  sample or two across ten starts, and the constant and the route
+  recorded in `docs/design.md`.
 
 ### 5. Hardware time API
 

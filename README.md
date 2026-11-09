@@ -37,7 +37,7 @@ Documentation:
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
 | Transmit verified on two boards | ✓ | a tone in each of CS8, CS16, CF32 and CF64 received at exactly its sent offset, levels within 0.3 dB, 0 underflows |
 | Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a board whose reference changes at a stream start is retuned and restarted, so it can be switched freely between runs |
-| Hardware time: synchronised start, timed transmit | ✗ | planned; needs the boards' trigger pins wired together ([Roadmap](#roadmap)) |
+| Hardware time: synchronised start, timed transmit | ✗ | planned; by the internal trigger header or by a calibration burst ([Roadmap](#roadmap)) |
 
 ## Hardware
 
@@ -153,10 +153,11 @@ SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
 
 1. Debian packaging and a build-and-test script.
 2. Sample rates below 2 Msps, measured and advertised.
-3. A hardware time: both streams started on one edge of the boards'
-   trigger pins, receive timestamps and timed transmit on that origin,
-   with late transmissions reported, and the shortest transmit lead the
-   pair can honour measured.
+3. A hardware time: both streams on one origin, either started on one
+   edge of the boards' internal trigger header or calibrated with a
+   short burst at start, with receive timestamps and timed transmit on
+   that origin, late transmissions reported, and the shortest transmit
+   lead the pair can honour measured.
 4. An `lo_locked` sensor, and unknown settings ignored rather than
    refused.
 
