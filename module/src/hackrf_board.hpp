@@ -49,6 +49,7 @@ public:
     void set_vga_gain(unsigned db) override;
     void set_tx_vga_gain(unsigned db) override;
     void set_bias_tee(bool on) override;
+    void set_clock_out(bool on) override;
 
     std::size_t transfer_bytes() const override { return transfer_bytes_; }
     void start_rx(RxHandler handler) override;

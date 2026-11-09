@@ -11,6 +11,11 @@ namespace {
 std::mutex g_session_mutex;
 unsigned g_sessions = 0;
 
+// Si5351C register 19 is CLK3's control byte; CLK3 is CLKOUT on the
+// HackRF One and bit 7 powers it down.
+constexpr std::uint16_t kSi5351Clk3Control = 19;
+constexpr std::uint16_t kSi5351PowerDown = 0x80;
+
 }  // namespace
 
 HackrfSession::HackrfSession() {
@@ -116,6 +121,11 @@ BoardInfo HackrfBoard::info() {
             info.external_clock = clkin != 0;
         }
     }
+
+    std::uint16_t clk3 = kSi5351PowerDown;
+    if (hackrf_si5351c_read(device_, kSi5351Clk3Control, &clk3) == HACKRF_SUCCESS) {
+        info.clock_out = (clk3 & kSi5351PowerDown) == 0;
+    }
     return info;
 }
 
@@ -157,6 +167,11 @@ void HackrfBoard::set_tx_vga_gain(unsigned db) {
 void HackrfBoard::set_bias_tee(bool on) {
     const std::lock_guard<std::mutex> lock(mutex_);
     check(hackrf_set_antenna_enable(device_, on ? 1 : 0), "set bias tee");
+}
+
+void HackrfBoard::set_clock_out(bool on) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    check(hackrf_set_clkout_enable(device_, on ? 1 : 0), "set clock out");
 }
 
 int HackrfBoard::rx_trampoline(hackrf_transfer* transfer) {

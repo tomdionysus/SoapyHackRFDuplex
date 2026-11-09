@@ -110,6 +110,7 @@ SoapySDR::Kwargs SoapyDevice::getHardwareInfo() const {
         info[prefix + "firmware"] = board.firmware;
         info[prefix + "usb_api"] = board.usb_api;
         info[prefix + "clock"] = board.external_clock ? "external" : "internal";
+        info[prefix + "clkout"] = board.clock_out ? "on" : "off";
     }
     info["module_version"] = kVersion;
     info["libhackrf"] = libhackrf_version();
@@ -480,12 +481,27 @@ SoapySDR::ArgInfoList SoapyDevice::getSettingInfo() const {
     bias.name = "TX antenna bias";
     bias.description = "3.3 V on the transmitting board's antenna port while it transmits.";
     bias.type = SoapySDR::ArgInfo::BOOL;
-    return {bias};
+
+    SoapySDR::ArgInfo clkout;
+    clkout.key = "clkout";
+    clkout.value = "off";
+    clkout.name = "Reference clock out";
+    clkout.description =
+        "Which board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one "
+        "reference. Off at every power-up.";
+    clkout.type = SoapySDR::ArgInfo::STRING;
+    clkout.options = {"off", "rx", "tx"};
+    clkout.optionNames = {"Off", "RX board", "TX board"};
+    return {bias, clkout};
 }
 
 void SoapyDevice::writeSetting(const std::string& key, const std::string& value) {
     if (key == "bias_tx") {
         pair_->set_bias_tee(value == "true" || value == "1");
+        return;
+    }
+    if (key == "clkout") {
+        pair_->set_clock_out(parse_clock_out(value));
         return;
     }
     throw std::invalid_argument("writeSetting: unknown setting " + key);
@@ -494,6 +510,9 @@ void SoapyDevice::writeSetting(const std::string& key, const std::string& value)
 std::string SoapyDevice::readSetting(const std::string& key) const {
     if (key == "bias_tx") {
         return pair_->bias_tee() ? "true" : "false";
+    }
+    if (key == "clkout") {
+        return clock_out_name(pair_->clock_out());
     }
     throw std::invalid_argument("readSetting: unknown setting " + key);
 }

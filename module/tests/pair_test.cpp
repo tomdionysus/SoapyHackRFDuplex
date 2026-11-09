@@ -196,6 +196,39 @@ TEST_CASE("a board failure reaches the caller", "[pair]") {
     CHECK_FALSE(rig.pair.active(Direction::kTx));
 }
 
+TEST_CASE("the reference clock out goes to one board at a time and is read back", "[pair]") {
+    Rig rig;
+    CHECK(rig.pair.clock_out() == ClockOut::kOff);
+
+    rig.pair.set_clock_out(ClockOut::kRx);
+    CHECK(rig.rx.clock_out);
+    CHECK_FALSE(rig.tx.clock_out);
+    CHECK(rig.pair.clock_out() == ClockOut::kRx);
+
+    rig.pair.set_clock_out(ClockOut::kTx);
+    CHECK_FALSE(rig.rx.clock_out);
+    CHECK(rig.tx.clock_out);
+    CHECK(rig.pair.clock_out() == ClockOut::kTx);
+    // The old source went off before the new one came on.
+    const auto& calls = rig.rx.calls;
+    CHECK(std::find(calls.begin(), calls.end(), "set_clock_out off") != calls.end());
+
+    rig.pair.set_clock_out(ClockOut::kOff);
+    CHECK_FALSE(rig.rx.clock_out);
+    CHECK_FALSE(rig.tx.clock_out);
+    CHECK(rig.pair.clock_out() == ClockOut::kOff);
+
+    // A board switched on behind the pair's back is still read back.
+    rig.tx.clock_out = true;
+    CHECK(rig.pair.clock_out() == ClockOut::kTx);
+
+    CHECK(parse_clock_out("rx") == ClockOut::kRx);
+    CHECK(parse_clock_out("tx") == ClockOut::kTx);
+    CHECK(parse_clock_out("off") == ClockOut::kOff);
+    CHECK_THROWS_AS(parse_clock_out("both"), std::invalid_argument);
+    CHECK(std::string(clock_out_name(ClockOut::kRx)) == "rx");
+}
+
 TEST_CASE("destroying a pair stops what was running", "[pair]") {
     int stops = 0;
     {

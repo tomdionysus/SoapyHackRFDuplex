@@ -33,6 +33,11 @@ struct TxGains {
     bool amp = false;
 };
 
+// Which board, if either, drives 10 MHz out of its CLKOUT for the
+// other's CLKIN, so the two sample clocks and both local oscillators run
+// from one reference.
+enum class ClockOut { kOff, kRx, kTx };
+
 // Two HackRF boards as one full-duplex radio: one only ever receives,
 // the other only ever transmits, each tuned, filtered and gained on its
 // own. Settings go to the board at once and are remembered; a stream is
@@ -75,6 +80,12 @@ public:
     // transmission starts, since the firmware drops it when idle.
     void set_bias_tee(bool on);
     bool bias_tee() const { return bias_; }
+
+    // The other board's CLKOUT is switched off before the chosen one's
+    // goes on. Read back from the boards, since CLKOUT survives this
+    // object and dies with the board's power.
+    void set_clock_out(ClockOut which);
+    ClockOut clock_out();
 
     // Streams. `slots` is the ring depth in transfers.
     void open_stream(Direction direction, Format format, std::size_t slots);
@@ -130,5 +141,8 @@ private:
 };
 
 const char* direction_name(Direction direction);
+const char* clock_out_name(ClockOut which);
+// From "off", "rx" or "tx"; throws std::invalid_argument otherwise.
+ClockOut parse_clock_out(const std::string& name);
 
 }  // namespace hackrfduplex

@@ -54,6 +54,13 @@ their ranges and switch the RF amplifier on only when they cannot reach
 the request. The bias tee is remembered and re-applied whenever
 transmission starts.
 
+The reference clock out (`clkout`) is the one setting not remembered:
+it is read back from each board's clock chip, because CLKOUT outlives
+the device object and dies with the board's power, and a state kept
+here would lie after either. Switching the source turns the old
+board's output off before the new one's comes on, so two outputs never
+drive one cable.
+
 A stream is opened in a host format with a ring depth, activated to start
 the board, and deactivated to stop it. Activation resets the path so a
 stream always begins at position 0. The pair's destructor stops anything

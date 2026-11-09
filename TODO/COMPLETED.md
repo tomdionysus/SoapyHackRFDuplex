@@ -3,6 +3,22 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: shared reference clock
+
+One TCXO module came off the transmitting board and an SMA cable runs
+from the receiving board's CLKOUT to its CLKIN. Checked in order with
+`hackrf_clock`: the fed board read no clock with CLKOUT off, read a clock
+once CLKOUT was enabled (Si5351 CLK3 up at 10 MHz), and the pair received
+at 8 Msps with 0 overflows on the shared reference. The module gained the
+`clkout` setting (`off`, `rx`, `tx`), read back from each board's clock
+chip rather than remembered, with the old source switched off before the
+new one comes on; `hackrfduplex-check --clkout` drives it. On hardware,
+`--clkout off` left the fed board on its own crystal (`tx_clock:
+internal`) and `--clkout rx` put it back on the reference (`tx_clock:
+external`, `rx_clkout: on`), with the stream clean both ways. 48 test
+cases pass. The on-air confirmation of the lock waits on the transmit
+test (ACTIVE.md item 2).
+
 ## 2026-11-09: firmware update
 
 At Tom's request both boards were flashed to the 2026.01.3 release

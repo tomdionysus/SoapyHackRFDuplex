@@ -30,6 +30,7 @@ public:
     void set_vga_gain(unsigned db) override;
     void set_tx_vga_gain(unsigned db) override;
     void set_bias_tee(bool on) override;
+    void set_clock_out(bool on) override;
     std::size_t transfer_bytes() const override { return transfer_bytes_value; }
     void start_rx(RxHandler handler) override;
     void start_tx(TxHandler handler) override;
@@ -53,6 +54,8 @@ public:
     unsigned vga_db = 0;
     unsigned tx_vga_db = 0;
     bool bias = false;
+    bool clock_out = false;
+    bool external_clock = false;
     bool rx_streaming = false;
     bool tx_streaming = false;
     int starts = 0;

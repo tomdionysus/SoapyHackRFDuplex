@@ -37,7 +37,8 @@ Documentation:
 | `hackrfduplex-check` | ✓ | receives, optionally transmits a tone, and reports rates, drops and levels |
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
 | Transmit verified on two boards | ✗ | the next item in [TODO/ACTIVE.md](TODO/ACTIVE.md) |
-| Transmit timestamps, synchronised start, shared clock | ✗ | the LTE items in the roadmap |
+| Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable |
+| Transmit timestamps, synchronised start | ✗ | the LTE items in the roadmap |
 
 ## Hardware
 
@@ -51,11 +52,14 @@ an attenuator of at least 30 dB. The transmitter puts out up to about
 +10 dBm with its amplifier on and the receiver's front end saturates far
 below that.
 
-Optional, for applications that need the two sample clocks locked: an
-SMA cable from one board's CLKOUT to the other's CLKIN. The receiving
-board then reports `rx_clock: external` in the hardware information.
-The hardware trigger pins that start two boards together are not used
-yet ([Roadmap](#roadmap)).
+Optional, for applications that need the two sample clocks and both
+local oscillators locked: an SMA cable from one board's CLKOUT to the
+other's CLKIN, and the `clkout` setting naming the source board. The fed
+board then reports `clock: external` in the hardware information and
+the source `clkout: on`. A board with a TCXO module on its CLKIN header
+cannot also be fed by cable; take the module off the fed board. The
+hardware trigger pins that start two boards together are not used yet
+([Roadmap](#roadmap)).
 
 ## Build and install
 
@@ -108,6 +112,7 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
 | **Settings** | | |
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
+| `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run |
 
 Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
 62 dB in 2 dB steps) and `AMP` (0 or 14 dB); TX `VGA` (0 to 47 dB) and
@@ -150,17 +155,16 @@ The aim is an LTE FDD test cell on two HackRFs, as can be done today with
 one BladeRF. What the pair lacks for that, in the order it will be
 tackled:
 
-1. A shared reference: CLKOUT to CLKIN between the boards, so the two
-   sample clocks and both local oscillators do not drift apart.
-2. A synchronised start on the hardware trigger pins, so the transmit
-   stream's sample count and the receive stream's share one origin.
-3. Transmit timestamps against that origin, so a sample asked for at a
+1. A synchronised start on the hardware trigger pins, so the transmit
+   stream's sample count and the receive stream's share one origin. The
+   shared reference that makes this worthwhile is in place (`clkout`).
+2. Transmit timestamps against that origin, so a sample asked for at a
    time goes out at that time.
-4. Latency: libhackrf moves 256 KiB per transfer, which at LTE sample
+3. Latency: libhackrf moves 256 KiB per transfer, which at LTE sample
    rates is far more than the HARQ timeline allows, and the firmware's
    own 16 KiB granularity sets the floor. Measure, then rebuild libhackrf
    with smaller transfers.
-5. An srsRAN eNB on the pair at 10 MHz bandwidth.
+4. An srsRAN eNB on the pair at 10 MHz bandwidth.
 
 The HackRF's 8-bit converters bound this to a bench demonstration at
 modest modulation orders.

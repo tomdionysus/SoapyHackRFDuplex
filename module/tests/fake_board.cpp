@@ -24,8 +24,10 @@ BoardInfo FakeBoard::info() {
     info.serial = serial_;
     info.board = "HackRF One";
     info.revision = "r9";
-    info.firmware = "2024.02.1";
-    info.usb_api = "1.08";
+    info.firmware = "2026.01.3";
+    info.usb_api = "1.10";
+    info.external_clock = external_clock;
+    info.clock_out = clock_out;
     return info;
 }
 
@@ -68,6 +70,11 @@ void FakeBoard::set_tx_vga_gain(unsigned db) {
 void FakeBoard::set_bias_tee(bool on) {
     record("set_bias_tee", on ? "on" : "off");
     bias = on;
+}
+
+void FakeBoard::set_clock_out(bool on) {
+    record("set_clock_out", on ? "on" : "off");
+    clock_out = on;
 }
 
 void FakeBoard::start_rx(RxHandler handler) {

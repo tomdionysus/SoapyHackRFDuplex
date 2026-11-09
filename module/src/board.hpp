@@ -32,6 +32,9 @@ struct BoardInfo {
     // rather than its own crystal. Firmware before USB API 1.06 cannot
     // say, and reports false.
     bool external_clock = false;
+    // The board's CLKOUT is driving 10 MHz, read back from the clock
+    // chip. Off at every power-up.
+    bool clock_out = false;
 };
 
 // Called on the board's transfer thread with each received transfer's
@@ -61,6 +64,8 @@ public:
     virtual void set_vga_gain(unsigned db) = 0;
     virtual void set_tx_vga_gain(unsigned db) = 0;
     virtual void set_bias_tee(bool on) = 0;
+    // 10 MHz on the CLKOUT connector, for another board's CLKIN.
+    virtual void set_clock_out(bool on) = 0;
 
     // Bytes per transfer; every RX handler call carries at most this
     // many and every TX call exactly this many.

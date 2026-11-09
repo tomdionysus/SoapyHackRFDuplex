@@ -36,6 +36,8 @@ struct Options {
     // 0: never transmit. Otherwise a tone this far from the TX centre.
     double tx_tone_hz = 0;
     double seconds = 5;
+    // Empty: leave the boards' CLKOUT as they are.
+    std::string clkout;
     bool help = false;
 };
 
@@ -54,6 +56,8 @@ const char* const kUsage =
     "  --tx-gain DB      overall transmit gain (default 0)\n"
     "  --tx-tone HZ      transmit a tone this far from the TX centre (default off)\n"
     "  --seconds S       how long to run (default 5)\n"
+    "  --clkout WHICH    off, rx or tx: which board drives 10 MHz to the other's CLKIN\n"
+    "                    (default: leave as is)\n"
     "  --help\n";
 
 bool parse(int argc, char** argv, Options& options) {
@@ -85,6 +89,8 @@ bool parse(int argc, char** argv, Options& options) {
             options.tx_tone_hz = std::stod(value());
         } else if (arg == "--seconds") {
             options.seconds = std::stod(value());
+        } else if (arg == "--clkout") {
+            options.clkout = value();
         } else {
             throw std::invalid_argument("unknown option " + arg);
         }
@@ -185,6 +191,10 @@ int main(int argc, char** argv) {
 
     int status = 0;
     try {
+        if (!options.clkout.empty()) {
+            device->writeSetting("clkout", options.clkout);
+        }
+        std::cout << "clkout: " << device->readSetting("clkout") << "\n";
         std::cout << "hardware:\n";
         for (const auto& [key, value] : device->getHardwareInfo()) {
             std::cout << "  " << key << ": " << value << "\n";

@@ -11,6 +11,31 @@ const char* direction_name(Direction direction) {
     return direction == Direction::kRx ? "RX" : "TX";
 }
 
+const char* clock_out_name(ClockOut which) {
+    switch (which) {
+        case ClockOut::kOff:
+            return "off";
+        case ClockOut::kRx:
+            return "rx";
+        case ClockOut::kTx:
+            return "tx";
+    }
+    return "?";
+}
+
+ClockOut parse_clock_out(const std::string& name) {
+    if (name == "off") {
+        return ClockOut::kOff;
+    }
+    if (name == "rx") {
+        return ClockOut::kRx;
+    }
+    if (name == "tx") {
+        return ClockOut::kTx;
+    }
+    throw std::invalid_argument("clock out must be off, rx or tx, not " + name);
+}
+
 Pair::Pair(std::unique_ptr<Board> rx, std::unique_ptr<Board> tx, Log log) : log_(std::move(log)) {
     if (!rx || !tx) {
         throw std::invalid_argument("a pair needs two boards");
@@ -170,6 +195,33 @@ void Pair::set_bias_tee(bool on) {
     const std::lock_guard<std::mutex> lock(tx_.mutex);
     tx_.board->set_bias_tee(on);
     bias_ = on;
+}
+
+void Pair::set_clock_out(ClockOut which) {
+    const std::scoped_lock lock(rx_.mutex, tx_.mutex);
+    if (which != ClockOut::kRx) {
+        rx_.board->set_clock_out(false);
+    }
+    if (which != ClockOut::kTx) {
+        tx_.board->set_clock_out(false);
+    }
+    if (which == ClockOut::kRx) {
+        rx_.board->set_clock_out(true);
+    } else if (which == ClockOut::kTx) {
+        tx_.board->set_clock_out(true);
+    }
+    log(LogLevel::kInfo, std::string("clock out: ") + clock_out_name(which));
+}
+
+ClockOut Pair::clock_out() {
+    const std::scoped_lock lock(rx_.mutex, tx_.mutex);
+    if (rx_.board->info().clock_out) {
+        return ClockOut::kRx;
+    }
+    if (tx_.board->info().clock_out) {
+        return ClockOut::kTx;
+    }
+    return ClockOut::kOff;
 }
 
 void Pair::open_stream(Direction direction, Format format, std::size_t slots) {

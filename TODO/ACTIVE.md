@@ -54,16 +54,13 @@ item is removed from here and recorded at the top of
   with CS16 and CS8 formats through a short client, or the tool extended
   with `--format`.
 
-### 2. Shared reference clock
+### 2. Confirm the shared reference on the air
 
-- [ ] Both boards carry their own 10 MHz TCXO on CLKIN, so each is stable
-  but they are not locked to each other. First measure what that costs:
-  the tone's frequency offset and its drift at the receiver over a
-  minute, from item 1's setup. Then decide whether to lock them (one
-  board's TCXO removed, its CLKIN fed from the other's CLKOUT, with
-  `hackrf_set_clkout_enable` as a `clkout` setting) or whether two TCXOs
-  are close enough for the cell. Acceptance: the measured offset and
-  drift recorded in `docs/design.md`, and the decision recorded here.
+- [ ] The boards are locked: one TCXO, a CLKOUT to CLKIN cable, the
+  `clkout` setting. With item 1's tone running, read the tone's frequency
+  at the receiver over a minute. Acceptance: offset from the transmitted
+  frequency within the tone meter's resolution and no drift, recorded in
+  `docs/design.md`; then once with `clkout=off` for comparison, briefly.
 
 ### 3. Synchronised start
 
