@@ -118,6 +118,34 @@ TEST_CASE("the transmitter is tuned to the receiver for the burst and back", "[p
     air.stop();
 }
 
+TEST_CASE("a transmit tune during the burst is what the board keeps", "[pair][time]") {
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.pair.set_frequency(Direction::kTx, 847'300'000);
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 1000);
+    rig.pair.activate(Direction::kTx);
+    // When the transmitter goes to the receive frequency for the burst, the
+    // application tunes it, as soon as the pair lets it, while the burst is
+    // still out: the air waits for that tune.
+    std::thread tuner;
+    rig.tx.on_call = [&](const std::string& call) {
+        if (call == "set_frequency 892300000" && !tuner.joinable()) {
+            air.paused = true;
+            tuner = std::thread([&] {
+                rig.pair.set_frequency(Direction::kTx, 900'000'000);
+                air.paused = false;
+            });
+        }
+    };
+    rig.pair.activate(Direction::kRx);
+    tuner.join();
+    rig.tx.on_call = nullptr;
+    CHECK(rig.pair.frequency(Direction::kTx) == 900'000'000);
+    CHECK(rig.tx.frequency_hz == 900'000'000);
+    air.stop();
+}
+
 TEST_CASE("an unheard burst leaves no origin and logs how near it came", "[pair][time]") {
     Rig rig;
     rig.open();

@@ -3,6 +3,19 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: calibration restores the transmit frequency the pair holds
+
+Item 3. When the transmitter was retuned to the receive frequency for
+the calibration burst, the frequency put back afterwards was the one
+noted before the burst, so a transmit tune made meanwhile was lost on
+the board while `getFrequency` reported it. Now the restore applies the
+frequency the pair holds at that moment, under the transmit side's lock.
+Test: "a transmit tune during the burst is what the board keeps" tunes
+the transmitter from a second thread while the burst is out (the
+loopback paused until the tune lands) and finds board and pair both on
+the new frequency; it failed before the fix with the board on the old
+one. 97 test cases, the time tests 20 times over without a failure.
+
 ## 2026-11-09: the pair brought up on the target
 
 Item 1, accepted on the target (`corvus-macnessa-sdr`, a Raspberry Pi 5,

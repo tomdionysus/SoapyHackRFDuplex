@@ -729,8 +729,10 @@ void Pair::calibrate_locked() {
         capture.wait(std::chrono::milliseconds(static_cast<long>(2000.0 * seconds) + 2000));
     rx_path_->set_tap(nullptr);
     if (retune) {
+        // What the pair holds now, not what it held before the burst: the
+        // application may have tuned the transmitter meanwhile.
         const std::lock_guard<std::mutex> lock(tx_.mutex);
-        tx_.board->set_frequency(tx_hz);
+        tx_.board->set_frequency(tx_.frequency_hz);
     }
     if (!sent_at) {
         log(LogLevel::kWarning,

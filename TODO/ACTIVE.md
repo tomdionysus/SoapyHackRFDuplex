@@ -185,16 +185,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   the `buffers` default revisited in its light, and the README's
   hardware time paragraph stating the lead a writer should allow.
 
-### 3. Fix: calibration restores a stale transmit frequency
-
-- [ ] `calibrate_locked` notes the transmit frequency before retuning for
-  the burst and restores that value afterwards. If the application tunes
-  the transmitter while calibration runs, the board ends up on the old
-  frequency while `getFrequency` reports the new one. Restore the
-  frequency the pair holds at the moment of restoring, under the side's
-  lock. Acceptance: a test that tunes TX from the board hook during the
-  burst and finds board and pair agreeing afterwards.
-
 ### 4. Fix: lost samples and lost boards are reported
 
 - [ ] A board shortfall loses samples the stream positions cannot see,

@@ -32,12 +32,15 @@ public:
         }
     }
     std::atomic<bool> coupled{true};
+    // Paused, no transfer moves either way, so a test can hold the pair
+    // inside an operation that waits on the air.
+    std::atomic<bool> paused{false};
 
 private:
     void run() {
         std::uint32_t noise = 12345;
         while (!stop_) {
-            if (!tx_.tx_streaming || !rx_.rx_streaming) {
+            if (paused || !tx_.tx_streaming || !rx_.rx_streaming) {
                 std::this_thread::sleep_for(std::chrono::microseconds(20));
                 continue;
             }
