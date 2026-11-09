@@ -66,8 +66,10 @@ item is removed from here and recorded at the top of
   streams begin on one edge; the pair records the common origin.
   Acceptance: a tone burst written at TX position P is received at a
   fixed RX position P plus a constant, repeatable to a few samples across
-  ten starts. Check first with `hackrf_transfer -H` whether TX honours
-  the trigger on this firmware.
+  ten starts. The CPLD source (`firmware/cpld/sgpio_if/top.vhd` in the
+  hackrf tree) gates sample capture on the sync input for both
+  directions, so TX should honour the trigger; confirm on the bench with
+  `hackrf_transfer -H` before building on it.
 
 ### 4. Transmit timestamps
 
