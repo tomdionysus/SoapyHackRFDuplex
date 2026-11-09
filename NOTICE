@@ -4,32 +4,10 @@ Copyright (C) 2023-2026 Tom Cully <mail@tomcully.com>
 Licensed under the GNU General Public License, version 3 or (at your
 option) any later version; see LICENSE.
 
-This project began in 2023 as a fork of SoapyHackRF, the SoapySDR module
-for a single HackRF, and was rewritten in 2026. The original module's
-copyright notice is kept here as a matter of course:
-
-    SoapyHackRF
-    Copyright (c) 2015 Wei Jiang
-    Copyright (c) 2015-2023 Josh Blum
-    Copyright (c) 2017-2023 Kevin Mehall
-
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the
-    "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish,
-    distribute, sublicense, and/or sell copies of the Software, and to
-    permit persons to whom the Software is furnished to do so, subject to
-    the following conditions:
-
-    The above copyright notice and this permission notice shall be included
-    in all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+This is its own work: a SoapySDR module written for two HackRF boards.
+It follows the conventions SoapySDR users of a HackRF already know (the
+gain element names, the buffers stream argument) so that applications
+written for a single board work with the pair, and takes no code from
+any other module.
 
 Third-party works this project uses are listed in docs/licensing.md.

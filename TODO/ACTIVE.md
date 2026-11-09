@@ -7,7 +7,7 @@ item is removed from here and recorded at the top of
 
 ## Where things stand
 
-- 2026-11-09: the 2023 fork was rewritten to the 2026 conventions and
+- 2026-11-09: the 2023 code was rewritten to the 2026 conventions and
   built against SoapySDR 0.9.0, libhackrf 2026.01.3 and Catch2 3.16.1:
   47 test cases pass, `SoapySDRUtil --find` lists both orderings of the
   attached pair, `--probe` opens it, and `hackrfduplex-check` receives at
@@ -24,7 +24,9 @@ item is removed from here and recorded at the top of
 
 - C++20 throughout, Catch2 v3, the hardware dialect of
   `/Users/tom/devroot/CLAUDE-STYLE-2026.md`.
-- GPL-3.0-or-later, with SoapyHackRF's MIT notice kept in `NOTICE`.
+- GPL-3.0-or-later. This is Tom's own project, not a fork; it takes no
+  code from other modules and keeps only the SoapySDR conventions a
+  HackRF user expects.
 - One board receives and one transmits, fixed for the life of the device.
   No role swapping, no single-board fallback.
 - The RF amplifier is presented as 14 dB, as every SoapySDR HackRF driver

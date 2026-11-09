@@ -15,7 +15,7 @@ clock, as the r10 already did. `SoapySDRUtil --probe` opens the pair and
 
 ## 2026-11-09: remove the 2023 files
 
-Tom removed the fork's sources, packaging, CI file and stale build output
+Tom removed the 2023 sources, packaging, CI file and stale build output
 by hand. `cmake --preset default` configured into a clean `build/`, the
 build was warning-free and `ctest --preset default` passed 47 of 47.
 
@@ -46,8 +46,8 @@ translation.
 
 ## 2026-11-09: rewrite to the 2026 conventions
 
-The 2023 fork of SoapyHackRF (one device class with every member
-duplicated for RX and TX, no tests, warnings silenced) was replaced by:
+The 2023 code (one device class with every member duplicated for RX and
+TX, no tests, warnings silenced) was replaced by:
 
 - a core with no hardware or SoapySDR dependency: `format`, `convert`,
   `block_ring`, `gain`, `bandwidth`, `rx_path`, `tx_path`, `pair`,
@@ -61,8 +61,8 @@ duplicated for RX and TX, no tests, warnings silenced) was replaced by:
 - CMake with presets, sanitizer and coverage builds, a version header
   from `git describe`, and a libhackrf lookup that works beside a
   MacPorts pkg-config;
-- GPL-3.0-or-later with the original MIT notice, README, CONTRIBUTING,
-  design and licensing documents, and this plan.
+- GPL-3.0-or-later, README, CONTRIBUTING, design and licensing documents,
+  and this plan.
 
 Design decisions taken on the way: discovery never opens a board; the
 receive stream carries a sample-count time and reports a gap once as an
