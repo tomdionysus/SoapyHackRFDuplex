@@ -3,6 +3,25 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: transmit in every format
+
+With Tom's go-ahead, `hackrfduplex-check --tx-format` (new) sent the same
+tone, TX gain 0, amplifier off, 10 s each, after the clock cable was
+shortened:
+
+| Format | Tone at the receiver | Offset | Underflows |
+|---|---|---|---|
+| CS8 | -59.3 dBFS | 0.0 Hz every second | 0 |
+| CS16 | -59.5 dBFS | 0.0 Hz every second | 0 |
+| CF32 | -59.5 dBFS | 0.0 Hz every second | 0 |
+| CF64 | -59.6 dBFS | 0.0 Hz every second | 0 |
+
+The four agree within 0.3 dB. The tone is 18 dB stronger than in the
+first CF32 run because the bench changed between them (the cable swap),
+which the CF32 repeat under the same conditions confirms. The image at
+-100 kHz sits 20 dB below the tone, the transmitter's I/Q imbalance;
+the products at +-200 kHz are 22 dB below.
+
 ## 2026-11-09: verify transmit and the shared reference on the air
 
 With Tom's go-ahead: `hackrfduplex-check --clkout rx --tx-tone 100e3

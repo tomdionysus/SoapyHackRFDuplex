@@ -46,13 +46,7 @@ item is removed from here and recorded at the top of
 
 ## Items
 
-### 1. Transmit in the other formats
-
-- [ ] `hackrfduplex-check --format` for CS8 and CS16 (CF32 is verified),
-  with Tom's go-ahead for each transmit run. Acceptance: the tone at the
-  same level and offset as with CF32, 0 underflows.
-
-### 2. Losing the reference
+### 1. Losing the reference
 
 - [ ] `clkout=off` with the fed board powered leaves it without a clock
   ([docs/design.md](../docs/design.md), Measured). Find out what the
