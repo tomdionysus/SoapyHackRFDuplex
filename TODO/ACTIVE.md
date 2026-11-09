@@ -255,6 +255,10 @@ first, by Tom's choice; 1.0.0 after it has been used):
   fake-board tests; on the target, a timed receive window that starts
   exactly where a timed transmit burst lands, through a new
   `hackrfduplex-check --timed-window` mode.
+  Status 2026-11-09: built and tested against the fakes (`[timed-rx]`,
+  six cases), also on a running stream, so a window needs no restart and
+  keeps the origin; `hackrfduplex-check --timed-window US` built. The run
+  on the target remains, once the lead sweep frees the boards.
 
 ### 8. Clock and time sources through the SoapySDR API
 

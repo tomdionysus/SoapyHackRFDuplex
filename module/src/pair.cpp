@@ -905,6 +905,13 @@ RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds 
     }
 }
 
+void Pair::set_rx_window(std::optional<std::uint64_t> start, std::optional<std::uint64_t> count) {
+    if (!rx_path_) {
+        throw std::logic_error("RX stream not open");
+    }
+    rx_path_->set_window(start, count);
+}
+
 std::size_t Pair::write(const void* src, std::size_t samples, bool end_of_burst,
                         std::chrono::microseconds timeout) {
     if (!tx_path_) {

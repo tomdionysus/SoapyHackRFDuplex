@@ -162,6 +162,10 @@ public:
     // shortfall on the receiving board is reported once as an overflow.
     // Returns nothing once the board has failed (failed()).
     RxRead read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout);
+    // What the receive stream delivers from here on (RxPath::set_window):
+    // from receive position `start`, `count` samples. Throws
+    // std::logic_error with no RX stream open.
+    void set_rx_window(std::optional<std::uint64_t> start, std::optional<std::uint64_t> count);
     // Writer thread. Throws std::logic_error with no TX stream open. Takes
     // nothing once the board has failed.
     std::size_t write(const void* src, std::size_t samples, bool end_of_burst,

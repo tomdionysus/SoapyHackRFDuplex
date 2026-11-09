@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <span>
 
 #include "block_ring.hpp"
@@ -23,6 +24,8 @@ struct RxRead {
     // Transfers were dropped before `position` because the ring was full.
     // Reported once per gap, before the data that follows it.
     bool overflow = false;
+    // The last samples of a finite window (set_window).
+    bool end_burst = false;
 };
 
 // Called on the board's thread with each transfer's stream position and
@@ -51,6 +54,13 @@ public:
     RxRead read(void* dst, std::size_t max_samples, Format format,
                 std::chrono::microseconds timeout);
 
+    // Any thread: what the reader delivers from here on. With `start`, the
+    // samples before that position are dropped and the first read begins
+    // exactly at it; with `count`, that many samples are delivered, the last
+    // read flagged end_burst, and nothing after. Neither: everything, as
+    // after reset().
+    void set_window(std::optional<std::uint64_t> start, std::optional<std::uint64_t> count);
+
     // Releases a reader blocked in read(), which then reports a timeout.
     void wake() { ring_.wake(); }
     // Back to the start of a stream. Only with neither side running.
@@ -72,6 +82,19 @@ private:
     // into the front block it has read.
     std::uint64_t expected_ = 0;
     std::size_t offset_ = 0;
+
+    struct Window {
+        std::optional<std::uint64_t> start;
+        // Samples still to deliver.
+        std::optional<std::uint64_t> remaining;
+        // A finite window delivered in full.
+        bool done = false;
+        // Changes with every set_window, so the reader updates only the
+        // window it read from.
+        std::uint64_t generation = 0;
+    };
+    std::mutex window_mutex_;
+    Window window_;
 };
 
 }  // namespace hackrfduplex

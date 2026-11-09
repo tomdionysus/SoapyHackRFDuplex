@@ -123,9 +123,9 @@ channel, 0, each way).
 | `getNumChannels`, `getFullDuplex` | 1 each way; full duplex |
 | `getStreamFormats`, `getNativeStreamFormat` | CS8 (native, full scale 128), CS16, CF32, CF64 |
 | `getStreamArgsInfo`, `setupStream` | `buffers`, the ring depth in transfers; any other argument logged and ignored |
-| `activateStream` | starts the board; flags or a count: `SOAPY_SDR_NOT_SUPPORTED` |
+| `activateStream` | starts the board; on receive, `SOAPY_SDR_HAS_TIME` starts delivery at that time and `SOAPY_SDR_END_BURST` with a count ends it after that many samples, also on a stream already running; a time passed `SOAPY_SDR_TIME_ERROR`; any other flag, and any on transmit, `SOAPY_SDR_NOT_SUPPORTED` |
 | `deactivateStream` | stops the board at once; flags: `SOAPY_SDR_NOT_SUPPORTED` |
-| `readStream` | samples stamped with `SOAPY_SDR_HAS_TIME`; overflow with `SOAPY_SDR_END_ABRUPT`; a failed board `SOAPY_SDR_STREAM_ERROR` |
+| `readStream` | samples stamped with `SOAPY_SDR_HAS_TIME`; `SOAPY_SDR_END_BURST` on the last read of a receive burst; overflow with `SOAPY_SDR_END_ABRUPT`; a failed board `SOAPY_SDR_STREAM_ERROR` |
 | `writeStream` | `SOAPY_SDR_HAS_TIME`, `SOAPY_SDR_END_BURST`, `SOAPY_SDR_ONE_PACKET`; any other flag `SOAPY_SDR_NOT_SUPPORTED` |
 | `readStreamStatus` | transmit: underflow, time error, stream error; receive: `SOAPY_SDR_NOT_SUPPORTED` |
 | `getStreamMTU` | one transfer of samples |
@@ -212,6 +212,19 @@ into an empty ring has moved later samples. A write whose position is
 already queued or sent is refused at once with `SOAPY_SDR_TIME_ERROR`.
 A timed write while the origin is still to come waits for it up to its
 timeout; with no origin to come it is refused.
+
+Receive is timed at activation. `activateStream` with
+`SOAPY_SDR_HAS_TIME` gives the receive path a window starting at that
+time's position: the reader drops every earlier sample, gaps included
+since the positions say where the window falls, and its first read is
+stamped exactly at the time asked. With `SOAPY_SDR_END_BURST` and a
+count the window delivers that many samples, flags the last read, and
+then drops what follows until the next activation. Either works on a
+stream already running, which is how a receive window is laid over a
+timed transmit burst without stopping the streams and losing the
+origin; a plain `activateStream` on a running stream returns it to
+delivering everything. A time before the hardware time now is refused
+with `SOAPY_SDR_TIME_ERROR`.
 
 The origin is lost, reported once through `readStreamStatus` as
 `SOAPY_SDR_TIME_ERROR` and logged, when either board reports a

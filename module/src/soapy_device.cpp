@@ -232,17 +232,51 @@ size_t SoapyDevice::getStreamMTU(SoapySDR::Stream* stream) const {
     return pair_->mtu(direction_of(stream));
 }
 
-int SoapyDevice::activateStream(SoapySDR::Stream* stream, const int flags, const long long,
+int SoapyDevice::activateStream(SoapySDR::Stream* stream, const int flags, const long long timeNs,
                                 const size_t numElems) {
     const Direction dir = direction_of(stream);
-    if (flags != 0 || numElems != 0) {
+    if (dir == Direction::kTx && (flags != 0 || numElems != 0)) {
         soapy_log(LogLevel::kError,
-                  std::string("activateStream: ") + direction_name(dir) +
-                      " streams start at once and run until deactivated; no flags or count");
+                  "activateStream: the TX stream starts at once and runs until deactivated; no "
+                  "flags or count (time the writes instead)");
         return SOAPY_SDR_NOT_SUPPORTED;
+    }
+    // Receive: a start time, a burst of numElems samples, or both.
+    const bool timed = (flags & SOAPY_SDR_HAS_TIME) != 0;
+    const bool burst = (flags & SOAPY_SDR_END_BURST) != 0;
+    if ((flags & ~(SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST)) != 0 || burst != (numElems != 0)) {
+        soapy_log(LogLevel::kError,
+                  "activateStream: the RX stream takes SOAPY_SDR_HAS_TIME, and "
+                  "SOAPY_SDR_END_BURST with a count of samples, and nothing else");
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
+    std::optional<std::uint64_t> start;
+    if (timed) {
+        const double rate = pair_->sample_rate(Direction::kRx);
+        if (!(rate > 0)) {
+            soapy_log(LogLevel::kError, "activateStream: set the receive sample rate first");
+            return SOAPY_SDR_TIME_ERROR;
+        }
+        // Time is the receive position plus the offset; a stream that is not
+        // running starts again from position 0.
+        const long long ticks = SoapySDR::timeNsToTicks(timeNs, rate);
+        const long long now =
+            pair_->active(Direction::kRx) ? pair_->time_ticks() : pair_->time_offset();
+        if (ticks < now) {
+            soapy_log(LogLevel::kError, "activateStream: the receive start time has passed");
+            return SOAPY_SDR_TIME_ERROR;
+        }
+        start = static_cast<std::uint64_t>(ticks - pair_->time_offset());
+    }
+    std::optional<std::uint64_t> count;
+    if (burst) {
+        count = numElems;
     }
     try {
         pair_->activate(dir);
+        if (dir == Direction::kRx) {
+            pair_->set_rx_window(start, count);
+        }
     } catch (const BoardError& e) {
         soapy_log(LogLevel::kError, e.what());
         return SOAPY_SDR_STREAM_ERROR;
@@ -277,6 +311,9 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
     if (read.overflow) {
         flags |= SOAPY_SDR_END_ABRUPT;
         return SOAPY_SDR_OVERFLOW;
+    }
+    if (read.end_burst) {
+        flags |= SOAPY_SDR_END_BURST;
     }
     if (read.samples == 0) {
         return pair_->failed(Direction::kRx) ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;

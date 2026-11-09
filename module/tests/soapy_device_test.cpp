@@ -7,6 +7,7 @@
 #include <SoapySDR/Errors.hpp>
 #include <SoapySDR/Formats.hpp>
 #include <SoapySDR/Logger.hpp>
+#include <SoapySDR/Time.hpp>
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
@@ -735,4 +736,184 @@ TEST_CASE("firmware that takes no underrun limit is named in the log", "[soapy][
     REQUIRE(d.activateStream(tx) == 0);
     CHECK(rig.logged(SOAPY_SDR_WARNING, "takes no underrun limit"));
     d.closeStream(tx);
+}
+
+namespace {
+
+// A receive stream at 8 Msps in CS8 over 1024-sample transfers, set up but
+// not active, whose board sends each sample's position in it: I the low
+// byte, Q the next, so a read shows which samples it holds.
+struct WindowRig : SoapyRig {
+    WindowRig() {
+        rx->transfer_bytes_value = 2048;
+        SoapySDR::Device& d = *device;
+        d.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
+        stream = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
+    }
+
+    void deliver(int transfers) {
+        for (int t = 0; t < transfers; ++t) {
+            std::vector<std::uint8_t> bytes(2048);
+            for (std::size_t i = 0; i < 1024; ++i) {
+                bytes[2 * i] = static_cast<std::uint8_t>(sent & 0xff);
+                bytes[2 * i + 1] = static_cast<std::uint8_t>((sent >> 8) & 0xff);
+                ++sent;
+            }
+            rx->deliver_rx(bytes);
+        }
+    }
+
+    struct Read {
+        int result = 0;
+        int flags = 0;
+        long long time_ns = 0;
+        // The position the first sample carries, from its bytes.
+        std::uint64_t first = 0;
+    };
+    Read read(std::size_t max = 1024, long timeout_us = 0) {
+        std::vector<std::uint8_t> buffer(2 * max);
+        void* buffs[] = {buffer.data()};
+        Read r;
+        SoapySDR::Device& d = *device;
+        r.result = d.readStream(stream, buffs, max, r.flags, r.time_ns, timeout_us);
+        if (r.result > 0) {
+            r.first = buffer[0] | (static_cast<std::uint64_t>(buffer[1]) << 8);
+        }
+        return r;
+    }
+
+    // Samples delivered until a read flags the end of the burst or none come.
+    std::size_t read_burst(bool& ended) {
+        std::size_t total = 0;
+        ended = false;
+        while (true) {
+            const Read r = read();
+            if (r.result <= 0) {
+                return total;
+            }
+            total += static_cast<std::size_t>(r.result);
+            if ((r.flags & SOAPY_SDR_END_BURST) != 0) {
+                ended = true;
+                return total;
+            }
+        }
+    }
+
+    static long long ns(long long ticks) { return SoapySDR::ticksToTimeNs(ticks, 8e6); }
+
+    SoapySDR::Stream* stream = nullptr;
+    // Samples the board has sent; positions run modulo 65536 in the bytes.
+    std::uint64_t sent = 0;
+};
+
+}  // namespace
+
+TEST_CASE("a timed receive start delivers from that time, stamped exactly", "[soapy][timed-rx]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    d.setHardwareTime(WindowRig::ns(10'000));
+    // Receive time 11'500 is stream position 1500.
+    REQUIRE(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME, WindowRig::ns(11'500)) == 0);
+    rig.deliver(4);
+    const WindowRig::Read first = rig.read();
+    REQUIRE(first.result > 0);
+    CHECK(first.time_ns == WindowRig::ns(11'500));
+    CHECK(first.first == 1500);
+    // Then on without a break.
+    const WindowRig::Read next = rig.read();
+    CHECK(next.time_ns == first.time_ns + WindowRig::ns(first.result));
+    CHECK(next.first == 1500 + static_cast<std::uint64_t>(first.result));
+}
+
+TEST_CASE("a timed receive start waits for its time to come", "[soapy][timed-rx]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    REQUIRE(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME, WindowRig::ns(5000)) == 0);
+    rig.deliver(4);  // positions 0 to 4095: all before the time
+    CHECK(rig.read().result == SOAPY_SDR_TIMEOUT);
+    rig.deliver(2);
+    const WindowRig::Read r = rig.read();
+    CHECK(r.result > 0);
+    CHECK(r.first == 5000);
+}
+
+TEST_CASE("a finite receive burst ends with END_BURST and then delivers nothing",
+          "[soapy][timed-rx]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    SECTION("at a time") {
+        REQUIRE(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST,
+                                 WindowRig::ns(1500), 2500) == 0);
+        rig.deliver(6);
+        const WindowRig::Read first = rig.read();
+        CHECK(first.first == 1500);
+        CHECK(first.time_ns == WindowRig::ns(1500));
+        bool ended = false;
+        CHECK(static_cast<std::size_t>(first.result) + rig.read_burst(ended) == 2500);
+        CHECK(ended);
+    }
+    SECTION("at once") {
+        REQUIRE(d.activateStream(rig.stream, SOAPY_SDR_END_BURST, 0, 100) == 0);
+        rig.deliver(2);
+        bool ended = false;
+        CHECK(rig.read_burst(ended) == 100);
+        CHECK(ended);
+    }
+    // After the burst, more from the board is not delivered.
+    rig.deliver(4);
+    CHECK(rig.read(1024, 20000).result == SOAPY_SDR_TIMEOUT);
+}
+
+TEST_CASE("a timed window can be set on a running receive stream", "[soapy][timed-rx]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    REQUIRE(d.activateStream(rig.stream) == 0);
+    rig.deliver(1);
+    CHECK(rig.read().result == 1024);
+    // The streams keep running, so the origin holds; the window starts later.
+    REQUIRE(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST,
+                             WindowRig::ns(3000), 512) == 0);
+    rig.deliver(4);
+    const WindowRig::Read r = rig.read();
+    CHECK(r.first == 3000);
+    CHECK(r.time_ns == WindowRig::ns(3000));
+    // A read ends with its transfer, so the burst may take several.
+    REQUIRE(r.result > 0);
+    bool ended = false;
+    CHECK(static_cast<std::size_t>(r.result) + rig.read_burst(ended) == 512);
+    CHECK(ended);
+    // A plain activation goes back to streaming without end.
+    REQUIRE(d.activateStream(rig.stream) == 0);
+    rig.deliver(1);
+    const WindowRig::Read after = rig.read();
+    CHECK(after.result > 0);
+    CHECK((after.flags & SOAPY_SDR_END_BURST) == 0);
+}
+
+TEST_CASE("a receive time already passed is a time error", "[soapy][timed-rx]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    SECTION("before the stream starts") {
+        d.setHardwareTime(WindowRig::ns(10'000));
+        CHECK(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME, WindowRig::ns(9'000)) ==
+              SOAPY_SDR_TIME_ERROR);
+        CHECK_FALSE(rig.rx->rx_streaming);
+    }
+    SECTION("while it runs") {
+        REQUIRE(d.activateStream(rig.stream) == 0);
+        rig.deliver(2);  // the time is now 2048
+        CHECK(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME, WindowRig::ns(1000)) ==
+              SOAPY_SDR_TIME_ERROR);
+        // The stream runs on as it was.
+        CHECK(rig.read().first == 0);
+    }
+}
+
+TEST_CASE("receive burst flags must come with their count", "[soapy][timed-rx]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK(d.activateStream(rig.stream, SOAPY_SDR_END_BURST, 0, 0) == SOAPY_SDR_NOT_SUPPORTED);
+    CHECK(d.activateStream(rig.stream, 0, 0, 100) == SOAPY_SDR_NOT_SUPPORTED);
+    CHECK(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME, 0, 100) == SOAPY_SDR_NOT_SUPPORTED);
+    CHECK_FALSE(rig.rx->rx_streaming);
 }
