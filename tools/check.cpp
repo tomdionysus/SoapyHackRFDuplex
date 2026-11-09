@@ -3,13 +3,16 @@
 // hackrfduplex-check: opens a pair through SoapySDR, receives for a
 // while, optionally transmits a tone meanwhile, and reports rates,
 // drops and what the receiver heard. The transmitter stays off unless
-// --tx-tone is given.
+// --tx-tone or --timed-bursts is given. --timed-bursts places bursts at
+// receive timestamps plus a delay and reports where each one arrived.
 
 #include <SoapySDR/Constants.h>
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Errors.hpp>
 #include <SoapySDR/Formats.hpp>
+#include <SoapySDR/Logger.hpp>
+#include <SoapySDR/Time.hpp>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -17,11 +20,17 @@
 #include <complex>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <iostream>
+#include <map>
+#include <mutex>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "burst.hpp"
 
 namespace {
 
@@ -41,8 +50,52 @@ struct Options {
     // Empty: leave the boards' CLKOUT as they are.
     std::string clkout;
     std::string tx_format = SOAPY_SDR_CF32;
+    // Empty: the module's default.
+    std::string time_origin;
+    // Extra calibrations once both streams run, each reporting the origin.
+    int calibrations = 0;
+    // Timed mode when set: the delay from a receive timestamp to its burst.
+    std::optional<double> timed_delay_us;
+    // 0: the module's default.
+    int buffers = 0;
     bool help = false;
 };
+
+// The module reports the origin it found in its log; keep the last one.
+std::mutex g_log_mutex;
+std::optional<long long> g_tx_of_rx;
+std::string g_last_warning;
+
+void log_handler(const SoapySDRLogLevel level, const char* message) {
+    const std::string text = message;
+    const char* name = level <= SOAPY_SDR_ERROR     ? "ERROR"
+                       : level <= SOAPY_SDR_WARNING ? "WARNING"
+                       : level <= SOAPY_SDR_INFO    ? "INFO"
+                                                    : "DEBUG";
+    if (level == SOAPY_SDR_SSI) {
+        std::fputs(message, stderr);
+        return;
+    }
+    std::fprintf(stderr, "[%s] %s\n", name, message);
+    const std::lock_guard<std::mutex> lock(g_log_mutex);
+    const std::string marker = "transmit position = receive position ";
+    const auto at = text.find(marker);
+    if (at != std::string::npos) {
+        const std::string rest = text.substr(at + marker.size());
+        const long long magnitude = std::stoll(rest.substr(2));
+        g_tx_of_rx = rest[0] == '-' ? -magnitude : magnitude;
+    }
+    if (level <= SOAPY_SDR_WARNING) {
+        g_last_warning = text;
+    }
+}
+
+std::optional<long long> take_tx_of_rx() {
+    const std::lock_guard<std::mutex> lock(g_log_mutex);
+    const auto value = g_tx_of_rx;
+    g_tx_of_rx.reset();
+    return value;
+}
 
 std::size_t format_bytes(const std::string& format) {
     if (format == SOAPY_SDR_CS8) {
@@ -107,6 +160,13 @@ const char* const kUsage =
     "  --clkout WHICH    off, rx or tx: which board drives 10 MHz to the other's CLKIN\n"
     "                    (default: leave as is)\n"
     "  --tx-format F     CS8, CS16, CF32 or CF64 for the transmit stream (default CF32)\n"
+    "  --buffers N       the streams' ring depth in transfers (default: the module's)\n"
+    "  --time-origin O   burst, trigger or none (default: the module's, burst)\n"
+    "  --calibrations N  once both streams run, calibrate N more times and report\n"
+    "                    the origin each time found\n"
+    "  --timed-bursts US transmit a 4096-sample burst at each receive timestamp plus\n"
+    "                    US microseconds, and report where each arrived (transmits;\n"
+    "                    excludes --tx-tone)\n"
     "  --help\n";
 
 void parse(int argc, char** argv, Options& options) {
@@ -145,6 +205,14 @@ void parse(int argc, char** argv, Options& options) {
         } else if (arg == "--tx-format") {
             options.tx_format = value();
             format_bytes(options.tx_format);
+        } else if (arg == "--buffers") {
+            options.buffers = std::stoi(value());
+        } else if (arg == "--time-origin") {
+            options.time_origin = value();
+        } else if (arg == "--calibrations") {
+            options.calibrations = std::stoi(value());
+        } else if (arg == "--timed-bursts") {
+            options.timed_delay_us = std::stod(value());
         } else {
             throw std::invalid_argument("unknown option " + arg);
         }
@@ -376,6 +444,244 @@ struct TxResult {
     int error = 0;
 };
 
+SoapySDR::Kwargs stream_args(const Options& options) {
+    SoapySDR::Kwargs args;
+    if (options.buffers > 0) {
+        args["buffers"] = std::to_string(options.buffers);
+    }
+    return args;
+}
+
+// The origin found when both streams started, then `count` more
+// calibrations, each reported, and their spread.
+void run_calibrations(SoapySDR::Device* device, int count) {
+    std::vector<long long> found;
+    const auto first = take_tx_of_rx();
+    if (first) {
+        std::printf("time: origin at start: transmit position = receive position %+lld\n", *first);
+        found.push_back(*first);
+    } else {
+        std::printf("time: no common origin at start\n");
+    }
+    for (int i = 1; i <= count; ++i) {
+        device->writeSetting("calibrate", "");
+        const auto value = take_tx_of_rx();
+        if (value) {
+            std::printf("time: calibration %d: transmit position = receive position %+lld\n", i,
+                        *value);
+            found.push_back(*value);
+        } else {
+            std::printf("time: calibration %d: no origin found\n", i);
+        }
+    }
+    if (found.size() > 1) {
+        const auto [low, high] = std::minmax_element(found.begin(), found.end());
+        std::printf("time: origin spread %lld samples over %zu findings\n", *high - *low,
+                    found.size());
+    }
+}
+
+struct TimedResult {
+    unsigned written = 0;
+    unsigned late_writes = 0;
+    unsigned write_timeouts = 0;
+    unsigned time_errors = 0;
+    unsigned underflows = 0;
+    unsigned overflows = 0;
+    unsigned found = 0;
+    unsigned missing = 0;
+    unsigned lost = 0;
+    unsigned behind = 0;
+    // getHardwareTime between two reads, against their timestamps.
+    unsigned clock_checks = 0;
+    unsigned clock_outside = 0;
+    std::map<long long, unsigned> errors;
+};
+
+// Timed mode: after each read stamped t, the burst is written for time
+// t + delay; each is then looked for in the received samples within a
+// window around where it was asked to land, and the difference counted.
+int run_timed(SoapySDR::Device* device, const Options& options) {
+    const double rate = options.rate_hz;
+    const SoapySDR::Kwargs args = stream_args(options);
+    SoapySDR::Stream* rx = device->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8, {}, args);
+    SoapySDR::Stream* tx = device->setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8, {}, args);
+    if (device->activateStream(tx) != 0 || device->activateStream(rx) != 0) {
+        throw std::runtime_error("the streams did not activate");
+    }
+    run_calibrations(device, options.calibrations);
+    if (!device->hasHardwareTime()) {
+        std::printf("timed: no common time origin, which timed bursts need\n");
+        device->deactivateStream(rx);
+        device->deactivateStream(tx);
+        device->closeStream(rx);
+        device->closeStream(tx);
+        return 1;
+    }
+
+    const std::vector<std::int8_t> burst = hackrfduplex::burst::samples();
+    const auto chips = static_cast<long long>(hackrfduplex::burst::kChips);
+    const long long margin = 2048;
+    const long long delay = std::llround(*options.timed_delay_us * 1e-6 * rate);
+    const std::size_t mtu = device->getStreamMTU(rx);
+    std::vector<std::int8_t> buffer(2 * mtu);
+    std::vector<std::int8_t> history;
+    long long history_start = 0;
+    std::deque<long long> pending;
+    long long last_scheduled = -(1LL << 62);
+    TimedResult result;
+
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                      std::chrono::duration<double>(options.seconds));
+    std::optional<long long> previous_read_ns;
+    while (std::chrono::steady_clock::now() < deadline) {
+        int flags = 0;
+        long long time_ns = 0;
+        void* buffs[] = {buffer.data()};
+        const long long clock_ns = device->getHardwareTime();
+        const int n = device->readStream(rx, buffs, mtu, flags, time_ns, 200000);
+        if (n == SOAPY_SDR_OVERFLOW) {
+            ++result.overflows;
+            previous_read_ns.reset();
+            continue;
+        }
+
+        if (n == SOAPY_SDR_TIMEOUT) {
+            continue;
+        }
+        if (n < 0) {
+            std::printf("timed: read error %s\n", SoapySDR::errToStr(n));
+            break;
+        }
+        const long long tick = SoapySDR::timeNsToTicks(time_ns, rate);
+        const auto held = static_cast<long long>(history.size() / 2);
+        if (history.empty() || tick != history_start + held) {
+            // A gap: bursts whose window ran into it cannot be judged.
+            while (!pending.empty() && pending.front() - margin < tick) {
+                pending.pop_front();
+                ++result.lost;
+            }
+            history.clear();
+            history_start = tick;
+        }
+        history.insert(history.end(), buffer.begin(), buffer.begin() + 2 * n);
+
+        // A read from a backlog (the ring fills while activation calibrates)
+        // is not live; stamping from it measures the backlog, not the lead.
+        const long long newest = SoapySDR::timeNsToTicks(device->getHardwareTime(), rate);
+        const bool live = newest - (tick + n) < static_cast<long long>(mtu);
+        if (!live) {
+            ++result.behind;
+            previous_read_ns.reset();
+        } else {
+            // Between two live reads the time now lies between the first
+            // one's first sample and the second one's last.
+            const long long end_ns = time_ns + SoapySDR::ticksToTimeNs(n, rate);
+            if (previous_read_ns) {
+                ++result.clock_checks;
+                if (clock_ns < *previous_read_ns || clock_ns > end_ns) {
+                    ++result.clock_outside;
+                }
+            }
+            previous_read_ns = time_ns;
+        }
+        const long long at = tick + delay;
+        if (live && at >= last_scheduled + 4 * chips) {
+            int write_flags = SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST;
+            const void* out[] = {burst.data()};
+            const int w = device->writeStream(tx, out, burst.size() / 2, write_flags,
+                                              SoapySDR::ticksToTimeNs(at, rate), 0);
+            if (w == SOAPY_SDR_TIME_ERROR) {
+                ++result.late_writes;
+            } else if (w == SOAPY_SDR_TIMEOUT) {
+                ++result.write_timeouts;
+            } else if (w < 0) {
+                std::printf("timed: write error %s\n", SoapySDR::errToStr(w));
+                break;
+            } else {
+                long long done = w;
+                while (done < chips) {
+                    int more_flags = SOAPY_SDR_END_BURST;
+                    const void* rest[] = {burst.data() + 2 * done};
+                    const int m = device->writeStream(
+                        tx, rest, static_cast<std::size_t>(chips - done), more_flags, 0, 100000);
+                    if (m <= 0) {
+                        break;
+                    }
+                    done += m;
+                }
+                ++result.written;
+                pending.push_back(at);
+                last_scheduled = at;
+            }
+        }
+
+        while (true) {
+            std::size_t mask = 0;
+            int status_flags = 0;
+            long long status_time = 0;
+            const int r = device->readStreamStatus(tx, mask, status_flags, status_time, 0);
+            if (r == SOAPY_SDR_UNDERFLOW) {
+                ++result.underflows;
+            } else if (r == SOAPY_SDR_TIME_ERROR) {
+                ++result.time_errors;
+            } else {
+                break;
+            }
+        }
+
+        const long long end = history_start + static_cast<long long>(history.size() / 2);
+        while (!pending.empty() && pending.front() + chips + margin <= end) {
+            const long long asked = pending.front();
+            pending.pop_front();
+            const long long low = std::max(asked - margin, history_start);
+            const auto from = static_cast<std::size_t>(2 * (low - history_start));
+            const auto length = static_cast<std::size_t>(2 * (asked + chips + margin - low));
+            const hackrfduplex::burst::Found found = hackrfduplex::burst::find(
+                std::span<const std::int8_t>(history.data() + from, length));
+            if (found.found) {
+                ++result.found;
+                ++result.errors[low + static_cast<long long>(found.offset) - asked];
+            } else {
+                ++result.missing;
+            }
+        }
+        const long long keep = std::max(
+            history_start, (pending.empty() ? end : std::min(pending.front(), end)) - margin);
+        if (keep - history_start > 4 * static_cast<long long>(mtu)) {
+            history.erase(history.begin(), history.begin() + 2 * (keep - history_start));
+            history_start = keep;
+        }
+    }
+    device->deactivateStream(rx);
+    device->deactivateStream(tx);
+    device->closeStream(rx);
+    device->closeStream(tx);
+
+    std::printf("timed: delay %.0f us = %lld samples at %.3f Msps\n", *options.timed_delay_us,
+                delay, rate / 1e6);
+    std::printf(
+        "timed: %u bursts written, %u late writes, %u write timeouts, %u reads from a backlog "
+        "not stamped\n",
+        result.written, result.late_writes, result.write_timeouts, result.behind);
+    std::printf("timed: %u found, %u not found, %u lost to receive overflows (%u overflows)\n",
+                result.found, result.missing, result.lost, result.overflows);
+    std::printf("timed: stream status: %u time errors, %u underflows\n", result.time_errors,
+                result.underflows);
+    std::printf("timed: hardware time between two reads' timestamps: %u of %u\n",
+                result.clock_checks - result.clock_outside, result.clock_checks);
+    std::printf("timed: arrival against the time asked, in samples:");
+    for (const auto& [error, count] : result.errors) {
+        std::printf(" %+lld (x%u)", error, count);
+    }
+    std::printf("\n");
+    const bool clean = result.late_writes == 0 && result.time_errors == 0 && result.missing == 0 &&
+                       result.errors.size() <= 1 && result.clock_outside == 0;
+    std::printf("timed: %s\n", clean ? "every burst on time and in place" : "NOT CLEAN");
+    return clean ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -393,6 +699,11 @@ int main(int argc, char** argv) {
     if (options.tx_rate_hz == 0) {
         options.tx_rate_hz = options.rate_hz;
     }
+    if (options.timed_delay_us && options.tx_tone_hz != 0) {
+        std::cerr << "hackrfduplex-check: --timed-bursts and --tx-tone exclude each other\n";
+        return 2;
+    }
+    SoapySDR::registerLogHandler(&log_handler);
 
     SoapySDR::Kwargs args;
     args["driver"] = "hackrfduplex";
@@ -401,6 +712,9 @@ int main(int argc, char** argv) {
     }
     if (!options.tx_serial.empty()) {
         args["tx_serial"] = options.tx_serial;
+    }
+    if (!options.time_origin.empty()) {
+        args["time_origin"] = options.time_origin;
     }
 
     SoapySDR::Device* device = nullptr;
@@ -433,7 +747,7 @@ int main(int argc, char** argv) {
                   << device->getGain(SOAPY_SDR_RX, 0, "VGA") << ", AMP "
                   << device->getGain(SOAPY_SDR_RX, 0, "AMP") << ")\n";
 
-        const bool transmit = options.tx_tone_hz != 0;
+        const bool transmit = options.tx_tone_hz != 0 || options.timed_delay_us.has_value();
         if (transmit) {
             device->setSampleRate(SOAPY_SDR_TX, 0, options.tx_rate_hz);
             device->setFrequency(SOAPY_SDR_TX, 0, options.tx_frequency_hz);
@@ -443,15 +757,26 @@ int main(int argc, char** argv) {
                       << device->getBandwidth(SOAPY_SDR_TX, 0) / 1e6 << " MHz, gain "
                       << device->getGain(SOAPY_SDR_TX, 0) << " dB (VGA "
                       << device->getGain(SOAPY_SDR_TX, 0, "VGA") << ", AMP "
-                      << device->getGain(SOAPY_SDR_TX, 0, "AMP") << "), tone at "
-                      << options.tx_tone_hz / 1e3 << " kHz, " << options.tx_format << "\n";
+                      << device->getGain(SOAPY_SDR_TX, 0, "AMP") << ")";
+            if (options.timed_delay_us) {
+                std::cout << ", timed bursts " << *options.timed_delay_us << " us after receive\n";
+            } else {
+                std::cout << ", tone at " << options.tx_tone_hz / 1e3 << " kHz, "
+                          << options.tx_format << "\n";
+            }
         } else {
-            std::cout << "tx: off (give --tx-tone to transmit)\n";
+            std::cout << "tx: off (give --tx-tone or --timed-bursts to transmit)\n";
+        }
+        if (options.timed_delay_us) {
+            status = run_timed(device, options);
+            SoapySDR::Device::unmake(device);
+            return status;
         }
 
-        SoapySDR::Stream* rx = device->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32);
+        const SoapySDR::Kwargs stream = stream_args(options);
+        SoapySDR::Stream* rx = device->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32, {}, stream);
         SoapySDR::Stream* tx =
-            transmit ? device->setupStream(SOAPY_SDR_TX, options.tx_format) : nullptr;
+            transmit ? device->setupStream(SOAPY_SDR_TX, options.tx_format, {}, stream) : nullptr;
         const std::size_t rx_mtu = device->getStreamMTU(rx);
 
         const double expected_offset =
@@ -514,6 +839,9 @@ int main(int argc, char** argv) {
 
         if (device->activateStream(rx) != 0) {
             throw std::runtime_error("RX stream did not activate");
+        }
+        if (transmit) {
+            run_calibrations(device, options.calibrations);
         }
         std::vector<std::complex<float>> buffer(rx_mtu);
         const auto start = std::chrono::steady_clock::now();
