@@ -65,10 +65,14 @@ std::unique_ptr<Pair> open_pair(const SoapySDR::Kwargs& args) {
 
 SoapyDevice::SoapyDevice(const SoapySDR::Kwargs& args) : SoapyDevice(open_pair(args), args) {}
 
-SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs&)
+SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& args)
     : pair_(std::move(pair)) {
     if (!pair_) {
         throw std::invalid_argument("a device needs a pair");
+    }
+    const auto origin = args.find("time_origin");
+    if (origin != args.end()) {
+        pair_->set_time_origin(parse_time_origin(origin->second));
     }
 }
 
@@ -228,13 +232,13 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
         return SOAPY_SDR_TIMEOUT;
     }
     flags |= SOAPY_SDR_HAS_TIME;
-    timeNs = SoapySDR::ticksToTimeNs(static_cast<long long>(read.position),
+    timeNs = SoapySDR::ticksToTimeNs(static_cast<long long>(read.position) + pair_->time_offset(),
                                      pair_->sample_rate(Direction::kRx));
     return static_cast<int>(read.samples);
 }
 
 int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
-                             const size_t numElems, int& flags, const long long,
+                             const size_t numElems, int& flags, const long long timeNs,
                              const long timeoutUs) {
     if (direction_of(stream) != Direction::kTx) {
         return SOAPY_SDR_NOT_SUPPORTED;
@@ -242,7 +246,27 @@ int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
     if (!pair_->active(Direction::kTx)) {
         return SOAPY_SDR_STREAM_ERROR;
     }
-    const bool end_of_burst = (flags & SOAPY_SDR_END_BURST) != 0;
+    const bool end_of_burst = (flags & (SOAPY_SDR_END_BURST | SOAPY_SDR_ONE_PACKET)) != 0;
+    if ((flags & SOAPY_SDR_HAS_TIME) != 0) {
+        flags = 0;
+        const double rate = pair_->sample_rate(Direction::kRx);
+        if (!(rate > 0)) {
+            return SOAPY_SDR_TIME_ERROR;
+        }
+        const TimedWrite written =
+            pair_->write_at(buffs[0], numElems, end_of_burst, SoapySDR::timeNsToTicks(timeNs, rate),
+                            timeout_of(timeoutUs));
+        switch (written.status) {
+            case TimedStatus::kOk:
+                return static_cast<int>(written.taken);
+            case TimedStatus::kTimeout:
+                return SOAPY_SDR_TIMEOUT;
+            case TimedStatus::kLate:
+            case TimedStatus::kNoTime:
+                return SOAPY_SDR_TIME_ERROR;
+        }
+        return SOAPY_SDR_TIME_ERROR;
+    }
     const std::size_t taken = pair_->write(buffs[0], numElems, end_of_burst, timeout_of(timeoutUs));
     flags = 0;
     if (taken == 0) {
@@ -264,6 +288,13 @@ int SoapyDevice::readStreamStatus(SoapySDR::Stream* stream, size_t& chanMask, in
             timeNs = 0;
             SoapySDR::log(SOAPY_SDR_SSI, "U");
             return SOAPY_SDR_UNDERFLOW;
+        }
+        if (pair_->take_time_error()) {
+            chanMask = 1;
+            flags = 0;
+            timeNs = 0;
+            SoapySDR::log(SOAPY_SDR_SSI, "L");
+            return SOAPY_SDR_TIME_ERROR;
         }
         if (std::chrono::steady_clock::now() >= deadline) {
             return SOAPY_SDR_TIMEOUT;
@@ -490,6 +521,34 @@ SoapySDR::RangeList SoapyDevice::getBandwidthRange(const int, const size_t) cons
     return list;
 }
 
+// Time
+
+bool SoapyDevice::hasHardwareTime(const std::string& what) const {
+    return what.empty() && pair_->tx_of_rx().has_value();
+}
+
+long long SoapyDevice::getHardwareTime(const std::string& what) const {
+    if (!what.empty()) {
+        throw std::invalid_argument("getHardwareTime: no time source " + what);
+    }
+    const double rate = pair_->sample_rate(Direction::kRx);
+    if (!(rate > 0)) {
+        return 0;
+    }
+    return SoapySDR::ticksToTimeNs(pair_->time_ticks(), rate);
+}
+
+void SoapyDevice::setHardwareTime(const long long timeNs, const std::string& what) {
+    if (!what.empty()) {
+        throw std::invalid_argument("setHardwareTime: no time source " + what);
+    }
+    const double rate = pair_->sample_rate(Direction::kRx);
+    if (!(rate > 0)) {
+        throw std::logic_error("setHardwareTime: set the receive sample rate first");
+    }
+    pair_->set_time_ticks(SoapySDR::timeNsToTicks(timeNs, rate));
+}
+
 // Sensors
 
 std::vector<std::string> SoapyDevice::listSensors(const int direction, const size_t channel) const {
@@ -546,7 +605,27 @@ SoapySDR::ArgInfoList SoapyDevice::getSettingInfo() const {
     clkout.type = SoapySDR::ArgInfo::STRING;
     clkout.options = {"off", "rx", "tx"};
     clkout.optionNames = {"Off", "RX board", "TX board"};
-    return {bias, clkout};
+
+    SoapySDR::ArgInfo origin;
+    origin.key = "time_origin";
+    origin.value = "burst";
+    origin.name = "Time origin";
+    origin.description =
+        "How the two streams get a common time when both have started: a short calibration "
+        "burst on the receive frequency, one trigger edge (a jumper from the RX board's P28 pin "
+        "15 to the TX board's pin 16), or none. Takes effect when the streams next start.";
+    origin.type = SoapySDR::ArgInfo::STRING;
+    origin.options = {"burst", "trigger", "none"};
+    origin.optionNames = {"Calibration burst", "Trigger edge", "None"};
+
+    SoapySDR::ArgInfo calibrate;
+    calibrate.key = "calibrate";
+    calibrate.value = "";
+    calibrate.name = "Calibrate";
+    calibrate.description =
+        "Write any value to send the calibration burst now; both streams must be active.";
+    calibrate.type = SoapySDR::ArgInfo::STRING;
+    return {bias, clkout, origin, calibrate};
 }
 
 void SoapyDevice::writeSetting(const std::string& key, const std::string& value) {
@@ -556,6 +635,14 @@ void SoapyDevice::writeSetting(const std::string& key, const std::string& value)
     }
     if (key == "clkout") {
         pair_->set_clock_out(parse_clock_out(value));
+        return;
+    }
+    if (key == "time_origin") {
+        pair_->set_time_origin(parse_time_origin(value));
+        return;
+    }
+    if (key == "calibrate") {
+        pair_->calibrate();
         return;
     }
     // Applications write vendor settings blindly; one this device lacks is
@@ -569,6 +656,9 @@ std::string SoapyDevice::readSetting(const std::string& key) const {
     }
     if (key == "clkout") {
         return clock_out_name(pair_->clock_out());
+    }
+    if (key == "time_origin") {
+        return time_origin_name(pair_->time_origin());
     }
     return {};
 }

@@ -20,7 +20,7 @@ public:
     // std::runtime_error when they cannot be chosen or opened.
     explicit SoapyDevice(const SoapySDR::Kwargs& args);
     // Over a pair already made, which is how the tests use it; `args` are
-    // the device arguments beyond the board selection.
+    // the device arguments beyond the board selection: `time_origin`.
     SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& args);
     ~SoapyDevice() override;
 
@@ -98,6 +98,13 @@ public:
     double getBandwidth(const int direction, const size_t channel) const override;
     std::vector<double> listBandwidths(const int direction, const size_t channel) const override;
     SoapySDR::RangeList getBandwidthRange(const int direction, const size_t channel) const override;
+
+    // Time: receive samples since the receive stream started, plus an
+    // offset setHardwareTime sets; shared with the transmitter while the
+    // streams have a common origin, which is when hasHardwareTime is true.
+    bool hasHardwareTime(const std::string& what) const override;
+    long long getHardwareTime(const std::string& what) const override;
+    void setHardwareTime(const long long timeNs, const std::string& what) override;
 
     // Sensors
     using SoapySDR::Device::getSensorInfo;

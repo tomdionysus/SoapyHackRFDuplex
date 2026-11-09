@@ -7,18 +7,18 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
-#include <deque>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "burst.hpp"
 #include "fake_board.hpp"
+#include "loopback.hpp"
 #include "pair.hpp"
 
 using namespace hackrfduplex;
 using hackrfduplex::test::FakeBoard;
+using hackrfduplex::test::Loopback;
 using namespace std::chrono_literals;
 
 namespace {
@@ -57,58 +57,6 @@ struct Rig {
         pair.open_stream(Direction::kRx, Format::kCs8, 4);
         pair.open_stream(Direction::kTx, Format::kCs8, 4);
     }
-};
-
-// The air: once both boards stream, each transmitted transfer is pulled
-// and delivered to the receiver `delay` samples later, both stream
-// positions moving in step. Uncoupled, the receiver hears only a little
-// noise. Stop it before stopping either board.
-class Loopback {
-public:
-    Loopback(FakeBoard& tx, FakeBoard& rx, std::size_t delay)
-        : tx_(tx), rx_(rx), air_(delay * 2, 0), thread_([this] { run(); }) {}
-    ~Loopback() { stop(); }
-    Loopback(const Loopback&) = delete;
-    Loopback& operator=(const Loopback&) = delete;
-
-    void stop() {
-        stop_ = true;
-        if (thread_.joinable()) {
-            thread_.join();
-        }
-    }
-    std::atomic<bool> coupled{true};
-
-private:
-    void run() {
-        std::uint32_t noise = 12345;
-        while (!stop_) {
-            if (!tx_.tx_streaming || !rx_.rx_streaming) {
-                std::this_thread::sleep_for(20us);
-                continue;
-            }
-            const std::vector<std::uint8_t> sent = tx_.pull_tx(kTransferSamples * 2);
-            for (const std::uint8_t b : sent) {
-                air_.push_back(coupled ? static_cast<std::int8_t>(b) : 0);
-            }
-            std::vector<std::uint8_t> heard(kTransferSamples * 2);
-            for (std::uint8_t& b : heard) {
-                noise = noise * 1103515245U + 12345U;
-                const auto jitter =
-                    static_cast<std::int8_t>(static_cast<int>((noise >> 16) % 7) - 3);
-                b = static_cast<std::uint8_t>(static_cast<std::int8_t>(air_.front() / 4 + jitter));
-                air_.pop_front();
-            }
-            rx_.deliver_rx(heard);
-            std::this_thread::sleep_for(20us);
-        }
-    }
-
-    FakeBoard& tx_;
-    FakeBoard& rx_;
-    std::deque<std::int8_t> air_;
-    std::atomic<bool> stop_{false};
-    std::thread thread_;
 };
 
 std::vector<std::string> frequency_calls(const FakeBoard& board, std::size_t from) {
