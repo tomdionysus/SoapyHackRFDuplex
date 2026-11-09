@@ -33,6 +33,8 @@ public:
     void set_bias_tee(bool on) override;
     void set_clock_out(bool on) override;
     bool start_switches_reference() override { return reference_switch_pending; }
+    void set_hardware_sync(bool on) override;
+    std::uint32_t shortfalls() override { return shortfall_count; }
     std::size_t transfer_bytes() const override { return transfer_bytes_value; }
     void start_rx(RxHandler handler) override;
     void start_tx(TxHandler handler) override;
@@ -61,6 +63,8 @@ public:
     // The next start moves the board to another reference, as the firmware
     // does when CLKIN has come or gone; the start clears it.
     bool reference_switch_pending = false;
+    bool hardware_sync = false;
+    std::uint32_t shortfall_count = 0;
     bool rx_streaming = false;
     bool tx_streaming = false;
     int starts = 0;

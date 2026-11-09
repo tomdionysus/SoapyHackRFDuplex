@@ -71,6 +71,15 @@ public:
     // crystal otherwise, choosing at each start. Asked while idle, when the
     // clock chip reads reliably.
     virtual bool start_switches_reference() = 0;
+    // With sync on, the next start waits for a rising edge on the trigger
+    // input (P28 pin 16) before it moves a sample. A board's start drives
+    // its own trigger output (P28 pin 15).
+    virtual void set_hardware_sync(bool on) = 0;
+    // Shortfalls since the stream started: times the board's own buffer
+    // ran full receiving or empty transmitting, each of which loses or
+    // delays samples the stream positions cannot see. The firmware resets
+    // the count at every start; 0 on firmware too old to report it.
+    virtual std::uint32_t shortfalls() = 0;
 
     // Bytes per transfer; every RX handler call carries at most this
     // many and every TX call exactly this many.

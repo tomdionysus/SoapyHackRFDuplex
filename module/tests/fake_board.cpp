@@ -80,6 +80,11 @@ void FakeBoard::set_clock_out(bool on) {
     clock_out = on;
 }
 
+void FakeBoard::set_hardware_sync(bool on) {
+    record("set_hardware_sync", on ? "on" : "off");
+    hardware_sync = on;
+}
+
 void FakeBoard::start_rx(RxHandler handler) {
     record("start_rx", "");
     if (rx_streaming || tx_streaming) {

@@ -51,6 +51,8 @@ public:
     void set_bias_tee(bool on) override;
     void set_clock_out(bool on) override;
     bool start_switches_reference() override;
+    void set_hardware_sync(bool on) override;
+    std::uint32_t shortfalls() override;
 
     std::size_t transfer_bytes() const override { return transfer_bytes_; }
     void start_rx(RxHandler handler) override;

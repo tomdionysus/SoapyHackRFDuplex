@@ -213,6 +213,21 @@ bool HackrfBoard::start_switches_reference() {
     return on_clkin != (clkin != 0);
 }
 
+void HackrfBoard::set_hardware_sync(bool on) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    check(hackrf_set_hw_sync_mode(device_, on ? 1 : 0), "set hardware sync");
+}
+
+std::uint32_t HackrfBoard::shortfalls() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!reports_clkin_) {
+        return 0;
+    }
+    hackrf_m0_state state{};
+    check(hackrf_get_m0_state(device_, &state), "read m0 state");
+    return state.num_shortfalls;
+}
+
 int HackrfBoard::rx_trampoline(hackrf_transfer* transfer) {
     auto* self = static_cast<HackrfBoard*>(transfer->rx_ctx);
     if (transfer->valid_length > 0) {
