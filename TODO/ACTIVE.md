@@ -201,6 +201,10 @@ first, by Tom's choice; 1.0.0 after it has been used):
   `SOAPY_SDR_STREAM_ERROR` within a bounded time. Acceptance: fake-board
   tests for each case, with and without an origin, and on the target a
   board unplugged mid-run giving a stream error within a second.
+  Status 2026-11-09: built and tested against the fakes (six cases,
+  `[fault]`; docs/design.md "Failure handling"); the unplug on the target
+  remains, by deauthorising the board's USB device in sysfs and putting
+  it back, once the lead sweep (item 2) has the boards free.
 
 ### 5. Refuse what is not supported
 

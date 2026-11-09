@@ -94,6 +94,7 @@ void FakeBoard::start_rx(RxHandler handler) {
     rx_streaming = true;
     ++starts;
     reference_switch_pending = false;
+    shortfall_count = 0;
 }
 
 void FakeBoard::start_tx(TxHandler handler) {
@@ -105,6 +106,14 @@ void FakeBoard::start_tx(TxHandler handler) {
     tx_streaming = true;
     ++starts;
     reference_switch_pending = false;
+    shortfall_count = 0;
+}
+
+std::uint32_t FakeBoard::shortfalls() {
+    if (unplugged) {
+        throw BoardError("read m0 state: HACKRF_ERROR_LIBUSB");
+    }
+    return shortfall_count;
 }
 
 void FakeBoard::stop() {
@@ -117,6 +126,9 @@ void FakeBoard::stop() {
     ++stops;
     if (stop_count_ != nullptr) {
         ++*stop_count_;
+    }
+    if (unplugged) {
+        throw BoardError("stop: HACKRF_ERROR_LIBUSB");
     }
 }
 

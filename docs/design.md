@@ -179,9 +179,8 @@ timeout; with no origin to come it is refused.
 
 The origin is lost, reported once through `readStreamStatus` as
 `SOAPY_SDR_TIME_ERROR` and logged, when either board reports a
-shortfall (its own buffer ran full or empty, losing or delaying samples
-the positions cannot see; read at most every 100 ms from the reader and
-the status calls) or a sample rate changes while streaming. Stopping
+shortfall (Failure handling, below) or a sample rate changes while
+streaming. A shortfall found while the burst is out leaves no origin. Stopping
 either stream leaves it to be found again when both run. Writing the
 `calibrate` setting runs the burst again at any time. `hasHardwareTime`
 is true while an origin holds.
@@ -388,3 +387,24 @@ catches it and returns `SOAPY_SDR_STREAM_ERROR` with the message logged,
 as the SoapySDR stream API expects. A read with nothing to deliver is a
 timeout, not an error; a read or write on a stream that is not active
 returns `SOAPY_SDR_STREAM_ERROR`.
+
+While a stream is active its board is watched: at most every 100 ms,
+from the reads, writes and status calls, the pair reads each running
+board's shortfall count and whether its transfers still run. A blocked
+read or write waits in slices of that length, so it looks again however
+long its timeout.
+
+- A shortfall is the board's own buffer running full (receiving) or
+  empty (transmitting): samples lost or delayed where the stream
+  positions cannot see. On the receiver the next read returns
+  `SOAPY_SDR_OVERFLOW` with `SOAPY_SDR_END_ABRUPT`, once, and the log
+  says the timestamps from there on are shifted by an unknown amount; on
+  the transmitter `readStreamStatus` returns `SOAPY_SDR_UNDERFLOW` once.
+  Either loses the origin. The firmware counts shortfalls from each
+  start, and so does the pair.
+- A board whose transfers have stopped, or on which a libhackrf call
+  fails (as on one pulled from the bus), has failed: the error is logged
+  once, and its stream's reads, writes and status calls return
+  `SOAPY_SDR_STREAM_ERROR` until it is deactivated and activated again.
+  Deactivating it ends the stream even when the board cannot be told to
+  stop, and passes that error on.

@@ -151,16 +151,26 @@ public:
     void set_time_ticks(std::int64_t ticks);
     std::int64_t time_offset() const { return time_offset_.load(); }
 
-    // Reader thread. Throws std::logic_error with no RX stream open.
+    // Reader thread. Throws std::logic_error with no RX stream open. A
+    // shortfall on the receiving board is reported once as an overflow.
+    // Returns nothing once the board has failed (failed()).
     RxRead read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout);
-    // Writer thread. Throws std::logic_error with no TX stream open.
+    // Writer thread. Throws std::logic_error with no TX stream open. Takes
+    // nothing once the board has failed.
     std::size_t write(const void* src, std::size_t samples, bool end_of_burst,
                       std::chrono::microseconds timeout);
     // Writer thread: the first sample at time `ticks`. Waits up to
     // `timeout` for an origin still to come.
     TimedWrite write_at(const void* src, std::size_t samples, bool end_of_burst, std::int64_t ticks,
                         std::chrono::microseconds timeout);
+    // True once for each underflow in the stream, and once for each new
+    // shortfall on the transmitting board.
     bool take_tx_underflow();
+    // The direction's board stopped streaming on its own, or a libhackrf
+    // call on it failed, while its stream was active. Found within about
+    // 100 ms by the reads, writes and status calls; cleared when the
+    // stream is next activated.
+    bool failed(Direction direction) const;
     // True once for each time error: a late write, a late block, or the
     // origin lost to a board's shortfall. Also polls the shortfalls.
     bool take_time_error();
@@ -185,6 +195,15 @@ private:
         bool armed = false;
         Format format = Format::kCs8;
         std::atomic<bool> lo_locked{true};
+        // The board is streaming for its stream, so its health is polled.
+        // Atomic, so the poll needs no side lock.
+        std::atomic<bool> running{false};
+        std::atomic<bool> failed{false};
+        // A shortfall found and not yet reported to the stream.
+        std::atomic<bool> shortfall_pending{false};
+        // Shortfalls already accounted for since the board started; under
+        // poll_mutex_.
+        std::uint32_t shortfalls_seen = 0;
     };
 
     enum class OriginState { kPending, kValid, kAbsent };
@@ -208,9 +227,12 @@ private:
     void set_origin(OriginState state, std::int64_t tx_of_rx = 0);
     // The origin lost, reported once through take_time_error().
     void lose_origin(const std::string& why);
-    void note_shortfall_baseline();
-    // Reads the boards' shortfall counts, at most every 100 ms.
-    void poll_shortfalls();
+    // Reads each running board's health and shortfall count, at most every
+    // 100 ms unless forced. A new shortfall is marked for its stream and
+    // loses the origin; a board that stopped is marked failed. True when it
+    // found a new shortfall. Takes poll_mutex_; callers may hold a side's.
+    bool poll_boards(bool force = false);
+    void mark_failed(Direction direction, const std::string& why);
 
     Side rx_;
     Side tx_;
@@ -236,8 +258,6 @@ private:
     std::atomic<std::int64_t> time_offset_{0};
     std::atomic<bool> time_error_{false};
     std::mutex poll_mutex_;
-    std::uint32_t rx_shortfalls_ = 0;
-    std::uint32_t tx_shortfalls_ = 0;
     std::chrono::steady_clock::time_point last_poll_{};
 };
 

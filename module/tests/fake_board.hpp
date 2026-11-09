@@ -35,12 +35,12 @@ public:
     void set_clock_out(bool on) override;
     bool start_switches_reference() override { return reference_switch_pending; }
     void set_hardware_sync(bool on) override;
-    std::uint32_t shortfalls() override { return shortfall_count; }
+    std::uint32_t shortfalls() override;
     std::size_t transfer_bytes() const override { return transfer_bytes_value; }
     void start_rx(RxHandler handler) override;
     void start_tx(TxHandler handler) override;
     void stop() override;
-    bool streaming() override { return rx_streaming || tx_streaming; }
+    bool streaming() override { return !unplugged && (rx_streaming || tx_streaming); }
 
     // Test side: a transfer from the board. Throws std::logic_error
     // unless receiving.
@@ -65,10 +65,15 @@ public:
     // does when CLKIN has come or gone; the start clears it.
     bool reference_switch_pending = false;
     bool hardware_sync = false;
-    std::uint32_t shortfall_count = 0;
+    // Atomic, as the reader's thread polls it while the test sets it.
+    std::atomic<std::uint32_t> shortfall_count{0};
     // Atomic, so a thread playing the air between two boards can watch them.
+    // A board whose transfer thread has died reads as not streaming.
     std::atomic<bool> rx_streaming{false};
     std::atomic<bool> tx_streaming{false};
+    // Gone from the bus: not streaming, and shortfalls() and stop() fail as
+    // libhackrf does on a lost device.
+    std::atomic<bool> unplugged{false};
     int starts = 0;
     int stops = 0;
     // Small, so test vectors stay readable: 8 samples.

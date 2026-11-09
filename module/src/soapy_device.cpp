@@ -229,7 +229,7 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
         return SOAPY_SDR_OVERFLOW;
     }
     if (read.samples == 0) {
-        return SOAPY_SDR_TIMEOUT;
+        return pair_->failed(Direction::kRx) ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;
     }
     flags |= SOAPY_SDR_HAS_TIME;
     timeNs = SoapySDR::ticksToTimeNs(static_cast<long long>(read.position) + pair_->time_offset(),
@@ -260,17 +260,18 @@ int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
             case TimedStatus::kOk:
                 return static_cast<int>(written.taken);
             case TimedStatus::kTimeout:
-                return SOAPY_SDR_TIMEOUT;
+                return pair_->failed(Direction::kTx) ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;
             case TimedStatus::kLate:
             case TimedStatus::kNoTime:
-                return SOAPY_SDR_TIME_ERROR;
+                return pair_->failed(Direction::kTx) ? SOAPY_SDR_STREAM_ERROR
+                                                     : SOAPY_SDR_TIME_ERROR;
         }
         return SOAPY_SDR_TIME_ERROR;
     }
     const std::size_t taken = pair_->write(buffs[0], numElems, end_of_burst, timeout_of(timeoutUs));
     flags = 0;
     if (taken == 0) {
-        return SOAPY_SDR_TIMEOUT;
+        return pair_->failed(Direction::kTx) ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;
     }
     return static_cast<int>(taken);
 }
@@ -282,6 +283,9 @@ int SoapyDevice::readStreamStatus(SoapySDR::Stream* stream, size_t& chanMask, in
     }
     const auto deadline = std::chrono::steady_clock::now() + timeout_of(timeoutUs);
     while (true) {
+        if (pair_->failed(Direction::kTx)) {
+            return SOAPY_SDR_STREAM_ERROR;
+        }
         if (pair_->take_tx_underflow()) {
             chanMask = 1;
             flags = 0;

@@ -40,8 +40,16 @@ struct SoapyRig {
         auto tx_owner = std::make_unique<FakeBoard>("00000000000000000000000000000002");
         rx = rx_owner.get();
         tx = tx_owner.get();
+        // The pair's log goes to SoapySDR's, as the device opened for real does.
+        const Log forward = [](LogLevel level, const std::string& message) {
+            const SoapySDRLogLevel soapy = level == LogLevel::kError     ? SOAPY_SDR_ERROR
+                                           : level == LogLevel::kWarning ? SOAPY_SDR_WARNING
+                                           : level == LogLevel::kInfo    ? SOAPY_SDR_INFO
+                                                                         : SOAPY_SDR_DEBUG;
+            SoapySDR::log(soapy, message);
+        };
         device = std::make_unique<SoapyDevice>(
-            std::make_unique<Pair>(std::move(rx_owner), std::move(tx_owner), nullptr), args);
+            std::make_unique<Pair>(std::move(rx_owner), std::move(tx_owner), forward), args);
     }
     ~SoapyRig() {
         device.reset();
@@ -290,4 +298,195 @@ TEST_CASE("the known settings still work through the device", "[soapy]") {
     CHECK(rig.rx->clock_out);
     CHECK(rig.device->readSetting("clkout") == "rx");
     CHECK_THROWS_AS(rig.device->writeSetting("clkout", "both"), std::invalid_argument);
+}
+
+namespace {
+
+// An active receive stream at 8 Msps in CS8 over 1024-sample transfers.
+struct RxRig : SoapyRig {
+    RxRig() {
+        rx->transfer_bytes_value = 2048;
+        SoapySDR::Device& d = *device;
+        d.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
+        stream = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
+        activated = d.activateStream(stream);
+    }
+
+    // The board delivers one transfer, if it still streams; then one read.
+    int deliver_and_read(int& flags, long timeout_us = 100000) {
+        if (rx->streaming()) {
+            rx->deliver_rx(std::vector<std::uint8_t>(2048, 0));
+        }
+        std::vector<std::int8_t> buffer(2048);
+        void* buffs[] = {buffer.data()};
+        long long time_ns = 0;
+        return device->readStream(stream, buffs, 1024, flags, time_ns, timeout_us);
+    }
+
+    SoapySDR::Stream* stream = nullptr;
+    int activated = -1;
+};
+
+// Every status readStreamStatus gives on the transmit stream for `span`.
+std::vector<int> statuses_for(SoapySDR::Device& d, SoapySDR::Stream* tx,
+                              std::chrono::milliseconds span) {
+    std::vector<int> found;
+    const auto until = std::chrono::steady_clock::now() + span;
+    while (std::chrono::steady_clock::now() < until) {
+        std::size_t mask = 0;
+        int flags = 0;
+        long long time_ns = 0;
+        const int r = d.readStreamStatus(tx, mask, flags, time_ns, 10000);
+        if (r != SOAPY_SDR_TIMEOUT) {
+            found.push_back(r);
+        }
+    }
+    return found;
+}
+
+std::chrono::milliseconds since(std::chrono::steady_clock::time_point start) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                 start);
+}
+
+}  // namespace
+
+TEST_CASE("a receive shortfall is reported once as an overflow, with no origin", "[soapy][fault]") {
+    RxRig rig;
+    REQUIRE(rig.activated == 0);
+    int flags = 0;
+    CHECK(rig.deliver_and_read(flags) == 1024);
+    rig.rx->shortfall_count = 1;
+    // The boards are read at most every 100 ms; 300 ms of reads must see it once.
+    int overflows = 0;
+    int overflow_flags = 0;
+    const auto start = std::chrono::steady_clock::now();
+    while (since(start) < std::chrono::milliseconds(300)) {
+        flags = 0;
+        const int n = rig.deliver_and_read(flags);
+        if (n == SOAPY_SDR_OVERFLOW) {
+            ++overflows;
+            overflow_flags = flags;
+        } else {
+            CHECK(n == 1024);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK(overflows == 1);
+    CHECK((overflow_flags & SOAPY_SDR_END_ABRUPT) != 0);
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "shifted by an unknown amount"));
+}
+
+TEST_CASE("a receive shortfall with an origin is an overflow and a lost origin", "[soapy][fault]") {
+    TimedRig rig;
+    SoapySDR::Device& d = *rig.device;
+    REQUIRE(d.activateStream(rig.rx_stream) == 0);
+    REQUIRE(d.activateStream(rig.tx_stream) == 0);
+    REQUIRE(d.hasHardwareTime());
+    rig.rx->shortfall_count = 3;
+    // The loopback outruns the reader, so the ring overflows of its own
+    // accord too; the shortfall shows as its own warning, once.
+    int overflows = 0;
+    std::vector<std::int8_t> buffer(2048);
+    void* buffs[] = {buffer.data()};
+    const auto start = std::chrono::steady_clock::now();
+    while (since(start) < std::chrono::milliseconds(300)) {
+        int flags = 0;
+        long long time_ns = 0;
+        if (d.readStream(rig.rx_stream, buffs, 1024, flags, time_ns, 100000) ==
+            SOAPY_SDR_OVERFLOW) {
+            ++overflows;
+        }
+    }
+    CHECK(overflows >= 1);
+    CHECK(std::count_if(soapy_logs().begin(), soapy_logs().end(), [](const auto& entry) {
+              return entry.second.find("shifted by an unknown amount") != std::string::npos;
+          }) == 1);
+    CHECK_FALSE(d.hasHardwareTime());
+    CHECK(statuses_for(d, rig.tx_stream, std::chrono::milliseconds(50)) ==
+          std::vector<int>{SOAPY_SDR_TIME_ERROR});
+}
+
+TEST_CASE("a transmit shortfall is reported once as an underflow", "[soapy][fault]") {
+    SECTION("with no origin") {
+        SoapyRig rig;
+        rig.tx->transfer_bytes_value = 2048;
+        SoapySDR::Device& d = *rig.device;
+        SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+        REQUIRE(d.activateStream(tx) == 0);
+        rig.tx->shortfall_count = 1;
+        CHECK(statuses_for(d, tx, std::chrono::milliseconds(300)) ==
+              std::vector<int>{SOAPY_SDR_UNDERFLOW});
+    }
+    SECTION("with an origin, which it loses") {
+        TimedRig rig;
+        SoapySDR::Device& d = *rig.device;
+        REQUIRE(d.activateStream(rig.rx_stream) == 0);
+        REQUIRE(d.activateStream(rig.tx_stream) == 0);
+        REQUIRE(d.hasHardwareTime());
+        rig.tx->shortfall_count = 1;
+        std::vector<int> found = statuses_for(d, rig.tx_stream, std::chrono::milliseconds(300));
+        std::sort(found.begin(), found.end());
+        std::vector<int> expected{SOAPY_SDR_UNDERFLOW, SOAPY_SDR_TIME_ERROR};
+        std::sort(expected.begin(), expected.end());
+        CHECK(found == expected);
+        CHECK_FALSE(d.hasHardwareTime());
+    }
+}
+
+TEST_CASE("a receiving board that stops ends its stream with an error", "[soapy][fault]") {
+    RxRig rig;
+    REQUIRE(rig.activated == 0);
+    SoapySDR::Device& d = *rig.device;
+    int flags = 0;
+    CHECK(rig.deliver_and_read(flags) == 1024);
+
+    SECTION("its transfer thread dies") {
+        rig.rx->rx_streaming = false;
+        const auto start = std::chrono::steady_clock::now();
+        CHECK(rig.deliver_and_read(flags, 2000000) == SOAPY_SDR_STREAM_ERROR);
+        CHECK(since(start) < std::chrono::milliseconds(500));
+        CHECK(rig.deliver_and_read(flags, 0) == SOAPY_SDR_STREAM_ERROR);
+        CHECK(rig.logged(SOAPY_SDR_ERROR, "RX board stopped streaming"));
+        // Deactivating and activating again starts afresh.
+        CHECK(d.deactivateStream(rig.stream) == 0);
+        REQUIRE(d.activateStream(rig.stream) == 0);
+        CHECK(rig.deliver_and_read(flags) == 1024);
+    }
+    SECTION("it is unplugged") {
+        rig.rx->unplugged = true;
+        const auto start = std::chrono::steady_clock::now();
+        CHECK(rig.deliver_and_read(flags, 2000000) == SOAPY_SDR_STREAM_ERROR);
+        CHECK(since(start) < std::chrono::milliseconds(500));
+        CHECK(rig.logged(SOAPY_SDR_ERROR, "HACKRF_ERROR_LIBUSB"));
+        // Stopping a board that has gone fails, but the stream is no longer active.
+        CHECK(d.deactivateStream(rig.stream) == SOAPY_SDR_STREAM_ERROR);
+        CHECK(rig.deliver_and_read(flags, 0) == SOAPY_SDR_STREAM_ERROR);
+        CHECK_NOTHROW(d.closeStream(rig.stream));
+    }
+}
+
+TEST_CASE("a transmitting board that stops ends its stream with an error", "[soapy][fault]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    rig.tx->transfer_bytes_value = 2048;
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    REQUIRE(d.activateStream(tx) == 0);
+    SECTION("its transfer thread dies") { rig.tx->tx_streaming = false; }
+    SECTION("it is unplugged") { rig.tx->unplugged = true; }
+    std::vector<std::int8_t> buffer(2048, 3);
+    const void* buffs[] = {buffer.data()};
+    const auto start = std::chrono::steady_clock::now();
+    int result = 0;
+    for (int i = 0; i < 64 && result >= 0; ++i) {
+        int flags = 0;
+        result = d.writeStream(tx, buffs, 1024, flags, 0, 2000000);
+    }
+    CHECK(result == SOAPY_SDR_STREAM_ERROR);
+    CHECK(since(start) < std::chrono::milliseconds(500));
+    std::size_t mask = 0;
+    int flags = 0;
+    long long time_ns = 0;
+    CHECK(d.readStreamStatus(tx, mask, flags, time_ns, 0) == SOAPY_SDR_STREAM_ERROR);
+    CHECK(rig.logged(SOAPY_SDR_ERROR, "TX board"));
 }

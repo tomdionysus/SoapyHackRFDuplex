@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -19,8 +20,9 @@ namespace {
 // back to its frequency (Pair::activate).
 constexpr std::uint64_t kRetuneStepHz = 1'000'000;
 
-// How often the boards' shortfall counts are read while an origin holds.
-constexpr auto kShortfallPoll = std::chrono::milliseconds(100);
+// How often a running board's health and shortfall count are read, and
+// so the longest a blocked read or write waits before looking again.
+constexpr auto kBoardPoll = std::chrono::milliseconds(100);
 // How long a trigger start may take to reach the transmitter.
 constexpr auto kTriggerWait = std::chrono::milliseconds(500);
 // libhackrf keeps this many transfers in flight in each direction.
@@ -361,6 +363,13 @@ bool Pair::stream_open(Direction direction) const {
 
 void Pair::start_stream(Direction direction) {
     Side& s = side(direction);
+    s.failed = false;
+    s.shortfall_pending = false;
+    {
+        // The firmware counts shortfalls from each start.
+        const std::lock_guard<std::mutex> lock(poll_mutex_);
+        s.shortfalls_seen = 0;
+    }
     if (direction == Direction::kRx) {
         rx_path_->reset();
         RxPath* path = rx_path_.get();
@@ -374,6 +383,7 @@ void Pair::start_stream(Direction direction) {
         TxPath* path = tx_path_.get();
         s.board->start_tx([path](std::span<std::uint8_t> buffer) { path->on_transfer(buffer); });
     }
+    s.running = true;
 }
 
 bool Pair::settle_reference(Direction direction) {
@@ -398,6 +408,7 @@ bool Pair::settle_reference(Direction direction) {
         s.board->set_frequency(s.frequency_hz + kRetuneStepHz);
         s.board->set_frequency(s.frequency_hz);
     }
+    s.running = false;
     s.board->stop();
     log(LogLevel::kInfo, std::string(direction_name(direction)) +
                              " board changed reference clock; retuned and restarted");
@@ -481,6 +492,7 @@ void Pair::start_triggered() {
     const std::scoped_lock lock(rx_.mutex, tx_.mutex);
     const auto stop_both = [&] {
         for (Side* side_of : {&rx_, &tx_}) {
+            side_of->running = false;
             try {
                 side_of->board->stop();
             } catch (const BoardError&) {
@@ -520,7 +532,7 @@ void Pair::start_triggered() {
         side_of->active = true;
         side_of->armed = false;
     }
-    note_shortfall_baseline();
+    poll_boards(true);
     set_origin(OriginState::kValid, 0);
     log(LogLevel::kInfo, "both boards started on one trigger edge; common time origin set");
 }
@@ -536,11 +548,21 @@ void Pair::deactivate_locked(Direction direction) {
     if (!s.active) {
         return;
     }
-    s.board->stop();
+    // The stream ends even when the board cannot be told to stop, as when
+    // it has gone from the bus; the error is passed on after.
+    s.running = false;
     s.active = false;
     s.armed = false;
-    if (direction == Direction::kTx && sync_on_) {
-        s.board->set_hardware_sync(false);
+    std::exception_ptr error;
+    try {
+        s.board->stop();
+        if (direction == Direction::kTx && sync_on_) {
+            s.board->set_hardware_sync(false);
+        }
+    } catch (const BoardError&) {
+        error = std::current_exception();
+    }
+    if (direction == Direction::kTx) {
         sync_on_ = false;
     }
     if (direction == Direction::kRx) {
@@ -553,6 +575,9 @@ void Pair::deactivate_locked(Direction direction) {
         set_origin(OriginState::kPending);
     }
     log(LogLevel::kDebug, std::string(direction_name(direction)) + " stopped");
+    if (error) {
+        std::rethrow_exception(error);
+    }
 }
 
 bool Pair::active(Direction direction) const {
@@ -566,6 +591,8 @@ std::size_t Pair::mtu(Direction direction) const {
 }
 
 bool Pair::lo_locked(Direction direction) const { return side(direction).lo_locked.load(); }
+
+bool Pair::failed(Direction direction) const { return side(direction).failed.load(); }
 
 // Time
 
@@ -618,44 +645,82 @@ void Pair::lose_origin(const std::string& why) {
     log(LogLevel::kWarning, "common time origin lost: " + why);
 }
 
-void Pair::note_shortfall_baseline() {
-    const std::lock_guard<std::mutex> lock(poll_mutex_);
-    rx_shortfalls_ = rx_.board->shortfalls();
-    tx_shortfalls_ = tx_.board->shortfalls();
-    last_poll_ = std::chrono::steady_clock::now();
+void Pair::mark_failed(Direction direction, const std::string& why) {
+    Side& s = side(direction);
+    if (s.failed.exchange(true)) {
+        return;
+    }
+    log(LogLevel::kError, std::string(direction_name(direction)) + " board stopped streaming (" +
+                              why +
+                              "); its stream has ended until it is deactivated and activated "
+                              "again");
+    // Wake whoever waits on the stream, so it finds out now.
+    if (direction == Direction::kRx) {
+        rx_path_->wake();
+    } else {
+        tx_path_->wake();
+    }
 }
 
-void Pair::poll_shortfalls() {
-    {
-        const std::lock_guard<std::mutex> lock(time_mutex_);
-        if (origin_state_ != OriginState::kValid) {
-            return;
-        }
-    }
-    std::uint32_t rx = 0;
-    std::uint32_t tx = 0;
+bool Pair::poll_boards(bool force) {
+    std::string lost;
+    std::vector<Direction> failing;
+    std::vector<std::string> reasons;
     {
         const std::lock_guard<std::mutex> lock(poll_mutex_);
         const auto now = std::chrono::steady_clock::now();
-        if (now - last_poll_ < kShortfallPoll) {
-            return;
+        if (!force && now - last_poll_ < kBoardPoll) {
+            return false;
         }
         last_poll_ = now;
-        try {
-            rx = rx_.board->shortfalls();
-            tx = tx_.board->shortfalls();
-        } catch (const BoardError& e) {
-            log(LogLevel::kWarning, std::string("reading shortfalls: ") + e.what());
-            return;
-        }
-        if (rx == rx_shortfalls_ && tx == tx_shortfalls_) {
-            return;
+        for (const Direction direction : {Direction::kRx, Direction::kTx}) {
+            Side& s = side(direction);
+            if (!s.running || s.failed) {
+                continue;
+            }
+            std::uint32_t count = 0;
+            // The shortfall read first: on a board gone from the bus it fails
+            // with libhackrf's own account of why.
+            try {
+                count = s.board->shortfalls();
+                if (!s.board->streaming()) {
+                    failing.push_back(direction);
+                    reasons.emplace_back("its transfers stopped");
+                    continue;
+                }
+            } catch (const BoardError& e) {
+                failing.push_back(direction);
+                reasons.emplace_back(e.what());
+                continue;
+            }
+            if (count == s.shortfalls_seen) {
+                continue;
+            }
+            const std::uint32_t added = count - s.shortfalls_seen;
+            s.shortfalls_seen = count;
+            s.shortfall_pending = true;
+            if (direction == Direction::kRx) {
+                log(LogLevel::kWarning,
+                    "RX board ran out of room in its own buffer (" + std::to_string(added) +
+                        " more shortfalls): samples were lost, and receive timestamps from here "
+                        "on are shifted by an unknown amount");
+            } else {
+                log(LogLevel::kWarning,
+                    "TX board ran out of samples in its own buffer (" + std::to_string(added) +
+                        " more shortfalls): what follows goes out late by an unknown amount");
+            }
+            lost += std::string(lost.empty() ? "" : "; ") + "the " + direction_name(direction) +
+                    " board lost or delayed samples";
         }
     }
-    lose_origin("the RX board reports " + std::to_string(rx) + " shortfalls and the TX board " +
-                std::to_string(tx) +
-                ", so samples were lost or delayed; write calibrate to find it "
-                "again");
+    for (std::size_t i = 0; i < failing.size(); ++i) {
+        mark_failed(failing[i], reasons[i]);
+        lose_origin(std::string("the ") + direction_name(failing[i]) + " board stopped streaming");
+    }
+    if (!lost.empty()) {
+        lose_origin(lost + "; write calibrate to find it again");
+    }
+    return !lost.empty();
 }
 
 void Pair::calibrate() {
@@ -668,6 +733,8 @@ void Pair::calibrate() {
 
 void Pair::calibrate_locked() {
     set_origin(OriginState::kPending);
+    // Shortfalls from before the burst are reported but do not spoil it.
+    poll_boards(true);
     const double rx_rate = sample_rate(Direction::kRx);
     const double tx_rate = sample_rate(Direction::kTx);
     if (!(rx_rate > 0) || rx_rate != tx_rate) {
@@ -757,21 +824,54 @@ void Pair::calibrate_locked() {
         set_origin(OriginState::kAbsent);
         return;
     }
+    if (poll_boards(true) || rx_.failed || tx_.failed) {
+        log(LogLevel::kWarning,
+            "no common time origin: a board lost or delayed samples, or stopped, while the burst "
+            "was out, so where it was heard says nothing");
+        set_origin(OriginState::kAbsent);
+        return;
+    }
     const auto rx_at = static_cast<std::int64_t>(capture.start() + found.offset);
     const std::int64_t value = static_cast<std::int64_t>(*sent_at) - rx_at;
-    note_shortfall_baseline();
     set_origin(OriginState::kValid, value);
     log(LogLevel::kInfo, "common time origin from the calibration burst (" + std::string(level) +
                              " over the median): transmit position = receive position " +
                              (value < 0 ? "- " : "+ ") + std::to_string(std::llabs(value)));
 }
 
+namespace {
+
+using Clock = std::chrono::steady_clock;
+
+// The next wait of a read or write that looks at the boards between waits:
+// what is left of its time, at most one poll interval.
+std::chrono::microseconds slice_until(Clock::time_point deadline) {
+    const auto left = std::max(deadline - Clock::now(), Clock::duration::zero());
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::min<Clock::duration>(left, kBoardPoll));
+}
+
+}  // namespace
+
 RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout) {
     if (!rx_path_) {
         throw std::logic_error("RX stream not open");
     }
-    poll_shortfalls();
-    return rx_path_->read(dst, max_samples, rx_.format, timeout);
+    const auto deadline = Clock::now() + timeout;
+    while (true) {
+        poll_boards();
+        if (rx_.failed) {
+            return {};
+        }
+        if (rx_.shortfall_pending.exchange(false)) {
+            return RxRead{0, 0, true};
+        }
+        const RxRead result = rx_path_->read(dst, max_samples, rx_.format, slice_until(deadline));
+        if (result.samples > 0 || result.overflow || Clock::now() >= deadline ||
+            !active(Direction::kRx)) {
+            return result;
+        }
+    }
 }
 
 std::size_t Pair::write(const void* src, std::size_t samples, bool end_of_burst,
@@ -779,8 +879,21 @@ std::size_t Pair::write(const void* src, std::size_t samples, bool end_of_burst,
     if (!tx_path_) {
         throw std::logic_error("TX stream not open");
     }
-    const std::lock_guard<std::mutex> lock(write_mutex_);
-    return tx_path_->write(src, samples, tx_.format, end_of_burst, timeout);
+    const auto deadline = Clock::now() + timeout;
+    while (true) {
+        poll_boards();
+        if (tx_.failed) {
+            return 0;
+        }
+        std::size_t taken = 0;
+        {
+            const std::lock_guard<std::mutex> lock(write_mutex_);
+            taken = tx_path_->write(src, samples, tx_.format, end_of_burst, slice_until(deadline));
+        }
+        if (taken > 0 || Clock::now() >= deadline || !active(Direction::kTx)) {
+            return taken;
+        }
+    }
 }
 
 TimedWrite Pair::write_at(const void* src, std::size_t samples, bool end_of_burst,
@@ -802,25 +915,44 @@ TimedWrite Pair::write_at(const void* src, std::size_t samples, bool end_of_burs
         }
         position = ticks - time_offset_.load() + tx_of_rx_;
     }
-    const std::lock_guard<std::mutex> lock(write_mutex_);
     if (position < 0) {
         time_error_ = true;
         return TimedWrite{0, TimedStatus::kLate};
     }
-    const auto left = std::chrono::duration_cast<std::chrono::microseconds>(std::max(
-        deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero()));
-    const TxWrite result = tx_path_->write_at(src, samples, tx_.format, end_of_burst,
-                                              static_cast<std::uint64_t>(position), left);
-    if (result.late) {
-        return TimedWrite{0, TimedStatus::kLate};
+    while (true) {
+        poll_boards();
+        if (tx_.failed) {
+            return TimedWrite{0, TimedStatus::kTimeout};
+        }
+        TxWrite result;
+        {
+            const std::lock_guard<std::mutex> lock(write_mutex_);
+            result =
+                tx_path_->write_at(src, samples, tx_.format, end_of_burst,
+                                   static_cast<std::uint64_t>(position), slice_until(deadline));
+        }
+        if (result.late) {
+            return TimedWrite{0, TimedStatus::kLate};
+        }
+        if (result.taken > 0) {
+            return TimedWrite{result.taken, TimedStatus::kOk};
+        }
+        if (Clock::now() >= deadline || !active(Direction::kTx)) {
+            return TimedWrite{0, TimedStatus::kTimeout};
+        }
     }
-    return TimedWrite{result.taken, result.taken == 0 ? TimedStatus::kTimeout : TimedStatus::kOk};
 }
 
-bool Pair::take_tx_underflow() { return tx_path_ ? tx_path_->take_underflow() : false; }
+bool Pair::take_tx_underflow() {
+    poll_boards();
+    if (tx_.shortfall_pending.exchange(false)) {
+        return true;
+    }
+    return tx_path_ ? tx_path_->take_underflow() : false;
+}
 
 bool Pair::take_time_error() {
-    poll_shortfalls();
+    poll_boards();
     if (time_error_.exchange(false)) {
         return true;
     }
