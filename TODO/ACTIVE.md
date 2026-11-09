@@ -143,3 +143,12 @@ built). For the record:
   Acceptance: a `.deb` that installs on Debian trixie and
   `SoapySDRUtil --find` sees the module; the script passing on the
   workstation.
+- Done 2026-11-09: `tools/ci.sh` passes on the workstation (43 files
+  formatted, licence lines, 96 test cases in the release and the
+  sanitizer builds); `debian/` written for two packages; every source
+  compiles under GCC 15 with `-Werror` (one shadowing fixed).
+- Waits on Tom: a trixie system to build and install the `.deb` on.
+  Docker Desktop is on the workstation, but its images and containers
+  live under `~/Library`, outside the filesystem boundary, so it was not
+  used without asking. A trixie host reachable over ssh, or a go-ahead
+  for Docker, finishes it.
