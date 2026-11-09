@@ -3,6 +3,27 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-09: verify transmit and the shared reference on the air
+
+With Tom's go-ahead: `hackrfduplex-check --clkout rx --tx-tone 100e3
+--tx-gain 0 --seconds 10`, CF32, 8 Msps, 868.3 MHz, amplifier off, stub
+antennas 20 cm apart. Receive 99.9% of nominal with 0 overflows, transmit
+0 underflows, the tone at -77 dBFS and at 0.0 Hz from where it was sent
+every second for 9 s, both boards idle afterwards. `hackrfduplex-check`
+gained a whole-band spectrum and a per-second tone search to show it.
+
+The acceptance test as written asked for the tone 30 dB above the mean
+level; the mean is the whole band's power and the wrong yardstick for one
+tone. The tone was 9 dB above the median 977 Hz bin and about 26 dB above
+the floor of the 1 Hz search, at the lowest transmit gain.
+
+Found on the way, recorded in `docs/design.md`: the strongest signal in
+the band is the 87th harmonic of the 10 MHz reference at 870.000 MHz,
+radiated by the clock cable; and turning `clkout` off with the fed board
+powered leaves it without a clock (the tone vanished), which became
+ACTIVE.md item 2. The shared reference was restored and checked with
+`hackrf_clock` afterwards.
+
 ## 2026-11-09: shared reference clock
 
 One TCXO module came off the transmitting board and an SMA cable runs

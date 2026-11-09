@@ -152,7 +152,40 @@ Intel Mac host:
 | 20 Msps | 99.9% | 0 |
 
 The stream time spanned the elapsed time to within the last transfer in
-each run. Transmit figures follow when that test has run.
+each run.
+
+Full duplex, `hackrfduplex-check --clkout rx --tx-tone 100e3 --tx-gain 0
+--seconds 10`: both streams at 8 Msps, 868.3 MHz, the transmitter at
+0 dB with its amplifier off, stub antennas 20 cm apart, the two boards on
+one reference through a CLKOUT to CLKIN cable:
+
+| Measure | Result |
+|---|---|
+| Receive rate, overflows | 99.9% of nominal, 0 |
+| Transmit underflows | 0 |
+| Tone level at the receiver | -77 dBFS, 9 dB above the median 977 Hz bin |
+| Tone offset from where it was sent | 0.0 Hz, every second for 9 s (1 Hz resolution) |
+
+The transmit side reports about 2.5% more samples than nominal because
+the writer fills the ring ahead of the board at the start; that is
+buffering, not rate.
+
+With the reference shared, the tone arrives at exactly the transmitted
+offset and does not move, which is the lock working: a free-running pair
+differs by up to the crystals' tolerance, about 17 kHz at 868 MHz for
+20 ppm.
+
+The strongest signal in the band, with or without the transmitter, is at
+870.000 MHz (+1.7 MHz from centre), the 87th harmonic of the 10 MHz
+reference. It is 8 dB stronger while CLKOUT drives the cable, so the
+cable radiates the reference; a shorter or better shielded cable, or a
+centre frequency away from multiples of 10 MHz, avoids it.
+
+Switching `clkout` off while the fed board is powered leaves that board
+without a clock rather than on its own crystal: a tone sent then was not
+found anywhere in the band. The firmware chooses its clock source when
+the board initialises, so a fed board needs the reference present from
+power-up or a reset after it goes away.
 
 ## Failure handling
 

@@ -36,8 +36,8 @@ Documentation:
 | Tuning, filter, gains, bias tee | ✓ | per direction; an overall gain is split over the stages |
 | `hackrfduplex-check` | ✓ | receives, optionally transmits a tone, and reports rates, drops and levels |
 | Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
-| Transmit verified on two boards | ✗ | the next item in [TODO/ACTIVE.md](TODO/ACTIVE.md) |
-| Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable |
+| Transmit verified on two boards | ✓ | a CF32 tone received at exactly its sent offset, 0 underflows; CS8 and CS16 next |
+| Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; turning it off while the fed board runs is not yet safe |
 | Transmit timestamps, synchronised start | ✗ | the LTE items in the roadmap |
 
 ## Hardware

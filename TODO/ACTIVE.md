@@ -17,7 +17,9 @@ item is removed from here and recorded at the top of
   builds and passes the tests in a clean `build/`. Both boards were
   flashed to the 2026.01.3 release firmware (USB API 1.10) and the pair
   probes with both reporting their TCXO as an external clock.
-- Not yet done on hardware: transmitting (item 1, needs Tom's go-ahead).
+- Full duplex verified on the air the same day with the boards on one
+  reference: a CF32 tone sent at +100 kHz arrived at exactly +100 kHz,
+  steady for 9 s, 0 overflows, 0 underflows (TODO/COMPLETED.md).
 - Two boards are attached to the workstation (`CLAUDE.local.md`).
 
 ## Standing decisions
@@ -44,23 +46,22 @@ item is removed from here and recorded at the top of
 
 ## Items
 
-### 1. Verify transmit on hardware
+### 1. Transmit in the other formats
 
-- [ ] With Tom's go-ahead: `hackrfduplex-check --tx-tone 100e3 --tx-gain 0
-  --seconds 10`, amplifier off, stub antennas at 20 cm. Acceptance: the
-  tone is at least 30 dB above the mean level at the receiver, 0
-  underflows, 0 overflows, the rate within 1% of nominal; stopping the
-  tool leaves both boards idle (`hackrf_info` opens them). Then the same
-  with CS16 and CS8 formats through a short client, or the tool extended
-  with `--format`.
+- [ ] `hackrfduplex-check --format` for CS8 and CS16 (CF32 is verified),
+  with Tom's go-ahead for each transmit run. Acceptance: the tone at the
+  same level and offset as with CF32, 0 underflows.
 
-### 2. Confirm the shared reference on the air
+### 2. Losing the reference
 
-- [ ] The boards are locked: one TCXO, a CLKOUT to CLKIN cable, the
-  `clkout` setting. With item 1's tone running, read the tone's frequency
-  at the receiver over a minute. Acceptance: offset from the transmitted
-  frequency within the tone meter's resolution and no drift, recorded in
-  `docs/design.md`; then once with `clkout=off` for comparison, briefly.
+- [ ] `clkout=off` with the fed board powered leaves it without a clock
+  ([docs/design.md](../docs/design.md), Measured). Find out what the
+  firmware does when CLKIN goes away (reset needed, or a call that
+  re-selects the crystal), then make `clkout` safe: either refuse to turn
+  off a source that is feeding a board in the pair, or reset the fed
+  board after. Acceptance: after `clkout=off`, a tone from the fed board
+  is received within its crystal's tolerance of where it was sent, with
+  Tom's go-ahead for the run.
 
 ### 3. Synchronised start
 
