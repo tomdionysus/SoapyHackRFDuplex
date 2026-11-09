@@ -153,11 +153,13 @@ SoapySDR device. Open work is in [TODO/ACTIVE.md](TODO/ACTIVE.md):
 
 1. Debian packaging and a build-and-test script.
 2. Sample rates below 2 Msps, measured and advertised.
-3. A hardware time: both streams on one origin, either started on one
-   edge of the boards' internal trigger header or calibrated with a
-   short burst at start, with receive timestamps and timed transmit on
-   that origin, late transmissions reported, and the shortest transmit
-   lead the pair can honour measured.
+3. A hardware time: both streams on one origin, chosen by a
+   `time_origin` setting. By default the pair calibrates with a short
+   burst when both streams start; with a jumper on the boards' internal
+   trigger header it can start them on one edge instead. Receive
+   timestamps and timed transmit share that origin, late transmissions
+   are reported, and the shortest transmit lead the pair can honour is
+   measured.
 4. An `lo_locked` sensor, and unknown settings ignored rather than
    refused.
 

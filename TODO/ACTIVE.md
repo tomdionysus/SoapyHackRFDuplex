@@ -39,6 +39,9 @@ item is removed from here and recorded at the top of
 - Discovery never opens a board.
 - The receive stream has a sample-count time from activation; the
   transmit stream gains a time on a common origin (items 4 to 6).
+- The common origin is chosen by `time_origin`: `burst` (the default),
+  `trigger` or `none` (Tom, 2026-11-09). The default transmits a short
+  calibration burst when both streams start.
 - Dependencies: SoapySDR, libhackrf, Catch2. Nothing else without a
   recorded decision here.
 - Transmit tests: Tom's standing go-ahead for this work, on the shielded
@@ -96,11 +99,46 @@ item is removed from here and recorded at the top of
     underflow invalidates the offset; the pair reports it and the
     application recalibrates or restarts.
 
-  With neither, the device reports no hardware time. Acceptance, for
-  each route the bench allows: a tone burst written at transmit position
+  With neither, the device reports no hardware time.
+
+  Both routes are built, chosen by the `time_origin` setting, also
+  accepted as a device argument (Tom, 2026-11-09):
+
+  | Value | Meaning |
+  |---|---|
+  | `burst` (default) | calibrate with a burst when both streams are running |
+  | `trigger` | start both boards on the trigger edge; needs the jumper |
+  | `none` | no common origin; `hasHardwareTime` is false |
+
+  `burst` in detail. Calibration runs when the second of the two streams
+  activates, before a timed write is honoured; a timed write that arrives
+  first waits up to its timeout. The transmitter is moved to the receive
+  frequency for the burst, since the two may be tuned far apart, and back
+  after; its sample count runs on through both retunes, so the offset
+  found holds at the working frequency. The burst is a short wideband
+  sequence at the current transmit gain, found by correlation; a peak too
+  weak to trust leaves the device without hardware time and logs why,
+  rather than guessing. The `calibrate` setting runs it again on demand.
+  Positions on both streams already count USB-level drops, so those do
+  not move the origin; a shortfall inside a board does, so the pair polls
+  the boards' shortfall counts and, on one, drops the origin and reports
+  it (timed writes then fail with `SOAPY_SDR_TIME_ERROR`) until the
+  application recalibrates. The pair never recalibrates on its own, since
+  that would transmit into the middle of the application's signal.
+
+  `trigger` in detail. The jumper runs from the receiving board's P28
+  pin 15 (trigger out) to the transmitting board's P28 pin 16 (trigger
+  in). The transmitting board is armed in hardware sync mode before
+  either stream starts, and starts on the edge the receiving board puts
+  out when it starts. If the edge never comes, activation fails with a
+  message naming the jumper.
+
+  Acceptance, for each route: a tone burst written at transmit position
   P is received at receive position P plus a constant, the same to a
-  sample or two across ten starts, and the constant and the route
-  recorded in `docs/design.md`.
+  sample or two across ten starts, the constant recorded in
+  `docs/design.md`; for `burst`, also with the two directions tuned
+  45 MHz apart, and with a forced shortfall reported and recovered by
+  `calibrate`.
 
 ### 5. Hardware time API
 
