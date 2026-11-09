@@ -13,6 +13,12 @@ RxPath::RxPath(std::size_t slots, std::size_t transfer_bytes) : ring_(slots, tra
 void RxPath::on_transfer(std::span<const std::uint8_t> bytes) {
     const std::size_t size = std::min(bytes.size(), ring_.block_bytes());
     const std::size_t samples = size / kNativeSampleBytes;
+    {
+        const std::lock_guard<std::mutex> lock(tap_mutex_);
+        if (tap_) {
+            tap_(produced_, bytes.first(samples * kNativeSampleBytes));
+        }
+    }
     Block* block = ring_.acquire();
     if (block == nullptr) {
         dropped_ += samples;
@@ -26,6 +32,11 @@ void RxPath::on_transfer(std::span<const std::uint8_t> bytes) {
     if (block != nullptr) {
         ring_.publish();
     }
+}
+
+void RxPath::set_tap(RxTap tap) {
+    const std::lock_guard<std::mutex> lock(tap_mutex_);
+    tap_ = std::move(tap);
 }
 
 RxRead RxPath::read(void* dst, std::size_t max_samples, Format format,

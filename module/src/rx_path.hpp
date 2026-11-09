@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <span>
 
 #include "block_ring.hpp"
@@ -23,6 +25,10 @@ struct RxRead {
     bool overflow = false;
 };
 
+// Called on the board's thread with each transfer's stream position and
+// its native bytes, whether or not the ring had room for it.
+using RxTap = std::function<void(std::uint64_t, std::span<const std::uint8_t>)>;
+
 // The receive stream: the board's transfer thread pushes transfers in,
 // the reading thread takes samples out in its own format. A transfer
 // that finds the ring full is dropped whole and counted, so positions
@@ -36,6 +42,10 @@ public:
 
     // Board thread.
     void on_transfer(std::span<const std::uint8_t> bytes);
+
+    // Any thread: a listener beside the reader, which it does not disturb;
+    // nullptr removes it. Once this returns the old tap is not called again.
+    void set_tap(RxTap tap);
 
     // Reader: up to `max_samples` into `dst`, waiting at most `timeout`.
     RxRead read(void* dst, std::size_t max_samples, Format format,
@@ -56,6 +66,8 @@ private:
     std::uint64_t produced_ = 0;
     std::atomic<std::uint64_t> received_{0};
     std::atomic<std::uint64_t> dropped_{0};
+    std::mutex tap_mutex_;
+    RxTap tap_;
     // Consumer's: the position the next sample should have, and how far
     // into the front block it has read.
     std::uint64_t expected_ = 0;

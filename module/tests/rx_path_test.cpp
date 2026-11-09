@@ -121,6 +121,30 @@ TEST_CASE("a short transfer is delivered at its own size", "[rx]") {
     CHECK_FALSE(next.overflow);
 }
 
+TEST_CASE("a tap sees every transfer with its position, dropped ones too", "[rx][time]") {
+    RxPath path(1, 8);
+    std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> seen;
+    path.on_transfer(transfer(4, 0));  // before the tap
+    path.set_tap([&](std::uint64_t position, std::span<const std::uint8_t> bytes) {
+        seen.emplace_back(position, std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
+    });
+    path.on_transfer(transfer(4, 8));  // the ring is full: dropped
+    path.on_transfer(transfer(2, 16));
+    path.set_tap(nullptr);
+    path.on_transfer(transfer(4, 24));  // after it
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[0].first == 4);
+    CHECK(seen[0].second == transfer(4, 8));
+    CHECK(seen[1].first == 8);
+    CHECK(seen[1].second == transfer(2, 16));
+
+    // The reader is undisturbed.
+    std::array<std::uint8_t, 8> dst{};
+    const RxRead read = path.read(dst.data(), 4, Format::kCs8, 0us);
+    CHECK(read.samples == 4);
+    CHECK(read.position == 0);
+}
+
 TEST_CASE("reset starts a new stream", "[rx]") {
     RxPath path(1, 8);
     path.on_transfer(transfer(4, 0));
