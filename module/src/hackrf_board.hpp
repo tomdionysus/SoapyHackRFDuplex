@@ -65,9 +65,9 @@ private:
     static int tx_trampoline(hackrf_transfer* transfer);
     void open();
     void close();
-    // Starts with `start`, and once more after a close and reopen if the
+    // Starts with `begin`, and once more after a close and reopen if the
     // board did not stream: libhackrf has refused a restart that way.
-    void start(int (*start)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
+    void start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
                hackrf_sample_block_cb_fn callback, const char* what);
     static void check(int result, const char* what);
 

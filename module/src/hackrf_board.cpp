@@ -245,9 +245,9 @@ int HackrfBoard::tx_trampoline(hackrf_transfer* transfer) {
     return 0;
 }
 
-void HackrfBoard::start(int (*start)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
+void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
                         hackrf_sample_block_cb_fn callback, const char* what) {
-    check(start(device_, callback, this), what);
+    check(begin(device_, callback, this), what);
     if (hackrf_is_streaming(device_) == HACKRF_TRUE) {
         streaming_ = true;
         return;
@@ -258,7 +258,7 @@ void HackrfBoard::start(int (*start)(hackrf_device*, hackrf_sample_block_cb_fn, 
     hackrf_stop_tx(device_);
     close();
     open();
-    check(start(device_, callback, this), what);
+    check(begin(device_, callback, this), what);
     const int state = hackrf_is_streaming(device_);
     if (state != HACKRF_TRUE) {
         throw BoardError(std::string(what) + ": board did not start streaming (" +
