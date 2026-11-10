@@ -711,6 +711,34 @@ TEST_CASE("the transmit underrun limit is also a device argument", "[soapy][safe
     CHECK_THROWS_AS(SoapyRig({{"tx_underrun_limit", "lots"}}), std::invalid_argument);
 }
 
+TEST_CASE("every device setting but calibrate is also a device argument", "[soapy]") {
+    // SoapySDRUtil --probe="driver=hackrfduplex,clkout=rx" must leave the
+    // reference out, not drop the key it was given.
+    SoapyRig rig({{"clkout", "rx"}, {"bias_tx", "true"}});
+    CHECK(rig.device->readSetting("clkout") == "rx");
+    CHECK(rig.rx->clock_out);
+    CHECK(rig.device->readSetting("bias_tx") == "true");
+    CHECK_THROWS_AS(SoapyRig({{"clkout", "both"}}), std::invalid_argument);
+    CHECK_THROWS_AS(SoapyRig({{"bias_tx", "on"}}), std::invalid_argument);
+    {
+        SoapyRig quiet({{"calibrate", "1"}});
+        CHECK(quiet.logged(SOAPY_SDR_WARNING, "calibrate"));
+    }
+}
+
+TEST_CASE("an unknown device argument is logged and otherwise ignored", "[soapy]") {
+    SoapyRig rig({{"driver", "hackrfduplex"},
+                  {"label", "HackRF Duplex 1 + 2"},
+                  {"rx_serial", "1"},
+                  {"tx_serial", "2"},
+                  {"biastee", "1"}});
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "biastee"));
+    for (const char* known : {"driver", "label", "rx_serial", "tx_serial"}) {
+        CAPTURE(known);
+        CHECK_FALSE(rig.logged(SOAPY_SDR_WARNING, std::string("argument ") + known));
+    }
+}
+
 TEST_CASE("a transmitter that stops itself ends its stream with an error", "[soapy][safety]") {
     SoapyRig rig;
     SoapySDR::Device& d = *rig.device;

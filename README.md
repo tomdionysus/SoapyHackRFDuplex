@@ -119,8 +119,7 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | **Device arguments** | | |
 | `rx_serial` | the lower of two serials | suffix of the serial of the board that receives |
 | `tx_serial` | the higher of two serials | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
-| `time_origin` | `burst` | as the setting of the same name |
-| `tx_underrun_limit` | one transfer | as the setting of the same name |
+| `bias_tx`, `clkout`, `time_origin`, `tx_underrun_limit` | as the settings | as the settings of the same names, applied when the device opens |
 | **Stream arguments** | | |
 | `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
 | **Settings** | | |
@@ -132,7 +131,7 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 
 Unknown keys are tolerated, since some applications pass their whole
 device argument string to every stream and write vendor settings
-blindly: stream setup and writing a setting each log a warning for a key
+blindly: opening the device, stream setup and writing a setting each log a warning for a key
 they do not know and otherwise ignore it, and reading one returns an
 empty string. Anything else the device cannot do is refused, never
 ignored: a stream flag it cannot honour returns

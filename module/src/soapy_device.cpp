@@ -85,13 +85,17 @@ SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& arg
     if (!pair_) {
         throw std::invalid_argument("a device needs a pair");
     }
-    const auto origin = args.find("time_origin");
-    if (origin != args.end()) {
-        pair_->set_time_origin(parse_time_origin(origin->second));
-    }
-    const auto limit = args.find("tx_underrun_limit");
-    if (limit != args.end()) {
-        pair_->set_tx_underrun_limit(parse_samples("tx_underrun_limit", limit->second));
+    // The settings are device arguments too, except calibrate, which acts;
+    // the rest are what discovery hands back. Anything else is logged, as an
+    // unknown setting is: applications pass argument strings around.
+    for (const auto& [key, value] : args) {
+        if (key == "bias_tx" || key == "clkout" || key == "time_origin" ||
+            key == "tx_underrun_limit") {
+            writeSetting(key, value);
+        } else if (key != "driver" && key != "label" && key != kRxSerialKey &&
+                   key != kTxSerialKey) {
+            soapy_log(LogLevel::kWarning, "device argument " + key + ": none such, ignored");
+        }
     }
 }
 
