@@ -58,7 +58,7 @@ while IFS= read -r file; do
             missing=1
             ;;
     esac
-done < <(git ls-files '*.cpp' '*.hpp' '*.in' '*.cmake' '*CMakeLists.txt' '*.sh')
+done < <(git ls-files '*.cpp' '*.hpp' '*.in' '*.cmake' '*CMakeLists.txt' '*.sh' '*.py' '*.1')
 if [[ $missing -ne 0 || $checked -eq 0 ]]; then
     exit 1
 fi
