@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <span>
 #include <string>
 #include <vector>
@@ -95,6 +96,9 @@ private:
 
     std::string serial_;
     int* stop_count_;
+    // Held through each callback and while the handlers change, so no
+    // callback runs once stop() has returned, as libhackrf promises.
+    std::mutex handler_mutex_;
     RxHandler rx_;
     TxHandler tx_;
 };

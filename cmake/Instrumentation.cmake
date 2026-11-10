@@ -3,16 +3,29 @@
 # Sanitizer and coverage builds.
 
 option(HACKRFDUPLEX_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(HACKRFDUPLEX_TSAN "Build with ThreadSanitizer" OFF)
 option(HACKRFDUPLEX_COVERAGE "Build with gcov instrumentation and add a coverage target" OFF)
 
-if(HACKRFDUPLEX_SANITIZE AND HACKRFDUPLEX_COVERAGE)
-    message(FATAL_ERROR "HACKRFDUPLEX_SANITIZE and HACKRFDUPLEX_COVERAGE are separate builds")
+set(_instrumented 0)
+foreach(_option HACKRFDUPLEX_SANITIZE HACKRFDUPLEX_TSAN HACKRFDUPLEX_COVERAGE)
+    if(${_option})
+        math(EXPR _instrumented "${_instrumented} + 1")
+    endif()
+endforeach()
+if(_instrumented GREATER 1)
+    message(FATAL_ERROR
+        "HACKRFDUPLEX_SANITIZE, HACKRFDUPLEX_TSAN and HACKRFDUPLEX_COVERAGE are separate builds")
 endif()
 
 if(HACKRFDUPLEX_SANITIZE)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
                         -fno-sanitize-recover=all)
     add_link_options(-fsanitize=address,undefined)
+endif()
+
+if(HACKRFDUPLEX_TSAN)
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
 endif()
 
 if(HACKRFDUPLEX_COVERAGE)

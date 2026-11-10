@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -48,7 +49,13 @@ private:
                 std::this_thread::sleep_for(std::chrono::microseconds(20));
                 continue;
             }
-            const std::vector<std::uint8_t> sent = tx_.pull_tx(tx_.transfer_bytes_value);
+            // A board may stop between the look above and the call.
+            std::vector<std::uint8_t> sent;
+            try {
+                sent = tx_.pull_tx(tx_.transfer_bytes_value);
+            } catch (const std::logic_error&) {
+                continue;
+            }
             for (const std::uint8_t b : sent) {
                 air_.push_back(coupled ? static_cast<std::int8_t>(b) : 0);
                 if (record) {
@@ -63,7 +70,10 @@ private:
                 b = static_cast<std::uint8_t>(static_cast<std::int8_t>(air_.front() / 4 + jitter));
                 air_.pop_front();
             }
-            rx_.deliver_rx(heard);
+            try {
+                rx_.deliver_rx(heard);
+            } catch (const std::logic_error&) {
+            }
             std::this_thread::sleep_for(std::chrono::microseconds(20));
         }
     }

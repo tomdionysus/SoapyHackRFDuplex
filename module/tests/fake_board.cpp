@@ -90,6 +90,7 @@ void FakeBoard::start_rx(RxHandler handler) {
     if (rx_streaming || tx_streaming) {
         throw BoardError("start_rx: already streaming");
     }
+    const std::lock_guard<std::mutex> lock(handler_mutex_);
     rx_ = std::move(handler);
     rx_streaming = true;
     ++starts;
@@ -103,6 +104,7 @@ void FakeBoard::start_tx(TxHandler handler) {
     if (rx_streaming || tx_streaming) {
         throw BoardError("start_tx: already streaming");
     }
+    const std::lock_guard<std::mutex> lock(handler_mutex_);
     tx_ = std::move(handler);
     tx_streaming = true;
     ++starts;
@@ -129,10 +131,13 @@ bool FakeBoard::set_tx_underrun_limit(std::uint32_t samples) {
 
 void FakeBoard::stop() {
     record("stop", "");
-    rx_streaming = false;
-    tx_streaming = false;
-    rx_ = nullptr;
-    tx_ = nullptr;
+    {
+        const std::lock_guard<std::mutex> lock(handler_mutex_);
+        rx_streaming = false;
+        tx_streaming = false;
+        rx_ = nullptr;
+        tx_ = nullptr;
+    }
     bias = false;
     ++stops;
     if (stop_count_ != nullptr) {
@@ -144,6 +149,7 @@ void FakeBoard::stop() {
 }
 
 void FakeBoard::deliver_rx(std::span<const std::uint8_t> bytes) {
+    const std::lock_guard<std::mutex> lock(handler_mutex_);
     if (!rx_streaming) {
         throw std::logic_error("deliver_rx: not receiving");
     }
@@ -151,6 +157,7 @@ void FakeBoard::deliver_rx(std::span<const std::uint8_t> bytes) {
 }
 
 std::vector<std::uint8_t> FakeBoard::pull_tx(std::size_t bytes) {
+    const std::lock_guard<std::mutex> lock(handler_mutex_);
     if (!tx_streaming) {
         throw std::logic_error("pull_tx: not transmitting");
     }

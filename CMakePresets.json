@@ -19,6 +19,15 @@
       }
     },
     {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "binaryDir": "${sourceDir}/build-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "HACKRFDUPLEX_TSAN": "ON"
+      }
+    },
+    {
       "name": "coverage",
       "displayName": "gcov instrumentation with an lcov report target",
       "binaryDir": "${sourceDir}/build-coverage",
@@ -31,6 +40,7 @@
   "buildPresets": [
     { "name": "default", "configurePreset": "default" },
     { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
     { "name": "coverage", "configurePreset": "coverage" }
   ],
   "testPresets": [
@@ -47,6 +57,12 @@
         "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1",
         "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
       }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": { "outputOnFailure": true },
+      "environment": { "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1" }
     },
     {
       "name": "coverage",

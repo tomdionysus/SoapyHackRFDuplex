@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # The checks a change must pass, in order: formatting, the licence line on
-# every source file, the release build and its tests, and the sanitizer
-# build and its tests. Run from anywhere; it works in the repository's own
+# every source file, the release build and its tests, the address and
+# undefined-behaviour sanitizer build and its tests, and the thread
+# sanitizer build and its tests. Run from anywhere; it works in the repository's own
 # build trees. Exits non-zero at the first failure.
 #
 #   tools/ci.sh            everything
@@ -82,5 +83,11 @@ fi
 ASAN_OPTIONS="detect_leaks=$leaks:abort_on_error=1" \
     UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1" \
     ./build-asan/module/hackrfduplex_tests
+
+step "thread sanitizer build"
+cmake --preset tsan >/dev/null
+cmake --build build-tsan -j "$jobs"
+step "thread sanitizer tests"
+TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1" ./build-tsan/module/hackrfduplex_tests
 
 step "passed"
