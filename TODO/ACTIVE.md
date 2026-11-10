@@ -33,7 +33,7 @@ run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
 Work the items in order. Item 2 finishes measuring the hardware time
-(item 1, the pair on the target, is done), items 3 to 16 take the module to
+(items 1 and 3 to 8 are done), items 9 to 16 take the module to
 the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
 on hardware Tom does not have yet.
 
@@ -58,23 +58,25 @@ on hardware Tom does not have yet.
   while USB alone carries the full rate. Item 1 then brought the pair up
   there: receive, reference switches each way, the tone and 3658 timed
   bursts at +0, all clean (COMPLETED.md).
+- 2026-11-10: items 4 to 7 accepted on the target (COMPLETED.md): a
+  board unplugged mid-stream is a stream error within 0.1 s, a killed
+  transmitter stops itself within its underrun limit, the probe lists
+  everything as designed, and timed receive windows catch timed bursts
+  to the sample. 128 test cases.
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
 ## Waits on Tom
 
-- 2026-11-09, 17:19: the target rebooted during the lead sweep (item 2),
-  about two minutes into a 600 s full-duplex run at 2 Msps. The journal
-  is not persistent, so the cause is not recorded; since the boot it has
-  reported under-voltage every few seconds to minutes, with the boards
-  idle and another project's CI compiling. A brown-out under the two
-  boards' draw is the likely reading. Hardware runs on the target are
-  stopped until Tom decides how to go on. Done so far in the sweep:
-  2 Msps, default buffers, 4.5 and 4.75 transfers late in all three
-  starts, 5 transfers clean in all three 30 s starts, the 600 s
-  confirmation cut short by the reboot. Commits since `1c13737` are local:
-  `tools/ci.sh` passes on the workstation (release and sanitizer builds,
-  124 test cases) but has not run on the target, so they are not pushed.
+- The target's power. On 2026-11-09 at about 17:20 the target rebooted
+  about two minutes into a 600 s full-duplex run at 2 Msps (the lead
+  sweep, item 2); it booted again at 01:14 GMT on 2026-11-10 with no run
+  of this work going since the first. The journal keeps only the
+  current boot, so neither cause is recorded. Tom, 2026-11-10: "keep runs
+  short, and do all you can until I need to sort this out." So runs on
+  the target stay at about 30 s, with the power read before and after;
+  the ten-minute lead confirmations (item 2), the ten-minute 20 Msps run
+  (item 11) and the soak (item 15) wait until Tom has sorted the power.
 
 Nothing blocks the work. Decided 2026-11-09 and recorded under standing
 decisions: the target's bench, its power, the transmit underrun limit,
@@ -197,81 +199,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   state the worst. Acceptance: the table in `docs/design.md` "Measured",
   the `buffers` default revisited in its light, and the README's
   hardware time paragraph stating the lead a writer should allow.
-
-### 4. Fix: lost samples and lost boards are reported
-
-- [ ] A board shortfall loses samples the stream positions cannot see,
-  so receive timestamps after it are wrong even with no time origin;
-  today shortfalls are only polled while an origin holds. Poll them
-  whenever a stream is active: a receive shortfall reports
-  `SOAPY_SDR_OVERFLOW` once with `SOAPY_SDR_END_ABRUPT` and a log line
-  saying the timestamps have shifted by an unknown amount; a transmit
-  shortfall reports `SOAPY_SDR_UNDERFLOW` once; losing the origin
-  follows as now. A board unplugged mid-stream was seen on 2026-11-09 to
-  produce only the "origin lost" warning and then read timeouts until
-  the caller gave up: a board that has stopped streaming (`Board::streaming`
-  false, or a libhackrf error) must turn reads and writes into
-  `SOAPY_SDR_STREAM_ERROR` within a bounded time. Acceptance: fake-board
-  tests for each case, with and without an origin, and on the target a
-  board unplugged mid-run giving a stream error within a second.
-  Status 2026-11-09: built and tested against the fakes (six cases,
-  `[fault]`; docs/design.md "Failure handling"); the unplug on the target
-  remains, by deauthorising the board's USB device in sysfs and putting
-  it back, once the lead sweep (item 2) has the boards free.
-
-### 5. Refuse what is not supported
-
-- [ ] Audit every SoapySDR entry point for arguments accepted and
-  ignored. Known: `activateStream` ignores `SOAPY_SDR_HAS_TIME` and
-  `numElems`, and `deactivateStream` ignores its time. Each is either
-  implemented (item 7) or refused with `SOAPY_SDR_NOT_SUPPORTED`, and
-  getters for absent features answer as the SoapySDR defaults do.
-  Acceptance: one test per entry point and flag, a table of the
-  SoapySDR API against the module in `docs/design.md`, and
-  `SoapySDRUtil --probe` unchanged.
-  Status 2026-11-09: done against the fakes (six cases, `[refuse]`; the
-  table is in docs/design.md, "The SoapySDR API against the module").
-  Activation flags are refused until item 7 implements them on receive.
-  The probe on the target remains, once the lead sweep frees the boards.
-
-### 6. Safety: the transmitter cannot outlive its host
-
-- [ ] Set the transmitting board's underrun limit at each start, one
-  transfer's worth by default (`hackrf_set_tx_underrun_limit`, through a
-  new `Board` call), with a `tx_underrun_limit` setting (0 turns it off); detect the board having
-  stopped itself and report it as a stream error (item 4's path). Add a
-  transmit audit test: over a run of writes, timed writes, bursts, gaps,
-  late drops, calibration and deactivation, the fake transmitter is
-  handed exactly the written samples, the calibration burst and zeros,
-  nothing else. Acceptance: those tests, and on the target a check run
-  killed with SIGKILL mid-transmit leaving the TX board idle within the
-  limit.
-  Status 2026-11-09: built and tested against the fakes (`[safety]`: the
-  limit set before every start and cleared after a clean stop, the
-  setting and device argument, a board that stops itself, old firmware
-  named, and the transmit audit). The audit covers writes, timed writes,
-  bursts, gaps, a refused late write, two calibrations and a stop part
-  way through a burst; a block found late by the board thread arises only
-  from a race and is left to the TxPath tests. The firmware test was
-  written after its code. On the target remain the SIGKILL run, and
-  whether one transfer (6.5 ms at 20 Msps) is enough margin for the
-  target's scheduling under full duplex; if not, the default is a
-  question for Tom.
-
-### 7. Timed receive: start at a time, finite bursts
-
-- [ ] `activateStream` on the receive stream with `SOAPY_SDR_HAS_TIME`
-  delivers from that time on (earlier samples discarded, the first read
-  stamped exactly at it), and with `SOAPY_SDR_END_BURST` and `numElems`
-  delivers that many samples, the last read flagged `SOAPY_SDR_END_BURST`.
-  A time already passed returns `SOAPY_SDR_TIME_ERROR`. Acceptance:
-  fake-board tests; on the target, a timed receive window that starts
-  exactly where a timed transmit burst lands, through a new
-  `hackrfduplex-check --timed-window` mode.
-  Status 2026-11-09: built and tested against the fakes (`[timed-rx]`,
-  six cases), also on a running stream, so a window needs no restart and
-  keeps the origin; `hackrfduplex-check --timed-window US` built. The run
-  on the target remains, once the lead sweep frees the boards.
 
 ### 9. Device-level sensors
 

@@ -3,6 +3,78 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-10: timed receive windows
+
+Item 7, accepted on the target. `activateStream` on the receive stream
+takes `SOAPY_SDR_HAS_TIME` (deliver from that time, the first read
+stamped exactly at it) and `SOAPY_SDR_END_BURST` with `numElems` (that
+many samples, the last read flagged), on a stopped or a running stream;
+a time already passed is `SOAPY_SDR_TIME_ERROR`. Tests: six cases,
+`[timed-rx]`. On the target, `hackrfduplex-check --clkout rx --rate 2e6
+--timed-window 500000 --seconds 20`: 39 rounds, 0 refused, 0 short, 0
+without END_BURST, 0 stamped other than asked, every burst found at +0
+samples, at the start of its window to the sample. Power `0x50000`
+before and after.
+
+## 2026-11-10: the transmitter cannot outlive its host
+
+Item 6, accepted on the target. The underrun limit is set before every
+transmit start (one transfer's worth unless `tx_underrun_limit` says
+otherwise, also a device argument) and set back to 0 after a clean stop;
+a board that stopped itself is a stream error; old firmware is named in
+the log; the transmit audit finds the fake transmitter handed exactly
+the written samples, the calibration burst and zeros. Tests:
+`[safety]`. On the target, `tools/tx-kill-test.sh` (new): the check
+tool transmitting a 200 kHz tone at 2 Msps, TX gain 0, killed with
+SIGKILL after 5 s. The TX board's M0 then read: active mode IDLE, error
+2 (TX_TIMEOUT), one shortfall of 262144 bytes, which is the limit (one
+transfer, 65 ms at 2 Msps); listening on the RX board alone 1.6 s after
+the kill, the tone's bin was 1.2 dB over the median, so nothing. A
+receive-only run straight after reopened the pair cleanly (99.7%, 0
+overflows). The margin: at 20 Msps full duplex the check tool starves
+the transmitter (19.46 Msps sent, 206 underflows, about 230 board
+shortfalls a second for 20 s) and the board never stopped itself, so
+no single stretch reached one transfer (6.5 ms); the default stands.
+Power `0x50000` throughout.
+
+## 2026-11-10: refuse what is not supported
+
+Item 5, accepted on the target. Every SoapySDR entry point audited: a
+stream flag the device cannot honour returns `SOAPY_SDR_NOT_SUPPORTED`,
+any other call it cannot honour throws naming why, neutral values of
+the corrections are accepted, unknown stream arguments and settings
+are logged. The table is in docs/design.md, "The SoapySDR API against
+the module". Tests: `[refuse]`. The probe on the target showed one
+more: `clkout=rx` given as a device argument was dropped silently, the
+reference left off. Now every setting but `calibrate` is also a device
+argument, and an unknown device argument is logged (two new cases). The
+probe then: `clock out: rx` logged, `rx_clkout=on`, both boards `clock:
+external`, clock sources `internal, rx, tx`, time sources `burst,
+trigger, none`, the `tx_underrun_limit` setting listed, `lo_locked`
+true on both channels; otherwise as before. This also accepts item 8's
+probe of the sources.
+
+## 2026-11-10: lost samples and lost boards are reported
+
+Item 4, accepted on the target. Shortfalls are polled whenever a stream
+runs, at most every 100 ms: a receive shortfall is one
+`SOAPY_SDR_OVERFLOW` with `SOAPY_SDR_END_ABRUPT`, a transmit shortfall
+one `SOAPY_SDR_UNDERFLOW`, either loses the origin; a board that has
+stopped streaming, or fails a libhackrf call, is a stream error. Tests:
+`[fault]`. On the target, `tools/unplug-test.sh` (new) deauthorises a
+board's USB device mid-run and puts it back: the RX board receiving at
+2 Msps gave `SOAPY_SDR_STREAM_ERROR` 0.10 s after the unplug, the TX
+board transmitting a tone 0.04 s after; both boards back on the bus
+afterwards. Two fixes came out of the runs. At 20 Msps full duplex the
+shortfall warning came at every poll, about 20 lines a second; the log
+now names the first at once and the rest at most once a second with
+their count, and any left when the stream stops. The first unplug then
+logged "4294960398 more shortfalls": the count read 6898 as the board
+left and then 0. A count that goes back means the board restarted
+under the stream, and is now a failed board. 128 test cases. The check
+tool now ends a run on a stream error from either side and prints when
+it came. Power `0x50000` throughout.
+
 ## 2026-11-09: clock and time sources through the SoapySDR API
 
 Item 8. `listClockSources`, `setClockSource`, `getClockSource` map onto
