@@ -8,10 +8,11 @@ before starting. Do not reopen a standing decision in
 ## Repository layout
 
 ```
-docs/      design, compatibility, licensing
+docs/      design, compatibility, examples, licensing
 module/    the SoapySDR module: src/ and its Catch2 tests in tests/
 tools/     hackrfduplex-check; ci.sh, the checks a change must pass; ci-pi.sh,
            which runs them on a Debian host with the boards attached
+examples/  ft8: hackrfduplex-ft8, an FT8 client (optional build, liquid-dsp)
 cmake/     version header, sanitizer and coverage builds, libhackrf lookup
 debian/    Debian packaging: the module and the check tool
 TODO/      ACTIVE.md (open work) and COMPLETED.md (done work)

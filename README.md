@@ -31,6 +31,7 @@ Documentation:
 |---|---|
 | [docs/design.md](docs/design.md) | how the module is built: the pair, the stream paths, threads, timestamps, latency, reference switches, measurements |
 | [docs/compatibility.md](docs/compatibility.md) | the applications run against the pair, and what works |
+| [docs/examples.md](docs/examples.md) | `hackrfduplex-ft8`, an FT8 decoder client, receive only or as a timed loopback |
 | [docs/licensing.md](docs/licensing.md) | licence and third-party works |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | building, testing, CI and the rules for a change |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | repository layout, conventions, transmit safety |

@@ -48,7 +48,8 @@ if(HACKRFDUPLEX_COVERAGE)
         "*/hackrf_board.cpp"
         "*/hackrf_board.hpp"
         "*/registration.cpp"
-        "*/tools/*")
+        "*/tools/*"
+        "*/examples/*")
 
     add_custom_target(coverage
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${_cov_dir}

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# CodeQL security analysis of the module and the check tool, built as in
-# CI (with the receive corrections, so every source is compiled); weekly
+# CodeQL security analysis of the module, the check tool and the FT8
+# example, built as in CI (with the receive corrections, so every source is compiled); weekly
 # as well as on every push.
 name: CodeQL
 
@@ -43,7 +43,8 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S . -B build -DHACKRFDUPLEX_BUILD_TESTS=OFF -DHACKRFDUPLEX_DSP=ON
+          cmake -S . -B build -DHACKRFDUPLEX_BUILD_TESTS=OFF -DHACKRFDUPLEX_DSP=ON \
+            -DHACKRFDUPLEX_BUILD_EXAMPLES=ON
           cmake --build build -j "$(nproc)"
 
       - uses: github/codeql-action/analyze@v3

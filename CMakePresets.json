@@ -33,7 +33,8 @@
       "binaryDir": "${sourceDir}/build-dsp",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "HACKRFDUPLEX_DSP": "ON"
+        "HACKRFDUPLEX_DSP": "ON",
+        "HACKRFDUPLEX_BUILD_EXAMPLES": "ON"
       }
     },
     {

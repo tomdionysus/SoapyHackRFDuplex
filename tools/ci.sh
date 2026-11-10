@@ -95,6 +95,7 @@ cmake --preset dsp >/dev/null
 cmake --build build-dsp -j "$jobs"
 step "DSP tests"
 ./build-dsp/module/hackrfduplex_tests
+./build-dsp/examples/ft8/ft8_tests
 
 # Clang's thread-safety analysis proves the locking annotations
 # (module/src/mutex.hpp); GCC ignores them. Where the default compiler is
