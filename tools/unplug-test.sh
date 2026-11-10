@@ -55,9 +55,15 @@ wait "$pid" || status=$?
 ended=$(now)
 echo 1 >"$device/authorized"
 
+error_at=$(sed -n "s/^${which}: stream error .* at epoch //p" "$out/check.log")
 python3 -c "
 start, unplugged, ended = $start, $unplugged, $ended
+error_at = '$error_at'
 print(f'$which board ($device) deauthorised {unplugged - start:.1f} s after the start')
+if error_at:
+    print(f'$which stream error {float(error_at) - unplugged:.2f} s after the unplug')
+else:
+    print('no $which stream error reported')
 print(f'check tool ended {ended - unplugged:.2f} s after the unplug, exit status $status')
 " | tee -a "$out/summary.txt"
 sleep 2
