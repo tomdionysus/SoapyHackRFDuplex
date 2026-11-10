@@ -158,6 +158,9 @@ untested against hardware, and item 17 waits for them.
   lost origin in it is put down to the module.
 - Commits with no Claude text, and pushes to `origin develop`, at any
   time (Tom, 2026-11-09). One logical change per commit.
+- No 24-hour soak before the release; code coverage and GitHub Actions
+  instead (Tom, 2026-11-10). LTE and anything needing a changed
+  libhackrf or firmware stays out of scope (Tom, 2026-11-10, again).
 
 ## Release 0.2.0
 
@@ -178,8 +181,12 @@ first, by Tom's choice; 1.0.0 after it has been used):
 - **Honest under fault.** Lost samples, a lost board, a lost reference or
   a lost origin each reach the application as a stream status within a
   bounded time, never as silently wrong data or timestamps.
-- **Fast and steady.** Full duplex at 20 Msps, measured CPU use, and a
-  24-hour soak with the origin held throughout.
+- **Fast and steady.** Full duplex at the host's limit (16 Msps on the
+  target, whose USB carries neither direction cleanly at 20), measured
+  CPU use, and ten minutes of it with the origin held throughout.
+- **Gated.** `tools/ci.sh` on every push through GitHub Actions, in the
+  target's distribution, coverage reported (Tom, 2026-11-10: "You need
+  code coverage, github actions").
 - **Shipped.** A `.deb` that installs on trixie, docs a newcomer can
   follow, and tag `0.2.0` on `main`.
 - **Named limits.** What could not be tried on hardware (the trigger
@@ -200,18 +207,16 @@ first, by Tom's choice; 1.0.0 after it has been used):
   checked, and any quirk. Acceptance: the matrix filled, every failure
   fixed in the module or explained as the application's.
 
-### 15. Certification and soak
+### 15. Certification
 
 - [ ] `hackrfduplex-check --acceptance` runs the hardware battery and
   prints pass or fail per line against the figures in `docs/design.md`:
   receive at 2, 8 and 20 Msps; a tone in each format; a reference switch
   each way; the origin repeatable; timed bursts at +0; low rates;
   `lo_locked`, `ref_locked`, `time_locked`. It transmits only with
-  `--transmit`. Then a 24-hour soak on the target: full duplex at 8 Msps
-  with timed bursts throughout, the origin holding (no shortfall) or each
-  loss reported and recovered with `calibrate`, memory flat.
-  Acceptance: the battery passing on this pair, and the soak's figures
-  in COMPLETED.md.
+  `--transmit`. No soak (Tom, 2026-11-10: "You don't need a 24h run");
+  the longest run is item 11's ten minutes of full duplex. Acceptance:
+  the battery passing on this pair, its report in COMPLETED.md.
 
 ### 16. Documentation and the release
 
