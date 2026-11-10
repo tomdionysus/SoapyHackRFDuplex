@@ -3,6 +3,25 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-10: optional receive corrections
+
+Item 12, accepted on the target. With `-DHACKRFDUPLEX_DSP=ON` and
+liquid-dsp (1.7.0 on the target, 1.8.2 on the workstation) the receive
+channel takes `setDCOffsetMode`, `setDCOffset`, `setIQBalance` and
+`setIQBalanceMode` (and their getters); off until set; applied on the
+reader's thread in the application's format; the calibration tap and
+direct access see raw samples. Without the option none of it is
+compiled, liquid-dsp is not linked and the calls refuse as before;
+`tools/ci.sh` builds and tests both ways (179 test cases without, 189
+with). On the target, full duplex at 8 Msps with a 100 kHz tone: the
+centre bin -35.9 dBFS without, -75.1 with DC removal; the tone's image
+32.7 dB below it without, 37.2 dB with I/Q balance, 39.2 dB with both, at
+the noise floor. The hardware run found the automatic I/Q estimate led
+astray by the receiver's DC (b = -0.48 + 0.10j, the image 6 dB down): it
+now measures about each read's mean, with a test that failed first. Cost
+at 20 Msps receive, CF32: 4% of a core without, 58% with both. Figures
+in `docs/design.md`, "Receive corrections". Power `0x50000` throughout.
+
 ## 2026-11-10: performance
 
 Item 11, accepted on the target with 20 Msps recorded as the host's

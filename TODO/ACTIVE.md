@@ -33,7 +33,7 @@ run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
 Work the items in order. Item 2 finishes measuring the hardware time
-(items 1 and 3 to 11 are done), items 12 to 16 take the module to
+(items 1 and 3 to 12 are done), items 13 to 16 take the module to
 the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
 on hardware Tom does not have yet.
 
@@ -212,25 +212,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   state the worst. Acceptance: the table in `docs/design.md` "Measured",
   the `buffers` default revisited in its light, and the README's
   hardware time paragraph stating the lead a writer should allow.
-
-### 12. Optional DSP: DC removal and I/Q balance on receive
-
-- [ ] Behind `-DHACKRFDUPLEX_DSP=ON` (default off), with liquid-dsp found
-  by CMake (`libliquid-dev` on the target, recorded in the README's
-  install line and `docs/licensing.md`): `hasDCOffsetMode`,
-  `setDCOffsetMode` (automatic removal), `setDCOffset`, `hasIQBalance`,
-  `setIQBalance`, and the automatic I/Q balance mode where the SoapySDR
-  version has it, all on the receive channel, all off until set. The
-  correction runs on the reader's thread in the conversion step, on the
-  samples the application asked for, so the transfer thread is
-  untouched; the calibration tap sees the raw samples. Without the
-  option none of it is compiled, the module does not link liquid-dsp,
-  and the calls answer as now. Acceptance: tests of each call and of the
-  correction against synthetic DC and imbalance, built and run both with
-  and without the option (`tools/ci.sh` builds both); on the target the
-  receiver's DC spike and the tone's image measured with each correction
-  off and on, the figures in `docs/design.md`; CPU cost per rate in item
-  11's table.
 
 ### 13. Quality gates
 

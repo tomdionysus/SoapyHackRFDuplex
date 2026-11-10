@@ -288,9 +288,28 @@ access see the samples as the board sent them.
   26 dB image falls below 50 dB within half a million samples (tested).
   `getIQBalance` reads the estimate.
 
-The streams' sensors, reads and timestamps are unchanged by them. Their
-cost per rate and their effect on the target are measured in "Rates and
-CPU on the target" and below it.
+The streams' sensors, reads and timestamps are unchanged by them.
+
+Measured on the target, 2026-11-10: full duplex at 8 Msps, a 100 kHz tone
+at TX gain 0, `hackrfduplex-check --tx-tone 100e3 --seconds 10` from the
+build with them, the corrections switched on with `--dc-removal` and
+`--iq-balance`:
+
+| Corrections | Centre bin (DC) | Tone's image below the tone | b found |
+|---|---|---|---|
+| none | -35.9 dBFS | 32.7 dB | |
+| I/Q balance | -35.9 dBFS | 37.2 dB | -0.0169 - 0.0031j |
+| DC removal and I/Q balance | -75.1 dBFS | 39.2 dB | +0.0005 - 0.0027j |
+
+DC removal takes the centre spike down 39 dB, into the noise. This
+receiver's balance is good already: with both on the image sits at -83.2
+dBFS, at the noise floor (median bin -84.2 dBFS), so the figure is the
+floor's, not the correction's limit. The first estimator measured
+E[y^2] about zero rather than about the mean, and the receiver's DC,
+stronger than the tone, led it to b = -0.48 + 0.10j and an image only 6 dB
+down; it now measures about each read's mean (a test holds it). The cost:
+receiving 20 Msps in CF32 takes 4% of a core without them and 58% with
+both, about 26 ns a sample, all on the reader's thread.
 
 ## Latency
 
