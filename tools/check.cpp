@@ -8,6 +8,7 @@
 
 #include <SoapySDR/Constants.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Errors.hpp>
@@ -15,6 +16,7 @@
 #include <SoapySDR/Logger.hpp>
 #include <SoapySDR/Time.hpp>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -27,8 +29,11 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "burst.hpp"
@@ -75,6 +80,10 @@ struct Options {
     // Timed mode: when the origin is lost, calibrate again and go on,
     // counting each loss and whether calibration brought the origin back.
     bool recover = false;
+    // Run the acceptance battery instead of one run; transmit lines only
+    // with `transmit`.
+    bool acceptance = false;
+    bool transmit = false;
     // Timed mode: a line of running totals this often, in seconds; 0 none.
     double progress_seconds = 0;
     bool help = false;
@@ -189,6 +198,10 @@ const char* const kUsage =
     "  --recover         with --timed-bursts: when the origin is lost, calibrate\n"
     "                    again and go on; the run passes if every loss was recovered\n"
     "  --progress S      with --timed-bursts: print running totals every S seconds\n"
+    "  --acceptance      run the hardware acceptance battery, one run of this tool\n"
+    "                    per line, and print PASS or FAIL for each against the\n"
+    "                    figures in docs/design.md; receive only unless --transmit\n"
+    "  --transmit        with --acceptance: the lines that transmit too (TX gain 0)\n"
     "  --timed-window US transmit a burst US microseconds after the time now and\n"
     "                    open a timed receive window just around it, again and\n"
     "                    again, and report where in each window it arrived\n"
@@ -258,6 +271,10 @@ void parse(int argc, char** argv, Options& options) {
             options.calibrations = std::stoi(value());
         } else if (arg == "--timed-bursts") {
             options.timed_delay_us = std::stod(value());
+        } else if (arg == "--acceptance") {
+            options.acceptance = true;
+        } else if (arg == "--transmit") {
+            options.transmit = true;
         } else if (arg == "--recover") {
             options.recover = true;
         } else if (arg == "--progress") {
@@ -606,6 +623,8 @@ struct TimedResult {
     // --recover: origins lost, and calibrations that found one again.
     unsigned origins_lost = 0;
     unsigned recovered = 0;
+    // A read or write ended the run early.
+    bool stream_error = false;
     std::map<long long, unsigned> errors;
 };
 
@@ -709,6 +728,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
         }
         if (n < 0) {
             std::printf("timed: read error %s\n", SoapySDR::errToStr(n));
+            result.stream_error = true;
             break;
         }
         const long long tick = SoapySDR::timeNsToTicks(time_ns, rate);
@@ -767,6 +787,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
                 ++result.write_timeouts;
             } else if (w < 0) {
                 std::printf("timed: write error %s\n", SoapySDR::errToStr(w));
+                result.stream_error = true;
                 break;
             } else {
                 long long done = w;
@@ -854,8 +875,9 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     const bool time_ok = options.recover ? result.recovered == result.origins_lost &&
                                                result.time_errors <= result.origins_lost
                                          : result.time_errors == 0;
-    const bool clean = result.late_writes == 0 && time_ok && result.missing == 0 &&
-                       result.errors.size() <= 1 && result.clock_outside == 0;
+    const bool clean = !result.stream_error && result.late_writes == 0 && time_ok &&
+                       result.missing == 0 && result.errors.size() <= 1 &&
+                       result.clock_outside == 0;
     std::printf("timed: %s\n", clean ? "every burst on time and in place" : "NOT CLEAN");
     return clean ? 0 : 1;
 }
@@ -987,6 +1009,206 @@ int run_window(SoapySDR::Device* device, const Options& options) {
 
 }  // namespace
 
+namespace {
+
+// The acceptance battery (TODO/ACTIVE.md, item 15): each line one run of
+// this tool as a child, its report read back and judged against the
+// figures in docs/design.md.
+struct Child {
+    int status = -1;
+    std::string output;
+};
+
+Child run_child(const std::string& self, const std::vector<std::string>& args) {
+    std::string command = self;
+    for (const std::string& a : args) {
+        command += " " + a;
+    }
+    command += " 2>&1";
+    Child child;
+    FILE* pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return child;
+    }
+    std::array<char, 4096> chunk{};
+    while (std::fgets(chunk.data(), static_cast<int>(chunk.size()), pipe) != nullptr) {
+        child.output += chunk.data();
+    }
+    const int status = pclose(pipe);
+    child.status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    return child;
+}
+
+// The first number captured by `pattern` in `text`.
+std::optional<double> number(const std::string& text, const std::string& pattern) {
+    std::smatch match;
+    if (std::regex_search(text, match, std::regex(pattern)) && match.size() > 1) {
+        return std::stod(match[1].str());
+    }
+    return std::nullopt;
+}
+
+bool has(const std::string& text, const std::string& what) {
+    return text.find(what) != std::string::npos;
+}
+
+int run_acceptance(const std::string& self, const Options& options) {
+    const std::string clkout = options.clkout.empty() ? "rx" : options.clkout;
+    std::vector<std::string> common{"--clkout", clkout};
+    if (!options.rx_serial.empty()) {
+        common.insert(common.end(), {"--rx-serial", options.rx_serial});
+    }
+    if (!options.tx_serial.empty()) {
+        common.insert(common.end(), {"--tx-serial", options.tx_serial});
+    }
+    unsigned passed = 0;
+    unsigned failed = 0;
+    const auto line = [&](bool ok, const std::string& name, const std::string& detail) {
+        std::printf("%s  %s: %s\n", ok ? "PASS" : "FAIL", name.c_str(), detail.c_str());
+        std::fflush(stdout);
+        ++(ok ? passed : failed);
+    };
+    const auto run = [&](std::vector<std::string> args) {
+        std::vector<std::string> all = common;
+        all.insert(all.end(), args.begin(), args.end());
+        return run_child(self, all);
+    };
+    const auto fmt = [](const char* format, auto... values) {
+        std::array<char, 256> text{};
+        std::snprintf(text.data(), text.size(), format, values...);
+        return std::string(text.data());
+    };
+    const std::string kRxRate =
+        R"(rx: \d+ samples in [\d.]+ s = [\d.]+ Msps \(([\d.]+)% of nominal\))";
+    const std::string kOverflows = R"((\d+) overflows, \d+ timeouts)";
+
+    std::printf("acceptance: clkout %s, %s\n", clkout.c_str(),
+                options.transmit ? "receive and transmit lines (TX gain 0)"
+                                 : "receive lines only (add --transmit for the rest)");
+    std::fflush(stdout);
+
+    // Receive, at the rates the design names, and at the low end.
+    for (const auto& [rate, seconds] : std::vector<std::pair<std::string, std::string>>{
+             {"2e6", "10"}, {"8e6", "10"}, {"16e6", "10"}, {"0.2e6", "10"}}) {
+        const Child c = run({"--rate", rate, "--seconds", seconds, "--no-analysis"});
+        const auto pct = number(c.output, kRxRate);
+        const auto over = number(c.output, kOverflows);
+        line(c.status == 0 && pct && *pct >= 99.0 && over && *over == 0,
+             fmt("receive %s sps %s s", rate.c_str(), seconds.c_str()),
+             pct && over ? fmt("%.1f%% of nominal, %.0f overflows", *pct, *over)
+                         : "no report (exit " + std::to_string(c.status) + ")");
+    }
+    {
+        // 20 Msps: the design's limit on a host whose USB carries it; the
+        // Raspberry Pi 5 target does not (docs/design.md).
+        const Child c = run({"--rate", "20e6", "--seconds", "10", "--no-analysis"});
+        const auto pct = number(c.output, kRxRate);
+        const auto over = number(c.output, kOverflows);
+        std::printf("INFO  receive 20e6 sps 10 s: %s (the host's limit, not judged)\n",
+                    pct && over ? fmt("%.1f%% of nominal, %.0f overflows", *pct, *over).c_str()
+                                : "no report");
+    }
+
+    // A reference switch each way, the boards onto their own clocks and
+    // back onto the shared one, with the sensors read each time.
+    {
+        const std::vector<std::string> args{"--rate", "8e6", "--seconds", "3"};
+        std::vector<std::string> off_args{"--clkout", "off"};
+        for (const std::string& key : {std::string("--rx-serial"), std::string("--tx-serial")}) {
+            const std::string& value = key == "--rx-serial" ? options.rx_serial : options.tx_serial;
+            if (!value.empty()) {
+                off_args.insert(off_args.end(), {key, value});
+            }
+        }
+        off_args.insert(off_args.end(), args.begin(), args.end());
+        const Child off = run_child(self, off_args);
+        const auto off_pct = number(off.output, kRxRate);
+        line(off.status == 0 && has(off.output, "sensors running: ref_locked false") &&
+                 has(off.output, "rx lo_locked true") && off_pct && *off_pct >= 99.0,
+             "reference switch to the boards' own clocks",
+             std::string(has(off.output, "changed reference clock") ? "switch handled"
+                                                                    : "no switch needed") +
+                 ", ref_locked false, rx lo_locked true");
+        const Child on = run(args);
+        const auto on_pct = number(on.output, kRxRate);
+        line(on.status == 0 && has(on.output, "sensors running: ref_locked true") &&
+                 has(on.output, "rx lo_locked true") && on_pct && *on_pct >= 99.0,
+             "reference switch back to the shared reference (clkout " + clkout + ")",
+             std::string(has(on.output, "changed reference clock") ? "switch handled"
+                                                                   : "no switch needed") +
+                 ", ref_locked true, rx lo_locked true");
+    }
+
+    if (options.transmit) {
+        // A tone in each format: at its sent offset every second, the four
+        // levels within 0.3 dB of each other.
+        std::vector<double> levels;
+        for (const std::string format : {"CS8", "CS16", "CF32", "CF64"}) {
+            const Child c = run({"--rate", "8e6", "--seconds", "4", "--tx-tone", "100e3",
+                                 "--tx-gain", "0", "--tx-format", format});
+            const auto level =
+                number(c.output, R"(tone: expected at [-+\d.]+ kHz: ([-\d.]+) dBFS)");
+            const auto spread = number(c.output, R"(tone: offset spread ([\d.]+) Hz)");
+            const auto under =
+                number(c.output, R"(tx: \d+ samples in [\d.]+ s = [\d.]+ Msps, (\d+) underflows)");
+            if (level) {
+                levels.push_back(*level);
+            }
+            line(c.status == 0 && level && spread && *spread == 0 && under && *under == 0,
+                 "tone in " + format,
+                 level && spread ? fmt("%.1f dBFS, offset spread %.1f Hz", *level, *spread)
+                                 : "no tone report");
+        }
+        if (levels.size() == 4) {
+            const auto [low, high] = std::minmax_element(levels.begin(), levels.end());
+            line(*high - *low <= 0.3, "tone levels across the formats",
+                 fmt("within %.2f dB", *high - *low));
+        } else {
+            line(false, "tone levels across the formats", "not every format reported");
+        }
+
+        // The origin, repeatable, and the time sensors.
+        {
+            const Child c = run({"--rate", "8e6", "--seconds", "2", "--tx-tone", "100e3",
+                                 "--tx-gain", "0", "--calibrations", "5"});
+            const auto spread = number(c.output, R"(time: origin spread (\d+) samples)");
+            line(c.status == 0 && spread && *spread == 0, "origin repeatable over 6 findings",
+                 spread ? fmt("spread %.0f samples", *spread) : "no origin found");
+            line(has(c.output, "sensors running: ref_locked true, time_locked true") &&
+                     has(c.output, "tx lo_locked true"),
+                 "time and lock sensors with both streams running",
+                 "time_locked, ref_locked, tx lo_locked true");
+        }
+
+        // Timed bursts at +0, at the lead the design gives.
+        for (const auto& [rate, delay, seconds] :
+             std::vector<std::tuple<std::string, std::string, std::string>>{
+                 {"8e6", "90112", "60"}, {"16e6", "45056", "30"}}) {
+            const Child c = run({"--rate", rate, "--timed-bursts", delay, "--seconds", seconds});
+            const auto written = number(c.output, R"(timed: (\d+) bursts written)");
+            line(c.status == 0 && has(c.output, "every burst on time and in place"),
+                 fmt("timed bursts at %s sps %s s", rate.c_str(), seconds.c_str()),
+                 written ? fmt("%.0f bursts, every one at +0", *written) : "no timed report");
+        }
+
+        // The transmitter's low end.
+        {
+            const Child c =
+                run({"--rate", "1.2e6", "--seconds", "4", "--tx-tone", "100e3", "--tx-gain", "0"});
+            const auto spread = number(c.output, R"(tone: offset spread ([\d.]+) Hz)");
+            const auto over = number(c.output, kOverflows);
+            line(c.status == 0 && spread && *spread == 0 && over && *over == 0,
+                 "transmit and receive at 1.2e6 sps",
+                 spread ? fmt("tone offset spread %.1f Hz", *spread) : "no tone report");
+        }
+    }
+
+    std::printf("acceptance: %u passed, %u failed\n", passed, failed);
+    return failed == 0 ? 0 : 1;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     Options options;
     try {
@@ -998,6 +1220,9 @@ int main(int argc, char** argv) {
     if (options.help) {
         std::cout << kUsage;
         return 0;
+    }
+    if (options.acceptance) {
+        return run_acceptance(argv[0], options);
     }
     if (options.tx_rate_hz == 0) {
         options.tx_rate_hz = options.rate_hz;
