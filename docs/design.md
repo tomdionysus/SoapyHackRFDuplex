@@ -457,10 +457,15 @@ long its timeout.
   `SOAPY_SDR_OVERFLOW` with `SOAPY_SDR_END_ABRUPT`, once, and the log
   says the timestamps from there on are shifted by an unknown amount; on
   the transmitter `readStreamStatus` returns `SOAPY_SDR_UNDERFLOW` once.
-  Either loses the origin. The firmware counts shortfalls from each
-  start, and so does the pair.
-- A board whose transfers have stopped, or on which a libhackrf call
-  fails (as on one pulled from the bus), has failed: the error is logged
+  Either loses the origin. Each poll that finds new shortfalls reports
+  them to the stream so, but the log names the first at once and the
+  rest at most once a second, with their count, and any left when the
+  stream stops: at 20 Msps on the target a starved stream falls short
+  at every poll. The firmware counts shortfalls from each start, and so
+  does the pair.
+- A board whose transfers have stopped, on which a libhackrf call fails
+  (as on one pulled from the bus), or whose shortfall count goes back,
+  which only a start under the stream does, has failed: the error is logged
   once, and its stream's reads, writes and status calls return
   `SOAPY_SDR_STREAM_ERROR` until it is deactivated and activated again.
   Deactivating it ends the stream even when the board cannot be told to

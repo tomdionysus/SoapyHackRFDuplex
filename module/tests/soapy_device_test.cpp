@@ -411,6 +411,37 @@ TEST_CASE("a receive shortfall with an origin is an overflow and a lost origin",
           std::vector<int>{SOAPY_SDR_TIME_ERROR});
 }
 
+TEST_CASE("a shortfall count that goes back is a board restarted under its stream",
+          "[soapy][fault]") {
+    // Seen on the target with the board deauthorised mid-stream: the count
+    // read 6898, then 0, and was logged as 4294960398 more shortfalls.
+    RxRig rig;
+    REQUIRE(rig.activated == 0);
+    SoapySDR::Device& d = *rig.device;
+    rig.rx->shortfall_count = 6898;
+    int flags = 0;
+    const auto start = std::chrono::steady_clock::now();
+    while (since(start) < std::chrono::milliseconds(250)) {
+        flags = 0;
+        if (rig.deliver_and_read(flags) < 0 && rig.rx->shortfall_count != 0) {
+            rig.rx->shortfall_count = 0;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    REQUIRE(rig.rx->shortfall_count == 0);
+    int result = 0;
+    while (since(start) < std::chrono::milliseconds(600) && result != SOAPY_SDR_STREAM_ERROR) {
+        flags = 0;
+        result = rig.deliver_and_read(flags);
+    }
+    CHECK(result == SOAPY_SDR_STREAM_ERROR);
+    CHECK(rig.logged(SOAPY_SDR_ERROR, "count went back"));
+    CHECK(d.deactivateStream(rig.stream) == 0);
+    for (const auto& [level, message] : soapy_logs()) {
+        CHECK(message.find("429496") == std::string::npos);
+    }
+}
+
 TEST_CASE("steady shortfalls are logged at most once a second, every one counted",
           "[soapy][fault]") {
     // On the target at 20 Msps the boards fall short at every poll; one

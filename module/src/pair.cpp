@@ -745,6 +745,16 @@ bool Pair::poll_boards(bool force) {
             if (count == s.shortfalls_seen) {
                 continue;
             }
+            // The count starts at zero with each start and only rises; one
+            // lower means the board started again under the stream, as one
+            // leaving the bus does.
+            if (count < s.shortfalls_seen) {
+                failing.push_back(direction);
+                reasons.emplace_back("its shortfall count went back from " +
+                                     std::to_string(s.shortfalls_seen) + " to " +
+                                     std::to_string(count) + ", so it restarted under the stream");
+                continue;
+            }
             s.shortfalls_seen = count;
             s.shortfall_pending = true;
             log_shortfalls(direction, now);
