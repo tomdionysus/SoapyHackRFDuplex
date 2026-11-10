@@ -443,6 +443,16 @@ firmware's, which this module cannot shorten (stock libhackrf fixes the
 transfer at 256 KiB and the count at four). So the default ring stays,
 and a writer should allow 5.5 transfers (720 896 samples) at any rate.
 
+The lead counts from a read the reader waited for. A read that empties a
+backlog, as after activation, when the calibration burst has kept the
+reader away, returns a transfer that arrived while the older ones were
+read, up to a transfer before the time now; a burst timed 5.5 transfers
+after it was late by about a quarter transfer in 5 of 12 starts at 8
+Msps on the target, 2026-11-10, always the first burst and never another.
+`hackrfduplex-check --timed-bursts` stamps from a read only when the read
+before it had caught up; with that, 10 starts of 10 at 8 and 16 Msps had
+no late write.
+
 At 15.36 Msps no write was ever late, from 4.5 transfers to 8, yet the
 sweep marked every step unclean: about 28% of bursts were found one
 sample early and the rest on time. The loop delay there falls about half

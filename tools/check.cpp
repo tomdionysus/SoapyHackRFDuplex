@@ -648,6 +648,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     const auto deadline = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                                       std::chrono::duration<double>(options.seconds));
     std::optional<long long> previous_read_ns;
+    bool was_caught_up = false;
     // Calibrates again when the origin has gone; true when it is back.
     const auto recover = [&]() {
         if (!options.recover || device->hasHardwareTime()) {
@@ -698,6 +699,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
         if (n == SOAPY_SDR_OVERFLOW) {
             ++result.overflows;
             previous_read_ns.reset();
+            was_caught_up = false;
             recover();
             continue;
         }
@@ -725,8 +727,14 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
 
         // A read from a backlog (the ring fills while activation calibrates)
         // is not live; stamping from it measures the backlog, not the lead.
+        // Nor is the read that empties the backlog: its transfer arrived
+        // while the older ones were being read, up to a transfer before now,
+        // so a lead counted from it is short by that much. A read is live
+        // when the one before it had caught up, so the reader waited for it.
         const long long newest = SoapySDR::timeNsToTicks(device->getHardwareTime(), rate);
-        const bool live = newest - (tick + n) < static_cast<long long>(mtu);
+        const bool caught_up = newest - (tick + n) < static_cast<long long>(mtu);
+        const bool live = caught_up && was_caught_up;
+        was_caught_up = caught_up;
         if (!live) {
             ++result.behind;
             previous_read_ns.reset();
@@ -750,6 +758,11 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
                                               SoapySDR::ticksToTimeNs(at, rate), 0);
             if (w == SOAPY_SDR_TIME_ERROR) {
                 ++result.late_writes;
+                std::printf(
+                    "timed: late write %.3f s in, burst %u, its read ending %lld samples before "
+                    "the newest received, %u reads from a backlog so far\n",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(),
+                    result.written + 1, newest - (tick + n), result.behind);
             } else if (w == SOAPY_SDR_TIMEOUT) {
                 ++result.write_timeouts;
             } else if (w < 0) {
