@@ -437,11 +437,19 @@ private:
     std::vector<std::complex<double>> baseband_;
 };
 
+double epoch_seconds() {
+    return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 struct RxResult {
     std::uint64_t samples = 0;
     unsigned overflows = 0;
     unsigned timeouts = 0;
     int error = 0;
+    // Wall-clock seconds since the epoch when the error came, for scripts
+    // that time a fault against it.
+    double error_at = 0;
     long long first_time_ns = -1;
     long long last_time_ns = -1;
 };
@@ -451,6 +459,9 @@ struct TxResult {
     unsigned underflows = 0;
     unsigned timeouts = 0;
     int error = 0;
+    // Wall-clock seconds since the epoch when the error came, for scripts
+    // that time a fault against it.
+    double error_at = 0;
 };
 
 SoapySDR::Kwargs stream_args(const Options& options) {
@@ -978,6 +989,7 @@ int main(int argc, char** argv) {
                         }
                         if (n < 0) {
                             tx_result.error = n;
+                            tx_result.error_at = epoch_seconds();
                             stop = true;
                             break;
                         }
@@ -1006,7 +1018,8 @@ int main(int argc, char** argv) {
         const auto deadline =
             start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                         std::chrono::duration<double>(options.seconds));
-        while (std::chrono::steady_clock::now() < deadline) {
+        // A stream error on either side ends the run.
+        while (std::chrono::steady_clock::now() < deadline && !stop) {
             int flags = 0;
             long long time_ns = 0;
             void* buffs[] = {buffer.data()};
@@ -1021,6 +1034,7 @@ int main(int argc, char** argv) {
             }
             if (n < 0) {
                 rx_result.error = n;
+                rx_result.error_at = epoch_seconds();
                 break;
             }
             if (rx_result.first_time_ns < 0) {
@@ -1095,11 +1109,13 @@ int main(int argc, char** argv) {
             }
         }
         if (rx_result.error != 0) {
-            std::printf("rx: stream error %s\n", SoapySDR::errToStr(rx_result.error));
+            std::printf("rx: stream error %s at epoch %.3f\n", SoapySDR::errToStr(rx_result.error),
+                        rx_result.error_at);
             status = 1;
         }
         if (tx_result.error != 0) {
-            std::printf("tx: stream error %s\n", SoapySDR::errToStr(tx_result.error));
+            std::printf("tx: stream error %s at epoch %.3f\n", SoapySDR::errToStr(tx_result.error),
+                        tx_result.error_at);
             status = 1;
         }
         if (spectrum.peak() >= 0.99) {
