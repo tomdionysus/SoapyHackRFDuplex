@@ -8,13 +8,14 @@ before starting. Do not reopen a standing decision in
 ## Repository layout
 
 ```
-docs/      design, licensing
+docs/      design, compatibility, licensing
 module/    the SoapySDR module: src/ and its Catch2 tests in tests/
 tools/     hackrfduplex-check; ci.sh, the checks a change must pass; ci-pi.sh,
            which runs them on a Debian host with the boards attached
 cmake/     version header, sanitizer and coverage builds, libhackrf lookup
 debian/    Debian packaging: the module and the check tool
 TODO/      ACTIVE.md (open work) and COMPLETED.md (done work)
+.github/   GitHub Actions: CI (tools/ci.sh in Debian trixie) and CodeQL
 ```
 
 Inside `module/src`, everything that does not touch libhackrf or
@@ -62,10 +63,26 @@ cmake --build build -j
 ctest --test-dir build
 ```
 
-`tools/ci.sh` runs what a change must pass: the format check, the
-licence line on every source file, the release build and its tests, and
-the sanitizer build and its tests (`--quick` stops after the release
-tests). Run it before a commit that touches code.
+`tools/ci.sh` runs what a change must pass, in order:
+
+1. the format check (clang-format 19) and the licence line on every
+   source file;
+2. the release build and its tests (`--quick` stops here);
+3. the address and undefined-behaviour sanitizer build and its tests;
+4. the build with the receive corrections (`HACKRFDUPLEX_DSP`, liquid-dsp)
+   and its tests;
+5. Clang's thread-safety analysis, a clang++-19 build where GCC is the
+   compiler;
+6. clang-tidy with [.clang-tidy](.clang-tidy), where the host has it;
+7. the coverage report, where lcov is installed (`build-coverage/coverage/html`);
+8. the thread sanitizer build and its tests, where the host can run it
+   (not on a Raspberry Pi 5 kernel: its 47-bit address space is one
+   ThreadSanitizer cannot use).
+
+Run it before a commit that touches code. GitHub Actions runs the whole
+of it on every push to `develop` and `main` in a Debian trixie container,
+keeps the coverage report as an artifact, and runs CodeQL; the run on
+the target, with the boards attached, stays the gate for a change.
 
 The build of record runs on the target, a Debian trixie host with both
 boards attached: `HACKRFDUPLEX_TARGET=user@host tools/ci-pi.sh` copies

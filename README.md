@@ -1,5 +1,8 @@
 # hackrfduplex
 
+[![CI](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
+
 Version 0.1.0
 
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
@@ -13,15 +16,23 @@ The HackRF One is a half-duplex radio. Two of them, with this module, are
 the cheapest full-duplex SoapySDR device there is. The module works with
 stock HackRF firmware and stock libhackrf.
 
-The code is C++20, tested with Catch2. The dependencies are SoapySDR,
-libhackrf and Catch2.
+The code is C++20, tested with Catch2 against fake boards: 179 test
+cases, 98.8% of the core's lines. Every push runs the release, address
+and undefined-behaviour sanitizer, thread sanitizer and optional-DSP
+builds with their tests, Clang's thread-safety analysis, clang-tidy, a
+coverage report and CodeQL on GitHub, and the same gate runs on a
+Raspberry Pi 5 with both boards attached, where `hackrfduplex-check`
+measures the hardware. The dependencies are SoapySDR, libhackrf and
+Catch2, and liquid-dsp for the optional receive corrections.
 
 Documentation:
 
 | Document | Contents |
 |---|---|
 | [docs/design.md](docs/design.md) | how the module is built: the pair, the stream paths, threads, timestamps, latency, reference switches, measurements |
+| [docs/compatibility.md](docs/compatibility.md) | the applications run against the pair, and what works |
 | [docs/licensing.md](docs/licensing.md) | licence and third-party works |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | building, testing, CI and the rules for a change |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | repository layout, conventions, transmit safety |
 | [TODO/ACTIVE.md](TODO/ACTIVE.md) | open work, in order |
 

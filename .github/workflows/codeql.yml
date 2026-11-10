@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# CodeQL security analysis of the module and the check tool, built as in
+# CI (with the receive corrections, so every source is compiled); weekly
+# as well as on every push.
+name: CodeQL
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: debian:trixie
+    steps:
+      - name: Install packages
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential cmake pkgconf git ca-certificates \
+            libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2 libliquid-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DHACKRFDUPLEX_BUILD_TESTS=OFF -DHACKRFDUPLEX_DSP=ON
+          cmake --build build -j "$(nproc)"
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:c-cpp"

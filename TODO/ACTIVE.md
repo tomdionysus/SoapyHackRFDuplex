@@ -158,8 +158,9 @@ untested against hardware, and item 17 waits for them.
   lost origin in it is put down to the module.
 - Commits with no Claude text, and pushes to `origin develop`, at any
   time (Tom, 2026-11-09). One logical change per commit.
-- No 24-hour soak before the release; code coverage and GitHub Actions
-  instead (Tom, 2026-11-10). LTE and anything needing a changed
+- The soak is two hours each at 8 and 16 Msps, overnight, not 24 hours;
+  code coverage and GitHub Actions gate every push, with the quality
+  setup corvus-radioberry publishes (Tom, 2026-11-10). LTE and anything needing a changed
   libhackrf or firmware stays out of scope (Tom, 2026-11-10, again).
 
 ## Release 0.2.0
@@ -183,7 +184,8 @@ first, by Tom's choice; 1.0.0 after it has been used):
   bounded time, never as silently wrong data or timestamps.
 - **Fast and steady.** Full duplex at the host's limit (16 Msps on the
   target, whose USB carries neither direction cleanly at 20), measured
-  CPU use, and ten minutes of it with the origin held throughout.
+  CPU use, and two hours each at 8 and 16 Msps with the origin held
+  throughout.
 - **Gated.** `tools/ci.sh` on every push through GitHub Actions, in the
   target's distribution, coverage reported (Tom, 2026-11-10: "You need
   code coverage, github actions").
@@ -207,16 +209,21 @@ first, by Tom's choice; 1.0.0 after it has been used):
   checked, and any quirk. Acceptance: the matrix filled, every failure
   fixed in the module or explained as the application's.
 
-### 15. Certification
+### 15. Certification and soak
 
 - [ ] `hackrfduplex-check --acceptance` runs the hardware battery and
   prints pass or fail per line against the figures in `docs/design.md`:
   receive at 2, 8 and 20 Msps; a tone in each format; a reference switch
   each way; the origin repeatable; timed bursts at +0; low rates;
   `lo_locked`, `ref_locked`, `time_locked`. It transmits only with
-  `--transmit`. No soak (Tom, 2026-11-10: "You don't need a 24h run");
-  the longest run is item 11's ten minutes of full duplex. Acceptance:
-  the battery passing on this pair, its report in COMPLETED.md.
+  `--transmit`. Then a soak on the target, run unattended overnight:
+  two hours of full duplex with timed bursts throughout at 8 Msps, then
+  two hours at 16 Msps (Tom, 2026-11-10: "cover both speeds at 2h each, 4h
+  in total"), the process's memory sampled every minute and the power
+  read before and after. Passes when every burst is on time, no shortfall
+  (or each reported and recovered with `calibrate`), and memory is flat
+  after the first minutes. Acceptance: the battery passing on this pair,
+  and its report and the soak's figures in COMPLETED.md.
 
 ### 16. Documentation and the release
 
