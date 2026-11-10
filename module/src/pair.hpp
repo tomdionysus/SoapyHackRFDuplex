@@ -215,6 +215,10 @@ private:
         // Shortfalls already accounted for since the board started; under
         // poll_mutex_.
         std::uint32_t shortfalls_seen = 0;
+        // Of those, the ones logged, and when the log last named any; under
+        // poll_mutex_.
+        std::uint32_t shortfalls_logged = 0;
+        std::chrono::steady_clock::time_point shortfalls_logged_at{};
         // Read while idle at each activation, since the clock chip reads as
         // zero while a board streams: whether the board found a clock on
         // CLKIN, which it then runs from, and whether it drives CLKOUT
@@ -252,6 +256,11 @@ private:
     // found a new shortfall. Takes poll_mutex_; callers may hold a side's.
     bool poll_boards(bool force = false);
     void mark_failed(Direction direction, const std::string& why);
+    // Logs the shortfalls seen and not yet logged: the first at once, the
+    // rest at most once a second, or when the stream stops (`now` empty).
+    // poll_mutex_ held.
+    void log_shortfalls(Direction direction,
+                        std::optional<std::chrono::steady_clock::time_point> now);
 
     Side rx_;
     Side tx_;

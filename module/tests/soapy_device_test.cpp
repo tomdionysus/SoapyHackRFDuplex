@@ -411,6 +411,46 @@ TEST_CASE("a receive shortfall with an origin is an overflow and a lost origin",
           std::vector<int>{SOAPY_SDR_TIME_ERROR});
 }
 
+TEST_CASE("steady shortfalls are logged at most once a second, every one counted",
+          "[soapy][fault]") {
+    // On the target at 20 Msps the boards fall short at every poll; one
+    // warning per poll and direction buried everything else in the log.
+    SoapyRig rig;
+    rig.tx->transfer_bytes_value = 2048;
+    SoapySDR::Device& d = *rig.device;
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    REQUIRE(d.activateStream(tx) == 0);
+    const auto warnings = [] {
+        std::vector<std::string> found;
+        for (const auto& [level, message] : soapy_logs()) {
+            if (level == SOAPY_SDR_WARNING &&
+                message.find("TX board ran out") != std::string::npos) {
+                found.push_back(message);
+            }
+        }
+        return found;
+    };
+    const auto start = std::chrono::steady_clock::now();
+    int underflows = 0;
+    while (since(start) < std::chrono::milliseconds(1500)) {
+        ++rig.tx->shortfall_count;
+        for (const int status : statuses_for(d, tx, std::chrono::milliseconds(20))) {
+            underflows += status == SOAPY_SDR_UNDERFLOW ? 1 : 0;
+        }
+    }
+    // Each poll still reports to the stream.
+    CHECK(underflows >= 8);
+    // The first at once, the rest a second later, together.
+    const std::vector<std::string> logged = warnings();
+    REQUIRE(logged.size() == 2);
+    CHECK(logged[0].find("(1 shortfall)") != std::string::npos);
+    CHECK(logged[1].find("in the last") != std::string::npos);
+    // What came after that is logged when the stream stops.
+    REQUIRE(d.deactivateStream(tx) == 0);
+    CHECK(warnings().size() == 3);
+    d.closeStream(tx);
+}
+
 TEST_CASE("a transmit shortfall is reported once as an underflow", "[soapy][fault]") {
     SECTION("with no origin") {
         SoapyRig rig;

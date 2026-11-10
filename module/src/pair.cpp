@@ -23,6 +23,8 @@ constexpr std::uint64_t kRetuneStepHz = 1'000'000;
 // How often a running board's health and shortfall count are read, and
 // so the longest a blocked read or write waits before looking again.
 constexpr auto kBoardPoll = std::chrono::milliseconds(100);
+// The longest shortfalls go unlogged after the first, while they recur.
+constexpr auto kShortfallLog = std::chrono::seconds(1);
 // How long a trigger start may take to reach the transmitter.
 constexpr auto kTriggerWait = std::chrono::milliseconds(500);
 // libhackrf keeps this many transfers in flight in each direction.
@@ -382,6 +384,7 @@ void Pair::start_stream(Direction direction) {
         // The firmware counts shortfalls from each start.
         const std::lock_guard<std::mutex> lock(poll_mutex_);
         s.shortfalls_seen = 0;
+        s.shortfalls_logged = 0;
     }
     if (direction == Direction::kRx) {
         rx_path_->reset();
@@ -582,6 +585,10 @@ void Pair::deactivate_locked(Direction direction) {
     s.running = false;
     s.active = false;
     s.armed = false;
+    {
+        const std::lock_guard<std::mutex> poll(poll_mutex_);
+        log_shortfalls(direction, std::nullopt);
+    }
     std::exception_ptr error;
     try {
         s.board->stop();
@@ -738,19 +745,9 @@ bool Pair::poll_boards(bool force) {
             if (count == s.shortfalls_seen) {
                 continue;
             }
-            const std::uint32_t added = count - s.shortfalls_seen;
             s.shortfalls_seen = count;
             s.shortfall_pending = true;
-            if (direction == Direction::kRx) {
-                log(LogLevel::kWarning,
-                    "RX board ran out of room in its own buffer (" + std::to_string(added) +
-                        " more shortfalls): samples were lost, and receive timestamps from here "
-                        "on are shifted by an unknown amount");
-            } else {
-                log(LogLevel::kWarning,
-                    "TX board ran out of samples in its own buffer (" + std::to_string(added) +
-                        " more shortfalls): what follows goes out late by an unknown amount");
-            }
+            log_shortfalls(direction, now);
             lost += std::string(lost.empty() ? "" : "; ") + "the " + direction_name(direction) +
                     " board lost or delayed samples";
         }
@@ -763,6 +760,38 @@ bool Pair::poll_boards(bool force) {
         lose_origin(lost + "; write calibrate to find it again");
     }
     return !lost.empty();
+}
+
+void Pair::log_shortfalls(Direction direction,
+                          std::optional<std::chrono::steady_clock::time_point> now) {
+    Side& s = side(direction);
+    const std::uint32_t added = s.shortfalls_seen - s.shortfalls_logged;
+    if (added == 0) {
+        return;
+    }
+    const bool first = s.shortfalls_logged == 0;
+    if (!first && now && *now - s.shortfalls_logged_at < kShortfallLog) {
+        return;
+    }
+    const auto at = now.value_or(std::chrono::steady_clock::now());
+    std::string count = std::to_string(added) + (added == 1 ? " shortfall" : " shortfalls");
+    if (!first) {
+        char seconds[32];
+        std::snprintf(seconds, sizeof seconds, "%.1f",
+                      std::chrono::duration<double>(at - s.shortfalls_logged_at).count());
+        count = std::to_string(added) + " more" + (added == 1 ? " shortfall" : " shortfalls") +
+                " in the last " + seconds + " s";
+    }
+    s.shortfalls_logged = s.shortfalls_seen;
+    s.shortfalls_logged_at = at;
+    if (direction == Direction::kRx) {
+        log(LogLevel::kWarning, "RX board ran out of room in its own buffer (" + count +
+                                    "): samples were lost, and receive timestamps from here "
+                                    "on are shifted by an unknown amount");
+    } else {
+        log(LogLevel::kWarning, "TX board ran out of samples in its own buffer (" + count +
+                                    "): what follows goes out late by an unknown amount");
+    }
 }
 
 void Pair::calibrate() {
