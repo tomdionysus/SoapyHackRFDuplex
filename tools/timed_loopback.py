@@ -66,15 +66,20 @@ def main():
     for _ in range(options.bursts):
         # A live read gives the time now; the burst goes a lead after it.
         # Reads from samples already queued are older than they look, so
-        # they are drained first: a read is live when the hardware time is
-        # within one buffer of its end.
+        # they are drained first. The read that empties the queue is old
+        # too (it waited while the ones before it were read), so a read is
+        # live when the one before it had already caught up: the hardware
+        # time within one buffer of its end.
+        caught_up = False
         while True:
             result = device.readStream(rx, [buffer], len(buffer), timeoutUs=1_000_000)
             if result.ret <= 0:
                 break
             tick = SoapySDR.timeNsToTicks(result.timeNs, rate)
             newest = SoapySDR.timeNsToTicks(device.getHardwareTime(), rate)
-            if newest - (tick + result.ret) < len(buffer):
+            was_caught_up = caught_up
+            caught_up = newest - (tick + result.ret) < len(buffer)
+            if caught_up and was_caught_up:
                 break
         if result.ret <= 0:
             lost += 1

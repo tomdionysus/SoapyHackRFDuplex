@@ -30,6 +30,7 @@ Documentation:
 
 | Document | Contents |
 |---|---|
+| [docs/usage.md](docs/usage.md) | for application writers: setting up the pair, the time origin and its calibration burst, the transmit lead, stream statuses, troubleshooting |
 | [docs/design.md](docs/design.md) | how the module is built: the pair, the stream paths, threads, timestamps, latency, reference switches, measurements |
 | [docs/compatibility.md](docs/compatibility.md) | the applications run against the pair, and what works |
 | [docs/examples.md](docs/examples.md) | `hackrfduplex-ft8`, an FT8 decoder client, receive only or as a timed loopback |
