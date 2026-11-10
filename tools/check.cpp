@@ -7,6 +7,7 @@
 // receive timestamps plus a delay and reports where each one arrived.
 
 #include <SoapySDR/Constants.h>
+#include <sys/resource.h>
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Errors.hpp>
@@ -61,6 +62,9 @@ struct Options {
     std::optional<double> window_delay_us;
     // 0: the module's default.
     int buffers = 0;
+    // Off: the received samples are counted and nothing more, so the CPU
+    // reported is the module's and SoapySDR's.
+    bool analyse = true;
     bool help = false;
 };
 
@@ -174,6 +178,8 @@ const char* const kUsage =
     "                    open a timed receive window just around it, again and\n"
     "                    again, and report where in each window it arrived\n"
     "                    (transmits; excludes --tx-tone and --timed-bursts)\n"
+    "  --no-analysis     count the received samples and nothing more, so the CPU\n"
+    "                    reported is the module's (no spectrum, no tone report)\n"
     "  --help\n";
 
 void parse(int argc, char** argv, Options& options) {
@@ -187,6 +193,8 @@ void parse(int argc, char** argv, Options& options) {
         };
         if (arg == "--help" || arg == "-h") {
             options.help = true;
+        } else if (arg == "--no-analysis") {
+            options.analyse = false;
         } else if (arg == "--rx-serial") {
             options.rx_serial = value();
         } else if (arg == "--tx-serial") {
@@ -264,7 +272,14 @@ class Spectrum {
 public:
     static constexpr std::size_t kBins = 8192;
 
-    explicit Spectrum(double rate_hz) : rate_hz_(rate_hz), power_(kBins, 0.0), block_(kBins) {}
+    explicit Spectrum(double rate_hz)
+        : rate_hz_(rate_hz), power_(kBins, 0.0), block_(kBins), window_(kBins) {
+        // Hann, so a tone does not leak across the band.
+        for (std::size_t k = 0; k < kBins; ++k) {
+            window_[k] = 0.5 - 0.5 * std::cos(2.0 * std::numbers::pi * static_cast<double>(k) /
+                                              static_cast<double>(kBins));
+        }
+    }
 
     void add(const std::complex<float>* samples, std::size_t count) {
         for (std::size_t i = 0; i < count; ++i) {
@@ -272,11 +287,7 @@ public:
             total_power_ += std::norm(s);
             peak_ = std::max({peak_, std::fabs(s.real()), std::fabs(s.imag())});
             ++count_;
-            // Hann window, so a tone does not leak across the band.
-            const double w =
-                0.5 - 0.5 * std::cos(2.0 * std::numbers::pi * static_cast<double>(filled_) /
-                                     static_cast<double>(kBins));
-            block_[filled_] = s * w;
+            block_[filled_] = s * window_[filled_];
             if (++filled_ == kBins) {
                 fft(block_);
                 for (std::size_t k = 0; k < kBins; ++k) {
@@ -361,6 +372,7 @@ private:
     double rate_hz_;
     std::vector<double> power_;
     std::vector<std::complex<double>> block_;
+    std::vector<double> window_;
     std::size_t filled_ = 0;
     std::size_t blocks_ = 0;
     double total_power_ = 0;
@@ -440,6 +452,17 @@ private:
 double epoch_seconds() {
     return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+// User and system time of the whole process: the module's threads, libusb's
+// and this tool's.
+double cpu_seconds() {
+    rusage usage{};
+    getrusage(RUSAGE_SELF, &usage);
+    const auto seconds = [](const timeval& tv) {
+        return static_cast<double>(tv.tv_sec) + static_cast<double>(tv.tv_usec) / 1e6;
+    };
+    return seconds(usage.ru_utime) + seconds(usage.ru_stime);
 }
 
 struct RxResult {
@@ -980,17 +1003,17 @@ int main(int argc, char** argv) {
                 std::vector<std::complex<float>> buffer(mtu);
                 std::vector<std::uint8_t> packed;
                 const std::size_t stride = format_bytes(options.tx_format);
-                const double step =
-                    2.0 * std::numbers::pi * options.tx_tone_hz / options.tx_rate_hz;
-                double phase = 0;
+                // A phasor turned once per sample and set back to its
+                // amplitude once per buffer: no trigonometry per sample.
+                const std::complex<double> turn = std::polar(
+                    1.0, 2.0 * std::numbers::pi * options.tx_tone_hz / options.tx_rate_hz);
+                std::complex<double> phasor(0.9, 0.0);
                 while (!stop) {
                     for (auto& s : buffer) {
-                        s = std::polar(0.9f, static_cast<float>(phase));
-                        phase += step;
-                        if (phase > 2.0 * std::numbers::pi) {
-                            phase -= 2.0 * std::numbers::pi;
-                        }
+                        s = std::complex<float>(phasor);
+                        phasor *= turn;
                     }
+                    phasor *= 0.9 / std::abs(phasor);
                     pack(buffer, options.tx_format, packed);
                     std::size_t sent = 0;
                     while (sent < buffer.size() && !stop) {
@@ -1036,6 +1059,7 @@ int main(int argc, char** argv) {
             run_calibrations(device, options.calibrations);
         }
         std::vector<std::complex<float>> buffer(rx_mtu);
+        const double cpu_start = cpu_seconds();
         const auto start = std::chrono::steady_clock::now();
         const auto deadline =
             start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
@@ -1064,13 +1088,16 @@ int main(int argc, char** argv) {
             }
             rx_result.last_time_ns = time_ns;
             rx_result.samples += static_cast<std::uint64_t>(n);
-            spectrum.add(buffer.data(), static_cast<std::size_t>(n));
-            if (transmit) {
-                finder.add(buffer.data(), static_cast<std::size_t>(n));
+            if (options.analyse) {
+                spectrum.add(buffer.data(), static_cast<std::size_t>(n));
+                if (transmit) {
+                    finder.add(buffer.data(), static_cast<std::size_t>(n));
+                }
             }
         }
         const double elapsed =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        const double cpu = cpu_seconds() - cpu_start;
         stop = true;
         device->deactivateStream(rx);
         device->closeStream(rx);
@@ -1093,19 +1120,25 @@ int main(int argc, char** argv) {
                         static_cast<double>(rx_result.first_time_ns) / 1e9,
                         static_cast<double>(rx_result.last_time_ns) / 1e9);
         }
-        std::printf(
-            "rx: mean %.1f dBFS, peak %.3f of full scale, median bin %.1f dBFS (%zu bins)\n",
-            spectrum.mean_dbfs(), spectrum.peak(), spectrum.median_bin_dbfs(), Spectrum::kBins);
-        std::printf("rx: strongest bins across the band (offset from %.4f MHz):\n",
-                    options.rx_frequency_hz / 1e6);
-        for (const Spectrum::Peak& p : spectrum.peaks(6)) {
-            std::printf("  %+10.1f kHz  %6.1f dBFS\n", p.offset_hz / 1e3, p.level_dbfs);
+        std::printf("cpu: %.2f s in %.2f s, %.0f%% of one core (the whole process%s)\n", cpu,
+                    elapsed, 100.0 * cpu / elapsed, options.analyse ? ", analysis included" : "");
+        if (options.analyse) {
+            std::printf(
+                "rx: mean %.1f dBFS, peak %.3f of full scale, median bin %.1f dBFS (%zu bins)\n",
+                spectrum.mean_dbfs(), spectrum.peak(), spectrum.median_bin_dbfs(), Spectrum::kBins);
+            std::printf("rx: strongest bins across the band (offset from %.4f MHz):\n",
+                        options.rx_frequency_hz / 1e6);
+            for (const Spectrum::Peak& p : spectrum.peaks(6)) {
+                std::printf("  %+10.1f kHz  %6.1f dBFS\n", p.offset_hz / 1e3, p.level_dbfs);
+            }
         }
         if (transmit) {
             std::printf("tx: %llu samples = %.3f Msps, %u underflows, %u timeouts\n",
                         static_cast<unsigned long long>(tx_result.samples),
                         static_cast<double>(tx_result.samples) / elapsed / 1e6,
                         tx_result.underflows, tx_result.timeouts);
+        }
+        if (transmit && options.analyse) {
             std::printf("tone: expected at %+.1f kHz: %.1f dBFS in its %.0f Hz bin\n",
                         expected_offset / 1e3, spectrum.level_at(expected_offset),
                         options.rate_hz / static_cast<double>(Spectrum::kBins));
@@ -1141,7 +1174,7 @@ int main(int argc, char** argv) {
                         tx_result.error_at);
             status = 1;
         }
-        if (spectrum.peak() >= 0.99) {
+        if (options.analyse && spectrum.peak() >= 0.99) {
             std::printf("rx: clipping, lower --rx-gain\n");
         }
     } catch (const std::exception& e) {
