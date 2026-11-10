@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "convert.hpp"
 
+#include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -60,6 +63,51 @@ TEST_CASE("CF64 converts like CF32", "[convert]") {
     CHECK_THAT(back[1], WithinAbs(-0.25, 1e-12));
     CHECK_THAT(back[2], WithinAbs(0.75, 1e-12));
     CHECK_THAT(back[3], WithinAbs(-1.0, 1e-12));
+}
+
+namespace {
+
+// The rule both float formats follow: scale by 128, round half to even,
+// clamp to the int8 range.
+template <typename Float>
+std::int8_t expected_native(Float value) {
+    const double scaled = std::nearbyint(static_cast<double>(value) * 128.0);
+    return static_cast<std::int8_t>(std::clamp(scaled, -128.0, 127.0));
+}
+
+template <typename Float>
+void check_against_rule(Format format) {
+    std::vector<Float> values;
+    // Every tie between two codes, and a dense grid across and beyond full
+    // scale, then far out of range.
+    for (int k = -260; k <= 260; ++k) {
+        values.push_back(static_cast<Float>((k + 0.5) / 128.0));
+    }
+    for (int i = -3000; i <= 3000; ++i) {
+        values.push_back(static_cast<Float>(i / 1024.0));
+    }
+    for (const Float far :
+         {static_cast<Float>(1e6), static_cast<Float>(-1e6), std::numeric_limits<Float>::max(),
+          std::numeric_limits<Float>::lowest(), std::numeric_limits<Float>::infinity(),
+          -std::numeric_limits<Float>::infinity()}) {
+        values.push_back(far);
+    }
+    if (values.size() % 2 != 0) {
+        values.push_back(0);
+    }
+    std::vector<std::int8_t> native(values.size());
+    to_native(values.data(), format, native.data(), values.size() / 2);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        CAPTURE(i, static_cast<double>(values[i]));
+        CHECK(static_cast<int>(native[i]) == static_cast<int>(expected_native(values[i])));
+    }
+}
+
+}  // namespace
+
+TEST_CASE("float formats round half to even and saturate, everywhere", "[convert]") {
+    check_against_rule<float>(Format::kCf32);
+    check_against_rule<double>(Format::kCf64);
 }
 
 TEST_CASE("format names round trip and sizes are per complex sample", "[convert]") {

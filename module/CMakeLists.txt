@@ -22,6 +22,13 @@ target_include_directories(hackrfduplex_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(hackrfduplex_core PUBLIC Threads::Threads)
+# The format conversions run on every sample. GCC vectorises their loops
+# only from -O3 (at -O2 its cheapest cost model declines them): on the
+# target, float to native went from 5.1 to 1.4 ns a sample, CS16 from 2.0
+# to 0.5. Set on the file, so it holds after any build type's or packager's
+# -O2.
+set_source_files_properties(src/convert.cpp PROPERTIES
+    COMPILE_OPTIONS "$<$<NOT:$<CONFIG:Debug>>:-O3>")
 
 # The Board over libhackrf, and the device listing.
 add_library(hackrfduplex_hackrf STATIC src/hackrf_board.cpp)
