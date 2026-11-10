@@ -20,7 +20,9 @@
 #   STEPS="4.5 4.75"     delays to try, in transfers (default 4.5 to 8)
 #   STARTS=3             short runs per step
 #   SEARCH_SECONDS=30    length of a short run
-#   CONFIRM_SECONDS=600  length of the confirming run
+#   CONFIRM_SECONDS=600  length of the confirming run; 0 skips it, and the
+#                        result is marked unconfirmed
+#   PAUSE=5              seconds between runs
 
 set -uo pipefail
 
@@ -32,6 +34,7 @@ steps="${STEPS:-4.5 4.75 5 5.25 5.5 5.75 6 6.5 7 8}"
 starts="${STARTS:-3}"
 search_seconds="${SEARCH_SECONDS:-30}"
 confirm_seconds="${CONFIRM_SECONDS:-600}"
+pause="${PAUSE:-5}"
 
 # Samples in one libhackrf transfer of CS8.
 readonly kTransfer=131072
@@ -68,6 +71,7 @@ run() {
     "$check" "${args[@]}" >"$file" 2>&1
     status=$?
     after="$(power)"
+    sleep "$pause"
     echo "power: $before before, $after after" >>"$file"
     local late overflows verdict
     late="$(sed -n 's/^timed: .* \([0-9]*\) late writes.*/\1/p' "$file")"
@@ -90,6 +94,10 @@ for rate in $rates; do
             for ((i = 1; i <= starts; ++i)); do
                 run "$rate" "$buffers" "$transfers" "$search_seconds" "start$i" || clean=0
             done
+            if ((clean)) && ((confirm_seconds == 0)); then
+                found="$transfers (unconfirmed)"
+                break
+            fi
             if ((clean)) && run "$rate" "$buffers" "$transfers" "$confirm_seconds" confirm; then
                 found="$transfers"
                 break
@@ -97,7 +105,7 @@ for rate in $rates; do
         done
         if [[ -n "$found" ]]; then
             results+=("$(awk -v r="$rate" -v b="$buffers" -v t="$found" -v n="$kTransfer" \
-                'BEGIN { printf "%7.2f Msps  buffers %-7s  %5s transfers = %6.1f ms", r / 1e6, b, t, t * n / r * 1e3 }')")
+                'BEGIN { split(t, f, " "); printf "%7.2f Msps  buffers %-7s  %s transfers = %6.1f ms", r / 1e6, b, t, f[1] * n / r * 1e3 }')")
         else
             results+=("$(awk -v r="$rate" -v b="$buffers" \
                 'BEGIN { printf "%7.2f Msps  buffers %-7s  none clean", r / 1e6, b }')")
