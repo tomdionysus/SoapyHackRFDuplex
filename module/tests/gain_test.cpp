@@ -16,7 +16,8 @@ TEST_CASE("quantise clamps and rounds down to the step", "[gain]") {
 }
 
 TEST_CASE("an RX gain splits into valid stage settings within 1 dB", "[gain]") {
-    for (double wanted = 0; wanted <= 130; wanted += 0.5) {
+    for (int half_db = 0; half_db <= 260; ++half_db) {
+        const double wanted = half_db / 2.0;
         const RxSplit split = split_rx(wanted);
         INFO("wanted " << wanted);
         CHECK(split.lna_db % kRxLnaStepDb == 0);
@@ -55,7 +56,8 @@ TEST_CASE("a TX gain fills the VGA before switching the amplifier", "[gain]") {
     CHECK(split_tx(61).vga_db == 47);
     CHECK(split_tx(61).amp);
     CHECK(split_tx(100).total() == kTxMaxDb);
-    for (double wanted = 0; wanted <= 70; wanted += 0.5) {
+    for (int half_db = 0; half_db <= 140; ++half_db) {
+        const double wanted = half_db / 2.0;
         const TxSplit split = split_tx(wanted);
         const unsigned reachable = std::min(static_cast<unsigned>(wanted), kTxMaxDb);
         INFO("wanted " << wanted);

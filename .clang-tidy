@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The checks tools/ci.sh runs over the module, the tests and the check tool
+# (clang-tidy-19 on the target). Off, with reason:
+#   bugprone-easily-swappable-parameters: the SoapySDR signatures are fixed.
+#   misc-include-cleaner: wants a header per symbol, against the style.
+#   misc-non-private-member-variables-in-classes: the test fakes are open
+#     by design.
+#   misc-no-recursion: none is deep.
+#   misc-use-anonymous-namespace: the style uses anonymous namespaces
+#     already where it matters.
+#   performance-enum-size: the enums are few and small.
+#   clang-analyzer-optin.core.EnumCastOutOfRange: fires inside Catch2's
+#     own header, whose flag enums are combined by design.
+# An empty catch is allowed only with a comment saying why the error is
+# ignored, which must contain "Deliberately ignored".
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  concurrency-*,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  -misc-use-anonymous-namespace,
+  performance-*,
+  -performance-enum-size,
+  -clang-analyzer-optin.core.EnumCastOutOfRange
+CheckOptions:
+  bugprone-empty-catch.IgnoreCatchWithKeywords: 'Deliberately ignored'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(module|tools)/.*\.hpp$'

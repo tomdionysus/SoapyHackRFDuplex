@@ -171,7 +171,7 @@ Pair::Pair(std::unique_ptr<Board> rx, std::unique_ptr<Board> tx, Log log) : log_
 }
 
 Pair::~Pair() {
-    for (Direction direction : {Direction::kRx, Direction::kTx}) {
+    for (const Direction direction : {Direction::kRx, Direction::kTx}) {
         try {
             close_stream(direction);
         } catch (const std::exception& e) {
@@ -579,6 +579,8 @@ void Pair::start_triggered() {
         try {
             tx_.board->set_hardware_sync(false);
         } catch (const BoardError&) {
+            // Deliberately ignored: the trigger start has failed already,
+            // and that error is the one passed on.
         }
         tx_.sync_on = false;
         set_origin(OriginState::kAbsent);
@@ -618,6 +620,8 @@ void Pair::halt(Side& s) {
     try {
         s.board->stop();
     } catch (const BoardError&) {
+        // Deliberately ignored: halt() runs on a failure already being
+        // passed on; a board that will not stop is that failure's too.
     }
     s.active = false;
     s.armed = false;
@@ -950,6 +954,7 @@ void Pair::calibrate_burst(double rx_rate) {
             try {
                 tune_back();
             } catch (const BoardError&) {
+                // Deliberately ignored: the retune's own error is passed on.
             }
             throw;
         }

@@ -109,7 +109,8 @@ TEST_CASE("the burst's autocorrelation peak stands 30 dB over every sidelobe", "
     for (long lag = 0; lag < n; ++lag) {
         long sum = 0;
         for (long k = 0; k + lag < n; ++k) {
-            sum += chips[static_cast<std::size_t>(k)] * chips[static_cast<std::size_t>(k + lag)];
+            sum += static_cast<long>(chips[static_cast<std::size_t>(k)]) *
+                   chips[static_cast<std::size_t>(k + lag)];
         }
         if (lag == 0) {
             peak = sum;
@@ -188,8 +189,9 @@ TEST_CASE("the finder settles on the burst before the capture ends, where find d
         const std::optional<std::size_t> settled_at = feed(finder, iq, 8192);
         REQUIRE(settled_at);
         // A burst length of lags past the peak, and at most one piece more.
-        CHECK(*settled_at >= at + 2 * burst::kChips);
-        CHECK(*settled_at < at + 2 * burst::kChips + 8192);
+        const std::size_t settled = settled_at.value_or(0);
+        CHECK(settled >= at + 2 * burst::kChips);
+        CHECK(settled < at + 2 * burst::kChips + 8192);
         const burst::Found early = finder.result();
         const burst::Found whole = burst::find(iq);
         CHECK(early.found);
@@ -230,7 +232,7 @@ TEST_CASE("a burst at the very end is found only when the finder finishes", "[bu
 }
 
 TEST_CASE("silence holds no burst", "[burst]") {
-    const std::vector<std::int8_t> silence(2 * 3 * burst::kChips, 0);
+    const std::vector<std::int8_t> silence(std::size_t{6} * burst::kChips, 0);
     const burst::Found found = burst::find(silence);
     CHECK_FALSE(found.found);
     CHECK(found.peak_over_median_db == 0);

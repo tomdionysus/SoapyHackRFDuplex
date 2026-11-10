@@ -60,7 +60,7 @@ private:
                 continue;
             }
             for (const std::uint8_t b : sent) {
-                air_.push_back(coupled ? static_cast<std::int8_t>(b) : 0);
+                air_.push_back(coupled ? static_cast<std::int8_t>(b) : std::int8_t{0});
                 if (record) {
                     sent_.push_back(static_cast<std::int8_t>(b));
                 }
@@ -76,6 +76,8 @@ private:
             try {
                 rx_.deliver_rx(heard);
             } catch (const std::logic_error&) {
+                // Deliberately ignored: the receiver stopped between the
+                // check and the delivery, as a test's stop() races the air.
             }
             std::this_thread::sleep_for(std::chrono::microseconds(pace_us.load()));
         }

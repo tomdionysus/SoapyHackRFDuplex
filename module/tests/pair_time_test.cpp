@@ -82,7 +82,7 @@ TEST_CASE("time origins are named burst, trigger and none", "[pair][time]") {
     CHECK(parse_time_origin("none") == TimeOrigin::kNone);
     CHECK_THROWS_AS(parse_time_origin("gps"), std::invalid_argument);
     CHECK(std::string(time_origin_name(TimeOrigin::kTrigger)) == "trigger");
-    Rig rig;
+    const Rig rig;
     CHECK(rig.pair.time_origin() == TimeOrigin::kBurst);  // the default
 }
 
@@ -98,7 +98,7 @@ TEST_CASE("the burst gives the origin: the loop's delay", "[pair][time]") {
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
     // A transmit sample at position t is heard at receive position t + 300.
-    CHECK(*rig.pair.tx_of_rx() == -300);
+    CHECK(rig.pair.tx_of_rx() == -300);
     CHECK(rig.logged("common time origin from the calibration burst"));
     // Tuned alike, so the transmitter was not retuned for the burst.
     CHECK(frequency_calls(rig.tx, tx_calls).empty());
@@ -119,7 +119,7 @@ TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]
     rig.pair.activate(Direction::kRx);
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == -300);
+    CHECK(rig.pair.tx_of_rx() == -300);
     std::string line;
     {
         const std::lock_guard<std::mutex> lock(rig.log_mutex);
@@ -149,7 +149,7 @@ TEST_CASE("the transmitter is tuned to the receiver for the burst and back", "[p
     const std::size_t tx_calls = rig.tx.calls.size();
     rig.pair.activate(Direction::kRx);
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == -1000);
+    CHECK(rig.pair.tx_of_rx() == -1000);
     CHECK(frequency_calls(rig.tx, tx_calls) ==
           std::vector<std::string>{"set_frequency 892300000", "set_frequency 847300000"});
     CHECK(rig.tx.frequency_hz == 847'300'000);
@@ -243,7 +243,7 @@ TEST_CASE("a burst that cannot be written leaves no origin", "[pair][time]") {
     // The transmitter takes nothing, and the writer has filled its ring, so
     // the burst finds no room within its two seconds.
     air.paused = true;
-    const std::vector<std::int8_t> samples(2 * 4 * kTransferSamples, 0);
+    const std::vector<std::int8_t> samples(8 * kTransferSamples, 0);
     std::size_t written = 0;
     while (written < 4 * kTransferSamples) {
         const std::size_t n = rig.pair.write(samples.data() + 2 * written,
@@ -339,7 +339,7 @@ TEST_CASE("a timed write lands at its time in the receive stream", "[pair][time]
         rig.pair.time_ticks() + 20 * static_cast<std::int64_t>(kTransferSamples);
 
     // Listen for it: the first strong sample in the receive stream.
-    std::vector<std::int8_t> pulse(2 * 64, 0);
+    std::vector<std::int8_t> pulse(128, 0);
     for (std::size_t k = 0; k < 64; ++k) {
         pulse[2 * k] = 100;
     }
@@ -414,7 +414,8 @@ TEST_CASE("a timed write that finds the ring full times out", "[pair][time]") {
               TimedStatus::kOk);
     }
     const auto start = std::chrono::steady_clock::now();
-    const TimedWrite w = rig.pair.write_at(samples.data(), 4, true, when + 5 * 4096, 50ms);
+    const TimedWrite w =
+        rig.pair.write_at(samples.data(), 4, true, when + std::int64_t{5} * 4096, 50ms);
     CHECK(w.status == TimedStatus::kTimeout);
     CHECK(w.taken == 0);
     CHECK(std::chrono::steady_clock::now() - start >= 50ms);
@@ -461,7 +462,7 @@ TEST_CASE("a board's shortfall loses the origin, reported once", "[pair][time]")
     // calibrate finds it again, counting shortfalls from there.
     rig.pair.calibrate();
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == -300);
+    CHECK(rig.pair.tx_of_rx() == -300);
     std::this_thread::sleep_for(120ms);
     CHECK_FALSE(rig.pair.take_time_error());
     air.stop();
@@ -478,7 +479,7 @@ TEST_CASE("calibrate runs the burst again on demand", "[pair][time]") {
     REQUIRE(rig.pair.tx_of_rx());
     rig.pair.calibrate();
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == -300);
+    CHECK(rig.pair.tx_of_rx() == -300);
     air.coupled = false;
     rig.pair.calibrate();
     CHECK_FALSE(rig.pair.tx_of_rx());
@@ -514,7 +515,7 @@ TEST_CASE("stopping either stream leaves the origin to be found again", "[pair][
     Loopback again(rig.tx, rig.rx, 500);
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == -(received + 500));
+    CHECK(rig.pair.tx_of_rx() == -(received + 500));
     again.stop();
 }
 
@@ -560,7 +561,7 @@ TEST_CASE("a trigger origin arms the first stream and starts both on the second"
     CHECK(rig.rx.rx_streaming);
     CHECK(rig.tx.tx_streaming);
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == 0);
+    CHECK(rig.pair.tx_of_rx() == 0);
 
     // The transmitter was put in sync mode before it started, then the receiver started.
     const auto& calls = rig.tx.calls;
@@ -707,7 +708,7 @@ TEST_CASE("a board fed from the other's CLKOUT shares its reference", "[pair][ti
     rig.pair.activate(Direction::kRx);
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
-    CHECK(*rig.pair.tx_of_rx() == -300);
+    CHECK(rig.pair.tx_of_rx() == -300);
     air.stop();
 }
 

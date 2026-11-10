@@ -114,8 +114,8 @@ TEST_CASE("each direction has an lo_locked sensor", "[soapy]") {
 }
 
 TEST_CASE("the device sensors are booleans named in the listing", "[soapy][sensors]") {
-    SoapyRig rig;
-    SoapySDR::Device& d = *rig.device;
+    const SoapyRig rig;
+    const SoapySDR::Device& d = *rig.device;
     for (const std::string key : {"ref_locked", "time_locked"}) {
         const SoapySDR::ArgInfo info = d.getSensorInfo(key);
         CHECK(info.key == key);
@@ -878,17 +878,17 @@ TEST_CASE("every device setting but calibrate is also a device argument", "[soap
     CHECK_THROWS_AS(SoapyRig({{"clkout", "both"}}), std::invalid_argument);
     CHECK_THROWS_AS(SoapyRig({{"bias_tx", "on"}}), std::invalid_argument);
     {
-        SoapyRig quiet({{"calibrate", "1"}});
+        const SoapyRig quiet({{"calibrate", "1"}});
         CHECK(quiet.logged(SOAPY_SDR_WARNING, "calibrate"));
     }
 }
 
 TEST_CASE("an unknown device argument is logged and otherwise ignored", "[soapy]") {
-    SoapyRig rig({{"driver", "hackrfduplex"},
-                  {"label", "HackRF Duplex 1 + 2"},
-                  {"rx_serial", "1"},
-                  {"tx_serial", "2"},
-                  {"biastee", "1"}});
+    const SoapyRig rig({{"driver", "hackrfduplex"},
+                        {"label", "HackRF Duplex 1 + 2"},
+                        {"rx_serial", "1"},
+                        {"tx_serial", "2"},
+                        {"biastee", "1"}});
     CHECK(rig.logged(SOAPY_SDR_WARNING, "biastee"));
     for (const char* known : {"driver", "label", "rx_serial", "tx_serial"}) {
         CAPTURE(known);

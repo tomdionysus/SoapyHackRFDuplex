@@ -147,7 +147,7 @@ std::string SoapyDevice::getHardwareKey() const { return "HackRF Duplex"; }
 
 SoapySDR::Kwargs SoapyDevice::getHardwareInfo() const {
     SoapySDR::Kwargs info;
-    for (Direction direction : {Direction::kRx, Direction::kTx}) {
+    for (const Direction direction : {Direction::kRx, Direction::kTx}) {
         const std::string prefix = direction == Direction::kRx ? "rx_" : "tx_";
         const BoardInfo board = pair_->board(direction).info();
         info[prefix + "serial"] = board.serial;

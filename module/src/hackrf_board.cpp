@@ -93,6 +93,8 @@ HackrfBoard::~HackrfBoard() {
     try {
         stop();
     } catch (const BoardError&) {
+        // Deliberately ignored: a destructor cannot pass it on, and the
+        // board is closed either way.
     }
     close();
 }

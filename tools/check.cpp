@@ -442,7 +442,9 @@ public:
         const auto window = static_cast<std::size_t>(kSearchRate);
         for (std::size_t start = 0; start + window <= baseband_.size(); start += window) {
             Peak best;
-            for (double f = -kSpanHz; f <= kSpanHz; f += kBinHz) {
+            const auto bins = static_cast<int>(kSpanHz / kBinHz);
+            for (int bin = -bins; bin <= bins; ++bin) {
+                const double f = bin * kBinHz;
                 const std::complex<double> step =
                     std::polar(1.0, -2.0 * std::numbers::pi * f / kSearchRate);
                 std::complex<double> phase(1.0, 0.0);
@@ -617,7 +619,8 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     const std::vector<std::int8_t> burst = hackrfduplex::burst::samples();
     const auto chips = static_cast<long long>(hackrfduplex::burst::kChips);
     const long long margin = 2048;
-    const long long delay = std::llround(*options.timed_delay_us * 1e-6 * rate);
+    const double delay_us = options.timed_delay_us.value_or(0.0);
+    const long long delay = std::llround(delay_us * 1e-6 * rate);
     const std::size_t mtu = device->getStreamMTU(rx);
     std::vector<std::int8_t> buffer(2 * mtu);
     std::vector<std::int8_t> history;
@@ -660,7 +663,8 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
             history.clear();
             history_start = tick;
         }
-        history.insert(history.end(), buffer.begin(), buffer.begin() + 2 * n);
+        history.insert(history.end(), buffer.begin(),
+                       buffer.begin() + 2 * static_cast<std::ptrdiff_t>(n));
 
         // A read from a backlog (the ring fills while activation calibrates)
         // is not live; stamping from it measures the backlog, not the lead.
@@ -754,8 +758,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     device->closeStream(rx);
     device->closeStream(tx);
 
-    std::printf("timed: delay %.0f us = %lld samples at %.3f Msps\n", *options.timed_delay_us,
-                delay, rate / 1e6);
+    std::printf("timed: delay %.0f us = %lld samples at %.3f Msps\n", delay_us, delay, rate / 1e6);
     std::printf(
         "timed: %u bursts written, %u late writes, %u write timeouts, %u reads from a backlog "
         "not stamped\n",
@@ -805,7 +808,8 @@ int run_window(SoapySDR::Device* device, const Options& options) {
 
     const std::vector<std::int8_t> burst = hackrfduplex::burst::samples();
     const auto chips = static_cast<long long>(hackrfduplex::burst::kChips);
-    const long long delay = std::llround(*options.window_delay_us * 1e-6 * rate);
+    const double delay_us = options.window_delay_us.value_or(0.0);
+    const long long delay = std::llround(delay_us * 1e-6 * rate);
     const auto length = static_cast<std::size_t>(chips + 2 * kMargin);
     const std::size_t mtu = device->getStreamMTU(rx);
     std::vector<std::int8_t> window(2 * length);
@@ -883,7 +887,7 @@ int run_window(SoapySDR::Device* device, const Options& options) {
     std::printf(
         "window: lead %.0f us = %lld samples at %.3f Msps; windows of %zu samples from "
         "%lld before each burst\n",
-        *options.window_delay_us, delay, rate / 1e6, length, kMargin);
+        delay_us, delay, rate / 1e6, length, kMargin);
     std::printf(
         "window: %u rounds, %u refused, %u short, %u without END_BURST, %u stamped "
         "other than asked\n",
@@ -1053,7 +1057,7 @@ int main(int argc, char** argv) {
                     thread.join();
                 }
             }
-        } join_on_throw{stop, tx_thread};
+        } const join_on_throw{stop, tx_thread};
         if (transmit) {
             if (device->activateStream(tx) != 0) {
                 throw std::runtime_error("TX stream did not activate");

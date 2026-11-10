@@ -93,6 +93,8 @@ std::vector<Selection> enumerate_pairs(const Args& args, const std::vector<Liste
         try {
             pairs.push_back(select_pair(args, boards));
         } catch (const std::invalid_argument&) {
+            // Deliberately ignored: discovery lists no pair for serials
+            // that do not make one, rather than failing the whole scan.
         }
         return pairs;
     }
