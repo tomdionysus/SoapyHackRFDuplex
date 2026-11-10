@@ -130,6 +130,24 @@ TEST_CASE("automatic I/Q balance finds and removes an image", "[dsp]") {
     CHECK_THAT(b.imag(), WithinAbs(-image.imag(), 0.002));
 }
 
+TEST_CASE("automatic I/Q balance is not led astray by a DC offset", "[dsp]") {
+    // On the target the receiver's DC was stronger than the tone, and an
+    // offset d alone adds d^2 to E[y^2]: the estimate must be of the signal
+    // about its mean, with or without DC removal on.
+    RxCorrection correction;
+    correction.set_iq_automatic(true);
+    const std::complex<double> image{0.02, 0.01};
+    std::vector<Sample> x = tone(1 << 20, 0.0625, 0.05, image, {0.12, -0.08});
+    for (std::size_t at = 0; at < x.size(); at += 16384) {
+        correction.apply(x.data() + at, Format::kCf32, 16384);
+    }
+    const std::complex<double> b = correction.iq_balance();
+    CHECK_THAT(b.real(), WithinAbs(-image.real(), 0.002));
+    CHECK_THAT(b.imag(), WithinAbs(-image.imag(), 0.002));
+    const std::size_t from = x.size() / 2;
+    CHECK(db(power_at(x, 0.0625, from) / power_at(x, -0.0625, from)) > 45);
+}
+
 TEST_CASE("the integer and double formats are corrected at their own scale", "[dsp]") {
     RxCorrection correction;
     correction.set_dc_offset({0.25, -0.25});

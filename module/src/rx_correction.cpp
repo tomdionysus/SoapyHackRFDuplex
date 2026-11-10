@@ -161,14 +161,22 @@ void RxCorrection::correct(Sample* samples, std::size_t count) {
         return;
     }
     const Sample b(iq_balance_);
+    std::complex<double> sum{};
     std::complex<double> square{};
     double power = 0;
     for (std::size_t i = 0; i < count; ++i) {
         const Sample y = samples[i] + b * std::conj(samples[i]);
         samples[i] = y;
+        sum += std::complex<double>(y);
         square += std::complex<double>(y * y);
         power += std::norm(y);
     }
+    // About the block's mean: a DC offset d alone adds d^2 to E[y^2], and
+    // the receiver's can be stronger than the signal (it was on the target).
+    const double n = static_cast<double>(count);
+    const std::complex<double> mean = sum / n;
+    square = square / n - mean * mean;
+    power = power / n - std::norm(mean);
     if (iq_automatic_ && power > 0) {
         // For y = (1 + b conj(k)) s + (k + b) conj(s), with s the balanced
         // signal and k the receiver's image, E[y^2] / E[|y|^2] is close to
