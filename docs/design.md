@@ -403,6 +403,41 @@ nominal, one overflow (the activation backlog), no shortfall, 0
 underflows, the origin held throughout, 25% of one core. Power `0x50000`
 before and after.
 
+#### Transmit lead on the target
+
+The smallest delay from a receive timestamp to a transmit time based on
+it that gives no late write, `tools/lead-sweep.sh` (the delay stepped up
+in quarter transfers from 4.5, three 30 s starts per step, the first step
+clean on all three confirmed for 600 s), 2026-11-10, power `0x50000`
+before and after every run. A transfer is 131 072 samples:
+
+| Rate | Default ring (15 transfers) | `buffers=4` |
+|---|---|---|
+| 2 Msps | 5 transfers, 327.7 ms | 5 transfers, 327.7 ms |
+| 8 Msps | 4.75 transfers, 77.8 ms | 4.75 transfers, 77.8 ms |
+| 11.52 Msps | 4.75 transfers, 54.0 ms | 4.75 transfers, 54.0 ms |
+| 15.36 Msps | no late write at 4.5 transfers, 38.4 ms (see below) | the same |
+| 16 Msps | 4.5 transfers, 36.9 ms | 4.5 transfers, 36.9 ms |
+
+4.5 transfers was the shortest delay tried, so at 15.36 and 16 Msps the
+floor may be lower. Earlier 30 s runs at 8 Msps needed 5, so the
+threshold moves by a quarter transfer or more between starts, as the
+two boards' transfer boundaries fall. The ring depth does not move it:
+the floor is libhackrf's own four transfers in flight and the
+firmware's, which this module cannot shorten (stock libhackrf fixes the
+transfer at 256 KiB and the count at four). So the default ring stays,
+and a writer should allow 5.5 transfers (720 896 samples) at any rate.
+
+At 15.36 Msps no write was ever late, from 4.5 transfers to 8, yet the
+sweep marked every step unclean: about 28% of bursts were found one
+sample early and the rest on time. The loop delay there falls about half
+a sample from a whole one (the origin itself came out +67552 on some
+starts and +67553 on others), and the check tool finds a burst at the
+nearer sample, so it lands either side; SoapySDR's nanosecond and tick
+conversions round-trip exactly at that rate, so it is not the arithmetic.
+A burst is placed at the sample asked; where a receiver hears it is
+within one sample.
+
 ### On the workstation
 
 Receive only, `hackrfduplex-check --seconds 10`, one HackRF One r10

@@ -32,8 +32,7 @@ the second activation calibrates); and `--timed-bursts 81920 --seconds
 run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
-Work the items in order. Item 2 finishes measuring the hardware time
-(items 1 and 3 to 12 are done), items 13 to 16 take the module to
+Work the items in order. Items 1 to 12 are done; items 13 to 16 take the module to
 the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
 on hardware Tom does not have yet.
 
@@ -188,30 +187,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   the README and design.
 
 ## Items
-
-### 2. Transmit lead time
-
-- [ ] With `--timed-bursts`, the smallest delay from a receive timestamp
-  to a transmit time that gives no late reports over ten minutes, at 2,
-  8, 11.52, 15.36 and 20 Msps, at the default `buffers` and at 4, on the
-  target. Method used so far: step the delay
-  up in quarter transfers (131072 samples) from 4.5 with 30 s runs, then
-  confirm the first clean one for 600 s, stepping on if it fails; a
-  script to do it is a candidate for `tools/` or a check-tool mode.
-  Figures so far, from the workstation before the boards moved: 2 Msps
-  clean at 5.25 transfers (default buffers) and 5.5 (buffers 4, where
-  5.25 had 4 late writes in ten minutes); 8 Msps clean at 5.0 for 30 s.
-  On the target, 2026-11-10, 30 s runs, three starts each: 5 transfers
-  clean and 4.75 late on every write at 2 and 8 Msps, with the default
-  ring and with 4 buffers alike (327.7 and 81.9 ms); the ring depth does
-  not move it. The ten-minute confirmations are not done. 20 Msps cannot
-  be clean on the target (item 11), so its point is 16 Msps instead.
-  Every write is late or none is, and the threshold moves by up to a
-  transfer between starts, because it depends on how the two boards'
-  transfer boundaries fall: so measure several starts per point and
-  state the worst. Acceptance: the table in `docs/design.md` "Measured",
-  the `buffers` default revisited in its light, and the README's
-  hardware time paragraph stating the lead a writer should allow.
 
 ### 13. Quality gates
 

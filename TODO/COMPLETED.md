@@ -3,6 +3,20 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-10: transmit lead time
+
+Item 2, accepted on the target. `tools/lead-sweep.sh` at 2, 8, 11.52,
+15.36 and 16 Msps (20 Msps cannot be clean on the target, item 11), the
+default ring and `buffers=4`, three 30 s starts per quarter-transfer
+step from 4.5, the first clean step confirmed for 600 s: 5 transfers at
+2 Msps, 4.75 at 8 and 11.52, 4.5 at 16 (the shortest tried), all
+confirmed clean for ten minutes; at 15.36 no write late at any step, but
+a burst found one sample early about 28% of the time, the loop delay
+there falling about half a sample from a whole one. The ring depth does
+not move the lead, so the default stays; writers are told to allow 5.5
+transfers. Table in `docs/design.md`, "Transmit lead on the target".
+Power `0x50000` throughout.
+
 ## 2026-11-10: optional receive corrections
 
 Item 12, accepted on the target. With `-DHACKRFDUPLEX_DSP=ON` and

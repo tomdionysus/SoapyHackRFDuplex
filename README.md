@@ -203,9 +203,12 @@ timestamps have then shifted by an unknown amount, or as
 `SOAPY_SDR_UNDERFLOW` from `readStreamStatus` on the transmitter. A board
 that stops, or is pulled from the bus, turns its stream's reads, writes
 and status into `SOAPY_SDR_STREAM_ERROR` within about 100 ms, until the
-stream is deactivated and activated again. The
-transmit path needs a lead of about five USB transfers (82 ms at
-8 Msps) between a receive timestamp and the transmit time based on it.
+stream is deactivated and activated again. A timed
+transmit needs a lead from the receive timestamp it is based on: allow
+5.5 USB transfers, 720 896 samples (360 ms at 2 Msps, 90 ms at 8 Msps,
+45 ms at 16 Msps). Measured, no write was late from 4.5 to 5 transfers,
+whatever the ring depth ([docs/design.md](docs/design.md), Transmit lead
+on the target).
 
 `hackrfduplex-check` exercises the whole path as a SoapySDR client. It
 receives by default and transmits nothing:
