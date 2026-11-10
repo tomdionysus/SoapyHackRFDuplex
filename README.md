@@ -145,7 +145,7 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `tx_serial` | the higher of two serials | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
 | `bias_tx`, `clkout`, `time_origin`, `tx_underrun_limit` | as the settings | as the settings of the same names, applied when the device opens |
 | **Stream arguments** | | |
-| `buffers` | 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller |
+| `buffers` | receive: 0.5 s at the rate, at least 15; transmit: 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller; unset on receive, the module sizes the ring at each activation from the sample rate then |
 | **Settings** | | |
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
 | `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run; also the SoapySDR clock source, `internal` for off |
@@ -219,7 +219,8 @@ and status into `SOAPY_SDR_STREAM_ERROR` within about 100 ms, until the
 stream is deactivated and activated again. A timed
 transmit needs a lead from the receive timestamp it is based on: allow
 5.5 USB transfers, 720 896 samples (360 ms at 2 Msps, 90 ms at 8 Msps,
-45 ms at 16 Msps). Measured, no write was late from 4.5 to 5 transfers,
+45 ms at 16 Msps), from a read the reader waited for, not one that
+empties a backlog. Measured, no write was late from 4.5 to 5 transfers,
 whatever the ring depth ([docs/design.md](docs/design.md), Transmit lead
 on the target).
 
@@ -266,7 +267,7 @@ SoapySDR device. Open work toward the 0.2.0 release is in
 5. Optional receive DC removal and I/Q balance correction, compiled in
    only on request, using liquid-dsp.
 6. Quality gates, application compatibility, a hardware acceptance
-   battery, a 24-hour soak, and a usage guide.
+   battery, a soak of two hours each at 8 and 16 Msps, and a usage guide.
 
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.
