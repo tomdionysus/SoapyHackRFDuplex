@@ -491,6 +491,10 @@ struct RxResult {
 
 struct TxResult {
     std::uint64_t samples = 0;
+    // How long the writer ran: from the stream's activation, so through the
+    // second activation and any calibrations, which the receive loop's
+    // time leaves out.
+    double seconds = 0;
     unsigned underflows = 0;
     unsigned timeouts = 0;
     int error = 0;
@@ -1017,6 +1021,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("TX stream did not activate");
             }
             tx_thread = std::thread([&] {
+                const auto began = std::chrono::steady_clock::now();
                 const std::size_t mtu = device->getStreamMTU(tx);
                 std::vector<std::complex<float>> buffer(mtu);
                 std::vector<std::uint8_t> packed;
@@ -1059,6 +1064,8 @@ int main(int argc, char** argv) {
                         ++tx_result.underflows;
                     }
                 }
+                tx_result.seconds =
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
             });
         }
 
@@ -1162,9 +1169,11 @@ int main(int argc, char** argv) {
             }
         }
         if (transmit) {
-            std::printf("tx: %llu samples = %.3f Msps, %u underflows, %u timeouts\n",
-                        static_cast<unsigned long long>(tx_result.samples),
-                        static_cast<double>(tx_result.samples) / elapsed / 1e6,
+            std::printf("tx: %llu samples in %.2f s = %.3f Msps, %u underflows, %u timeouts\n",
+                        static_cast<unsigned long long>(tx_result.samples), tx_result.seconds,
+                        tx_result.seconds > 0
+                            ? static_cast<double>(tx_result.samples) / tx_result.seconds / 1e6
+                            : 0.0,
                         tx_result.underflows, tx_result.timeouts);
         }
         if (transmit && options.analyse) {
