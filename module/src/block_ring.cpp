@@ -16,12 +16,12 @@ BlockRing::BlockRing(std::size_t slots, std::size_t block_bytes)
 }
 
 std::size_t BlockRing::size() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     return count_;
 }
 
 Block* BlockRing::acquire() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (count_ == slots_.size()) {
         return nullptr;
     }
@@ -30,7 +30,7 @@ Block* BlockRing::acquire() {
 
 void BlockRing::publish() {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const Lock lock(mutex_);
         head_ = (head_ + 1) % slots_.size();
         ++count_;
     }
@@ -38,14 +38,15 @@ void BlockRing::publish() {
 }
 
 bool BlockRing::wait_free(std::chrono::microseconds timeout) {
-    std::unique_lock<std::mutex> lock(mutex_);
+    Lock lock(mutex_);
     const std::uint64_t seen = wakes_;
-    changed_.wait_for(lock, timeout, [&] { return count_ < slots_.size() || wakes_ != seen; });
+    lock.wait_for(changed_, timeout,
+                  [&]() REQUIRES(mutex_) { return count_ < slots_.size() || wakes_ != seen; });
     return count_ < slots_.size() && wakes_ == seen;
 }
 
 Block* BlockRing::front() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (count_ == 0) {
         return nullptr;
     }
@@ -54,7 +55,7 @@ Block* BlockRing::front() {
 
 void BlockRing::pop() {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const Lock lock(mutex_);
         Block& block = slots_[tail_];
         block.size = 0;
         block.end_of_burst = false;
@@ -66,22 +67,23 @@ void BlockRing::pop() {
 }
 
 bool BlockRing::wait_front(std::chrono::microseconds timeout) {
-    std::unique_lock<std::mutex> lock(mutex_);
+    Lock lock(mutex_);
     const std::uint64_t seen = wakes_;
-    changed_.wait_for(lock, timeout, [&] { return count_ > 0 || wakes_ != seen; });
+    lock.wait_for(changed_, timeout,
+                  [&]() REQUIRES(mutex_) { return count_ > 0 || wakes_ != seen; });
     return count_ > 0 && wakes_ == seen;
 }
 
 void BlockRing::wake() {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const Lock lock(mutex_);
         ++wakes_;
     }
     changed_.notify_all();
 }
 
 void BlockRing::reset() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     for (Block& block : slots_) {
         block.size = 0;
         block.position = 0;

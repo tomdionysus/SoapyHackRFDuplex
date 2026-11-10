@@ -310,6 +310,10 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
     if (!pair_->active(Direction::kRx)) {
         return SOAPY_SDR_STREAM_ERROR;
     }
+    if (numElems == 0) {
+        flags = 0;
+        return 0;
+    }
     RxRead read;
     try {
         read = pair_->read(buffs[0], numElems, timeout_of(timeoutUs));
@@ -422,6 +426,10 @@ int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
     }
     const std::size_t taken = pair_->write(buffs[0], numElems, end_of_burst, timeout_of(timeoutUs));
     flags = 0;
+    if (numElems == 0) {
+        // Nothing asked, nothing taken: an end of burst, or nothing at all.
+        return pair_->failed(Direction::kTx) ? SOAPY_SDR_STREAM_ERROR : 0;
+    }
     if (taken == 0) {
         return pair_->failed(Direction::kTx) ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;
     }
@@ -615,7 +623,7 @@ void SoapyDevice::setFrequency(const int direction, const size_t channel, const 
         throw std::invalid_argument("setFrequency: unknown component " + name);
     }
     if (!(frequency >= 0)) {
-        throw std::invalid_argument("setFrequency: frequency must be positive");
+        throw std::invalid_argument("setFrequency: a frequency cannot be negative");
     }
     pair_->set_frequency(direction_of(direction),
                          static_cast<std::uint64_t>(std::llround(frequency)));

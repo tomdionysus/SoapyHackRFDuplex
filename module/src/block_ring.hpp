@@ -5,8 +5,9 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
 #include <vector>
+
+#include "mutex.hpp"
 
 namespace hackrfduplex {
 
@@ -68,14 +69,16 @@ public:
     void reset();
 
 private:
-    mutable std::mutex mutex_;
+    mutable Mutex mutex_;
     std::condition_variable changed_;
+    // The blocks' contents belong to whichever side holds them, by the
+    // ring's protocol; the indices say which, under the lock.
     std::vector<Block> slots_;
     std::size_t block_bytes_;
-    std::size_t head_ = 0;
-    std::size_t tail_ = 0;
-    std::size_t count_ = 0;
-    std::uint64_t wakes_ = 0;
+    std::size_t head_ GUARDED_BY(mutex_) = 0;
+    std::size_t tail_ GUARDED_BY(mutex_) = 0;
+    std::size_t count_ GUARDED_BY(mutex_) = 0;
+    std::uint64_t wakes_ GUARDED_BY(mutex_) = 0;
 };
 
 }  // namespace hackrfduplex

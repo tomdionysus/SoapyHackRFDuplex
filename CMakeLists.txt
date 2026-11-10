@@ -19,6 +19,11 @@ option(HACKRFDUPLEX_BUILD_TESTS "Build the unit tests (needs Catch2 3)" ON)
 option(HACKRFDUPLEX_BUILD_TOOLS "Build hackrfduplex-check (needs SoapySDR)" ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror)
+# Clang proves the locking annotations (module/src/mutex.hpp); GCC has no
+# such analysis and ignores them.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Wthread-safety -Wthread-safety-beta)
+endif()
 
 include(GNUInstallDirs)
 include(cmake/Version.cmake)

@@ -8,13 +8,13 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 
 #include "board.hpp"
 #include "format.hpp"
 #include "gain.hpp"
+#include "mutex.hpp"
 #include "rx_path.hpp"
 #include "tx_path.hpp"
 
@@ -116,7 +116,7 @@ public:
     // Antenna port power on the transmitting board; re-applied whenever
     // transmission starts, since the firmware drops it when idle.
     void set_bias_tee(bool on);
-    bool bias_tee() const { return bias_; }
+    bool bias_tee() const;
 
     // The other board's CLKOUT is switched off before the chosen one's
     // goes on. Read back from the boards, since CLKOUT survives this
@@ -205,24 +205,32 @@ public:
     bool take_time_error();
 
     std::uint64_t rx_received() const;
-    std::uint64_t rx_dropped() const;
     std::uint64_t tx_sent() const;
     std::uint64_t tx_underflows() const;
 
 private:
+    // The lock order: control_mutex_, then a side's mutex (both sides
+    // together through LockBoth), then poll_mutex_, then time_mutex_.
+    // write_mutex_ comes after control_mutex_ and is held alone otherwise.
+    // Clang checks what each lock guards (mutex.hpp); the order is checked
+    // where the annotations can name it.
     struct Side {
+        explicit Side(Direction d) : direction(d) {}
+        const Direction direction;
+        // Set in the constructor and never again; the board locks itself.
         std::unique_ptr<Board> board;
-        mutable std::mutex mutex;
-        std::uint64_t frequency_hz = 0;
-        double sample_rate_hz = 0;
+        mutable Mutex mutex;
+        std::uint64_t frequency_hz GUARDED_BY(mutex) = 0;
+        double sample_rate_hz GUARDED_BY(mutex) = 0;
         // 0: the firmware's automatic choice.
-        std::uint32_t bandwidth_hz = 0;
-        bool open = false;
-        bool active = false;
+        std::uint32_t bandwidth_hz GUARDED_BY(mutex) = 0;
+        bool open GUARDED_BY(mutex) = false;
+        bool active GUARDED_BY(mutex) = false;
         // Trigger origin: activated, waiting for the other stream to start
         // both boards together.
-        bool armed = false;
-        Format format = Format::kCs8;
+        bool armed GUARDED_BY(mutex) = false;
+        // Set while the stream is closed, read by its reads and writes.
+        std::atomic<Format> format{Format::kCs8};
         std::atomic<bool> lo_locked{true};
         // The board is streaming for its stream, so its health is polled.
         // Atomic, so the poll needs no side lock.
@@ -230,89 +238,107 @@ private:
         std::atomic<bool> failed{false};
         // A shortfall found and not yet reported to the stream.
         std::atomic<bool> shortfall_pending{false};
-        // Shortfalls already accounted for since the board started; under
-        // poll_mutex_.
-        std::uint32_t shortfalls_seen = 0;
-        // Of those, the ones logged, and when the log last named any; under
-        // poll_mutex_.
-        std::uint32_t shortfalls_logged = 0;
-        std::chrono::steady_clock::time_point shortfalls_logged_at{};
         // Read while idle at each activation, since the clock chip reads as
         // zero while a board streams: whether the board found a clock on
         // CLKIN, which it then runs from, and whether it drives CLKOUT
         // (kept up to date by set_clock_out).
-        bool on_clkin = false;
-        bool drives_clkout = false;
+        bool on_clkin GUARDED_BY(mutex) = false;
+        bool drives_clkout GUARDED_BY(mutex) = false;
+        // The transmitting side's alone: the bias tee to put back at each
+        // start, the underrun limit (empty for one transfer's worth), and
+        // hardware sync left on by a trigger start.
+        bool bias GUARDED_BY(mutex) = false;
+        std::optional<std::uint32_t> underrun_limit GUARDED_BY(mutex);
+        bool sync_on GUARDED_BY(mutex) = false;
+    };
+
+    // A board's shortfalls since it started: those accounted for, those of
+    // them logged, and when the log last named any.
+    struct Shortfalls {
+        std::uint32_t seen = 0;
+        std::uint32_t logged = 0;
+        std::chrono::steady_clock::time_point logged_at{};
     };
 
     enum class OriginState { kPending, kValid, kAbsent };
 
     Side& side(Direction direction);
     const Side& side(Direction direction) const;
-    void apply_rx_gains();
-    void apply_tx_gains();
+    Shortfalls& shortfalls(Direction direction) REQUIRES(poll_mutex_);
+    void apply_rx_gains() REQUIRES(rx_.mutex);
+    void apply_tx_gains() REQUIRES(tx_.mutex);
     void log(LogLevel level, const std::string& message);
+    // Where the receive stream has got to: 0 while it is stopped, as it
+    // starts again there.
+    std::int64_t rx_position() const;
 
-    void deactivate_locked(Direction direction);
-    // The board's stream started, with the path reset. Side mutex held.
-    void start_stream(Direction direction);
-    // Notes the idle board's CLKIN and CLKOUT. Side mutex held.
-    void note_reference(Direction direction);
-    // From what note_reference found. Both side mutexes held.
-    bool shared_reference_locked() const;
+    void deactivate_locked(Direction direction) REQUIRES(control_mutex_);
+    // The board's stream started, with the path reset.
+    void start_stream(Side& s) REQUIRES(s.mutex);
+    // Notes the idle board's CLKIN and CLKOUT.
+    void note_reference(Side& s) REQUIRES(s.mutex);
+    // From what note_reference found.
+    bool shared_reference_locked() const REQUIRES(rx_.mutex, tx_.mutex);
     // When the next start moves the board to another reference: starts it,
-    // retunes on the new reference and stops it. Side mutex held.
-    bool settle_reference(Direction direction);
+    // retunes on the new reference and stops it.
+    bool settle_reference(Side& s) REQUIRES(s.mutex);
+    // Stops the board and ends its stream, the board's errors ignored: a
+    // trigger start that failed.
+    void halt(Side& s) REQUIRES(s.mutex);
     // Both boards started on one trigger edge, transmitter first.
-    void start_triggered();
-    // The burst sent and looked for; both streams active.
-    void calibrate_locked();
+    void start_triggered() REQUIRES(control_mutex_);
+    // The burst sent and looked for; both streams active. A board error
+    // on the way leaves no origin and is logged, not thrown.
+    void calibrate_locked() REQUIRES(control_mutex_);
+    // The burst itself, at the receive rate; throws BoardError.
+    void calibrate_burst(double rx_rate) REQUIRES(control_mutex_);
     void set_origin(OriginState state, std::int64_t tx_of_rx = 0);
     // The origin lost, reported once through take_time_error().
     void lose_origin(const std::string& why);
     // Reads each running board's health and shortfall count, at most every
     // 100 ms unless forced. A new shortfall is marked for its stream and
     // loses the origin; a board that stopped is marked failed. True when it
-    // found a new shortfall. Takes poll_mutex_; callers may hold a side's.
+    // found a new shortfall. Callers may hold a side's lock.
     bool poll_boards(bool force = false);
-    void mark_failed(Direction direction, const std::string& why);
+    void mark_failed(Direction direction, const std::string& why) REQUIRES(poll_mutex_);
     // read() and acquire_read(): `take` waits up to its argument for the
     // ring, between looks at the boards.
     RxView read_polled(std::chrono::microseconds timeout,
                        const std::function<RxView(std::chrono::microseconds)>& take);
     // Logs the shortfalls seen and not yet logged: the first at once, the
     // rest at most once a second, or when the stream stops (`now` empty).
-    // poll_mutex_ held.
     void log_shortfalls(Direction direction,
-                        std::optional<std::chrono::steady_clock::time_point> now);
+                        std::optional<std::chrono::steady_clock::time_point> now)
+        REQUIRES(poll_mutex_);
 
-    Side rx_;
-    Side tx_;
-    RxGains rx_gains_;
-    TxGains tx_gains_;
-    // Under tx_.mutex; empty for one transfer's worth.
-    std::optional<std::uint32_t> tx_underrun_limit_;
-    bool bias_ = false;
+    Side rx_{Direction::kRx};
+    Side tx_{Direction::kTx};
+    RxGains rx_gains_ GUARDED_BY(rx_.mutex);
+    TxGains tx_gains_ GUARDED_BY(tx_.mutex);
+    // Made at open and dropped at close, under control_mutex_ and the
+    // side's lock; the stream's reads and writes use them without either,
+    // which the SoapySDR contract allows only while the stream is open.
     std::unique_ptr<RxPath> rx_path_;
     std::unique_ptr<TxPath> tx_path_;
     Log log_;
 
     // Stream lifecycle: open, close, activate, deactivate, calibrate.
-    std::mutex control_mutex_;
+    Mutex control_mutex_;
     // The transmit writer, which the calibration burst shares.
-    std::mutex write_mutex_;
-    // Hardware sync left on the transmitter by a trigger start.
-    bool sync_on_ = false;
+    Mutex write_mutex_ ACQUIRED_AFTER(control_mutex_);
 
-    mutable std::mutex time_mutex_;
+    mutable Mutex poll_mutex_ ACQUIRED_AFTER(control_mutex_);
+    std::chrono::steady_clock::time_point last_poll_ GUARDED_BY(poll_mutex_){};
+    Shortfalls rx_shortfalls_ GUARDED_BY(poll_mutex_);
+    Shortfalls tx_shortfalls_ GUARDED_BY(poll_mutex_);
+
+    mutable Mutex time_mutex_ ACQUIRED_AFTER(poll_mutex_);
     std::condition_variable time_changed_;
-    TimeOrigin origin_mode_ = TimeOrigin::kBurst;
-    OriginState origin_state_ = OriginState::kPending;
-    std::int64_t tx_of_rx_ = 0;
+    TimeOrigin origin_mode_ GUARDED_BY(time_mutex_) = TimeOrigin::kBurst;
+    OriginState origin_state_ GUARDED_BY(time_mutex_) = OriginState::kPending;
+    std::int64_t tx_of_rx_ GUARDED_BY(time_mutex_) = 0;
     std::atomic<std::int64_t> time_offset_{0};
     std::atomic<bool> time_error_{false};
-    std::mutex poll_mutex_;
-    std::chrono::steady_clock::time_point last_poll_{};
 };
 
 const char* direction_name(Direction direction);

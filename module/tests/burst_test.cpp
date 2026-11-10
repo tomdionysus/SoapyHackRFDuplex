@@ -228,3 +228,10 @@ TEST_CASE("a burst at the very end is found only when the finder finishes", "[bu
     CHECK(finder.result().found);
     CHECK(finder.result().offset == length - burst::kChips);
 }
+
+TEST_CASE("silence holds no burst", "[burst]") {
+    const std::vector<std::int8_t> silence(2 * 3 * burst::kChips, 0);
+    const burst::Found found = burst::find(silence);
+    CHECK_FALSE(found.found);
+    CHECK(found.peak_over_median_db == 0);
+}

@@ -3,10 +3,15 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "fake_board.hpp"
@@ -348,4 +353,94 @@ TEST_CASE("destroying a pair stops what was running", "[pair]") {
         pair.activate(Direction::kTx);
     }
     CHECK(stops == 2);
+}
+
+TEST_CASE("a stream's reads and writes refuse it until it is open", "[pair]") {
+    Rig rig;
+    std::array<std::int8_t, 8> buffer{};
+    CHECK_THROWS_AS(rig.pair.read(buffer.data(), 4, 0us), std::logic_error);
+    CHECK_THROWS_AS(rig.pair.acquire_read(4, 0us), std::logic_error);
+    CHECK_THROWS_AS(rig.pair.release_read(0), std::logic_error);
+    CHECK_THROWS_AS(rig.pair.set_rx_window(std::nullopt, std::nullopt), std::logic_error);
+    CHECK_THROWS_AS(rig.pair.write(buffer.data(), 4, false, 0us), std::logic_error);
+    CHECK_THROWS_AS(rig.pair.write_at(buffer.data(), 4, false, 0, 0us), std::logic_error);
+    CHECK(rig.pair.rx_slots() == 0);
+    CHECK_THROWS_AS(rig.pair.rx_slot_bytes(0), std::invalid_argument);
+}
+
+TEST_CASE("a stream closed while another thread finds its board failed is left alone", "[pair]") {
+    // Any reader or writer polls both boards. One that finds the receiving
+    // board stopped marks it failed; meanwhile the application closes the
+    // receive stream. The mark must be done before the close can free it.
+    auto rx_owner = std::make_unique<FakeBoard>("00000000000000000000000000000001");
+    auto tx_owner = std::make_unique<FakeBoard>("00000000000000000000000000000002");
+    FakeBoard& rx = *rx_owner;
+    std::mutex marking_mutex;
+    std::condition_variable marking_changed;
+    bool marking = false;
+    Pair pair(std::move(rx_owner), std::move(tx_owner), [&](LogLevel, const std::string& message) {
+        if (message.find("stopped streaming") == std::string::npos) {
+            return;
+        }
+        {
+            const std::lock_guard<std::mutex> lock(marking_mutex);
+            marking = true;
+        }
+        marking_changed.notify_all();
+        // Hold the marking thread inside the mark for a while.
+        std::this_thread::sleep_for(100ms);
+    });
+    pair.set_time_origin(TimeOrigin::kNone);
+    pair.set_sample_rate(Direction::kRx, 8e6);
+    pair.open_stream(Direction::kRx, Format::kCs8, 4);
+    pair.activate(Direction::kRx);
+    rx.rx_streaming = false;
+    // The transmit side's status call polls both boards.
+    std::thread poller([&] { pair.take_tx_underflow(); });
+    {
+        std::unique_lock<std::mutex> lock(marking_mutex);
+        REQUIRE(marking_changed.wait_for(lock, 2s, [&] { return marking; }));
+    }
+    pair.close_stream(Direction::kRx);
+    poller.join();
+    CHECK_FALSE(pair.stream_open(Direction::kRx));
+}
+
+TEST_CASE("a board whose reference switch cannot be handled is left stopped", "[pair]") {
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 868'300'000);
+    rig.pair.set_sample_rate(Direction::kRx, 8e6);
+    rig.pair.open_stream(Direction::kRx, Format::kCs8, 4);
+    rig.rx.reference_switch_pending = true;
+    // The retune on the new reference fails.
+    rig.rx.fail_on = "set_frequency";
+    CHECK_THROWS_AS(rig.pair.activate(Direction::kRx), BoardError);
+    CHECK_FALSE(rig.rx.rx_streaming);
+    CHECK_FALSE(rig.pair.active(Direction::kRx));
+    // And it can be tried again.
+    CHECK_NOTHROW(rig.pair.activate(Direction::kRx));
+    CHECK(rig.rx.rx_streaming);
+    CHECK(rig.pair.active(Direction::kRx));
+}
+
+TEST_CASE("the hardware time while receive is stopped is where the next start begins", "[pair]") {
+    // Receive positions start again at 0 with each activation, so a time set
+    // while stopped is the time of the first sample after the next start.
+    Rig rig;
+    rig.pair.set_time_origin(TimeOrigin::kNone);
+    rig.pair.set_sample_rate(Direction::kRx, 8e6);
+    rig.pair.open_stream(Direction::kRx, Format::kCs8, 4);
+    rig.pair.activate(Direction::kRx);
+    const std::vector<std::uint8_t> transfer(rig.rx.transfer_bytes_value, 0);
+    for (int k = 0; k < 3; ++k) {
+        rig.rx.deliver_rx(transfer);
+    }
+    CHECK(rig.pair.time_ticks() == 24);
+    rig.pair.deactivate(Direction::kRx);
+    rig.pair.set_time_ticks(1000);
+    CHECK(rig.pair.time_ticks() == 1000);
+    rig.pair.activate(Direction::kRx);
+    CHECK(rig.pair.time_ticks() == 1000);
+    rig.rx.deliver_rx(transfer);
+    CHECK(rig.pair.time_ticks() == 1008);
 }

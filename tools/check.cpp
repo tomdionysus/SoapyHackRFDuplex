@@ -1016,6 +1016,18 @@ int main(int argc, char** argv) {
 
         report_device_sensors(device, "before the start");
         std::thread tx_thread;
+        // If anything below throws, the writer is stopped and joined first,
+        // rather than std::terminate with the transmitter running.
+        struct JoinOnThrow {
+            std::atomic<bool>& stop;
+            std::thread& thread;
+            ~JoinOnThrow() {
+                if (thread.joinable()) {
+                    stop = true;
+                    thread.join();
+                }
+            }
+        } join_on_throw{stop, tx_thread};
         if (transmit) {
             if (device->activateStream(tx) != 0) {
                 throw std::runtime_error("TX stream did not activate");

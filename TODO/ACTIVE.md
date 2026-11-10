@@ -243,6 +243,32 @@ first, by Tom's choice; 1.0.0 after it has been used):
   summary. A full review of the diff since 0.1.0, findings fixed or
   recorded. Acceptance: `tools/ci-pi.sh` passing with all of it, and the
   coverage figure in COMPLETED.md.
+  Done on the workstation, 2026-11-10, waiting on the target's CI: the
+  annotations (`mutex.hpp`, Clang's `-Wthread-safety` clean, a Clang
+  build in `tools/ci.sh` where GCC is the compiler; the analysis found
+  one unlocked read, `bias_tee()`); the tsan preset (runs on the
+  workstation only, item notes above); 33 more tests from the coverage
+  gaps and the review, 179 in all. Local source coverage (clang): the
+  core 99.05% of lines, the SoapySDR translation 92.1%, now counted;
+  the gaps left are enum fallbacks that cannot be reached, a ring that
+  reports room and then has none, error handlers that ignore a failing
+  stop, and refusals in `soapy_device.cpp` still to test. The review
+  (one independent reader of all of `module/src` and the check tool;
+  there is no `0.1.0` tag, `main` holds the 2023 code, so it was the
+  whole module) found seven defects, each now fixed with a test written
+  first and seen to fail: a poll from one direction could wake the other
+  direction's path after a close had freed it (a crash, reproduced); a
+  failed retune on a reference switch left the board streaming with no
+  stream; a board error during the burst escaped an activation already
+  done and left the origin pending for good; the hardware time while
+  receive was stopped counted the last run's samples; empty reads and
+  writes spun to their timeout; the check tool could terminate with the
+  transmitter running; and an origin outlived a deactivate when
+  `time_origin` had been set to none. Recorded, not fixed: if
+  `HackrfBoard`'s reopen after a failed start fails, the board is left
+  without a libhackrf handle and later calls pass a null one (needs a
+  hardware fault to reach). Still to do: clang-tidy on the target, the
+  lcov figure of record there, and the remaining refusal tests.
 
 ### 14. Interoperability
 

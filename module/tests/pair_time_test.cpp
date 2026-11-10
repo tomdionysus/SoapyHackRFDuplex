@@ -112,9 +112,10 @@ TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]
     Rig rig;
     rig.open();
     Loopback air(rig.tx, rig.rx, 300);
-    // Transfers a millisecond apart, so the correlation keeps up with the
-    // capture as it does on the boards; unpaced, a slow host fills it first.
-    air.pace_us = 1000;
+    // Transfers 10 ms apart, so the correlation keeps up with the capture
+    // as it does on the boards, even in an unoptimised, instrumented build;
+    // unpaced, or at 1 ms there, it fills first. 200 ms at the worst.
+    air.pace_us = 10000;
     rig.pair.activate(Direction::kRx);
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
@@ -195,6 +196,81 @@ TEST_CASE("an unheard burst leaves no origin and logs how near it came", "[pair]
     CHECK(rig.logged("calibration burst was not heard (best correlation"));
     const std::array<std::int8_t, 8> samples{};
     CHECK(rig.pair.write_at(samples.data(), 4, true, 100'000, 0us).status == TimedStatus::kNoTime);
+    air.stop();
+}
+
+TEST_CASE("a shortfall while the burst is out leaves no origin", "[pair][time]") {
+    // docs/design.md, Time: where the burst was heard says nothing once a
+    // board has lost or delayed samples meanwhile.
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.pair.set_frequency(Direction::kTx, 847'300'000);
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kTx);
+    // The transmitter goes to the receive frequency for the burst after the
+    // pair has read the boards' counts; the receiver falls short then.
+    rig.tx.on_call = [&](const std::string& call) {
+        if (call == "set_frequency 892300000") {
+            rig.rx.shortfall_count = 1;
+        }
+    };
+    rig.pair.activate(Direction::kRx);
+    rig.tx.on_call = nullptr;
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("while the burst was out"));
+    air.stop();
+}
+
+TEST_CASE("a trigger origin cannot join a stream already running", "[pair][time]") {
+    Rig rig;
+    rig.pair.set_time_origin(TimeOrigin::kNone);
+    rig.open();
+    rig.pair.activate(Direction::kRx);
+    rig.pair.set_time_origin(TimeOrigin::kTrigger);
+    rig.pair.activate(Direction::kTx);
+    CHECK(rig.tx.tx_streaming);
+    CHECK_FALSE(rig.tx.hardware_sync);
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("did not start together"));
+}
+
+TEST_CASE("a burst that cannot be written leaves no origin", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kTx);
+    // The transmitter takes nothing, and the writer has filled its ring, so
+    // the burst finds no room within its two seconds.
+    air.paused = true;
+    const std::vector<std::int8_t> samples(2 * 4 * kTransferSamples, 0);
+    std::size_t written = 0;
+    while (written < 4 * kTransferSamples) {
+        const std::size_t n = rig.pair.write(samples.data() + 2 * written,
+                                             4 * kTransferSamples - written, false, 100ms);
+        REQUIRE(n > 0);
+        written += n;
+    }
+    rig.pair.activate(Direction::kRx);
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("the calibration burst could not be written"));
+    air.paused = false;
+    air.stop();
+}
+
+TEST_CASE("a receiver that delivers nothing while the burst is out leaves no origin",
+          "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kTx);
+    // Nothing moves either way, so the listen runs to its deadline.
+    air.paused = true;
+    rig.pair.activate(Direction::kRx);
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("the receive stream delivered less than expected"));
+    CHECK(rig.logged("calibration burst was not heard"));
+    air.paused = false;
     air.stop();
 }
 
@@ -302,6 +378,66 @@ TEST_CASE("a write for a time already past is late and reported once", "[pair][t
     CHECK(rig.pair.take_time_error());
     CHECK_FALSE(rig.pair.take_time_error());
     air.stop();
+}
+
+TEST_CASE("a timed write behind what is already queued is late", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    const std::int64_t when =
+        rig.pair.time_ticks() + 40 * static_cast<std::int64_t>(kTransferSamples);
+    const std::array<std::int8_t, 8> samples{};
+    CHECK(rig.pair.write_at(samples.data(), 4, true, when, 1s).status == TimedStatus::kOk);
+    CHECK(rig.pair.write_at(samples.data(), 4, true, when, 1s).status == TimedStatus::kLate);
+    CHECK(rig.pair.take_time_error());
+    air.stop();
+}
+
+TEST_CASE("a timed write that finds the ring full times out", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    // The board stops taking transfers; each timed write takes a block of
+    // the four, and the fifth finds none.
+    air.paused = true;
+    const std::int64_t when =
+        rig.pair.time_ticks() + 400 * static_cast<std::int64_t>(kTransferSamples);
+    const std::array<std::int8_t, 8> samples{};
+    for (std::int64_t k = 0; k < 4; ++k) {
+        CHECK(rig.pair.write_at(samples.data(), 4, true, when + k * 4096, 100ms).status ==
+              TimedStatus::kOk);
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const TimedWrite w = rig.pair.write_at(samples.data(), 4, true, when + 5 * 4096, 50ms);
+    CHECK(w.status == TimedStatus::kTimeout);
+    CHECK(w.taken == 0);
+    CHECK(std::chrono::steady_clock::now() - start >= 50ms);
+    air.paused = false;
+    air.stop();
+}
+
+TEST_CASE("a timed write to a transmitter that has stopped is refused", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    air.stop();
+    rig.tx.tx_streaming = false;
+    // Past one poll interval, so the write looks at the boards first.
+    std::this_thread::sleep_for(150ms);
+    const std::array<std::int8_t, 8> samples{};
+    const TimedWrite w =
+        rig.pair.write_at(samples.data(), 4, true, rig.pair.time_ticks() + 1'000'000, 100ms);
+    CHECK(w.status == TimedStatus::kTimeout);
+    CHECK(rig.pair.failed(Direction::kTx));
 }
 
 TEST_CASE("a board's shortfall loses the origin, reported once", "[pair][time]") {
@@ -590,4 +726,42 @@ TEST_CASE("CLKOUT switched off under running streams leaves no reference to shar
     CHECK_FALSE(rig.pair.tx_of_rx());
     CHECK(rig.logged("do not share a reference"));
     air.stop();
+}
+
+TEST_CASE("a board error while calibrating leaves the streams running without an origin",
+          "[pair][time]") {
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.pair.set_frequency(Direction::kTx, 847'300'000);
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kTx);
+    // Taking the transmitter to the receive frequency for the burst fails.
+    rig.tx.fail_on = "set_frequency";
+    CHECK_NOTHROW(rig.pair.activate(Direction::kRx));
+    CHECK(rig.pair.active(Direction::kRx));
+    CHECK(rig.pair.active(Direction::kTx));
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("no common time origin"));
+    // Refused at once rather than left waiting for an origin to come.
+    const std::array<std::int8_t, 8> samples{};
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(rig.pair.write_at(samples.data(), 4, true, 1'000'000, 1s).status == TimedStatus::kNoTime);
+    CHECK(std::chrono::steady_clock::now() - start < 500ms);
+    // The transmitter is back where the application put it.
+    CHECK(rig.tx.frequency_hz == 847'300'000);
+    air.stop();
+}
+
+TEST_CASE("stopping a stream ends the origin, whatever origin is chosen next", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    rig.pair.set_time_origin(TimeOrigin::kNone);
+    air.stop();
+    rig.pair.deactivate(Direction::kRx);
+    CHECK_FALSE(rig.pair.tx_of_rx());
 }

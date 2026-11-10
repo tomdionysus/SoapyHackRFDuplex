@@ -36,13 +36,14 @@ if(HACKRFDUPLEX_COVERAGE)
     find_program(GENHTML_EXECUTABLE genhtml REQUIRED)
 
     set(_cov_dir ${CMAKE_BINARY_DIR}/coverage)
-    # Unit-tested sources only: the tests, generated files and the libhackrf
-    # and SoapySDR glue, which only hardware exercises, are excluded.
+    # Unit-tested sources only: the tests, generated files, the libhackrf
+    # binding and the SoapySDR registration, which only hardware and
+    # SoapySDR's loader exercise, are excluded. The SoapySDR translation is
+    # tested through the fake boards and counted.
     set(HACKRFDUPLEX_COVERAGE_EXCLUDE
         "*/tests/*"
         "*/generated/*"
         "*/hackrf_board.cpp"
-        "*/soapy_device.cpp"
         "*/registration.cpp"
         "*/tools/*"
         CACHE STRING "lcov patterns excluded from the coverage report")

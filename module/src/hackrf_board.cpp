@@ -110,7 +110,7 @@ void HackrfBoard::close() {
 }
 
 BoardInfo HackrfBoard::info() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     BoardInfo info;
     info.serial = serial_;
 
@@ -148,52 +148,52 @@ BoardInfo HackrfBoard::info() {
 }
 
 void HackrfBoard::set_frequency(std::uint64_t hz) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_freq(device_, hz), "set frequency");
 }
 
 void HackrfBoard::set_sample_rate(double hz) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_sample_rate(device_, hz), "set sample rate");
 }
 
 void HackrfBoard::set_bandwidth(std::uint32_t hz) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_baseband_filter_bandwidth(device_, hz), "set bandwidth");
 }
 
 void HackrfBoard::set_amp(bool on) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_amp_enable(device_, on ? 1 : 0), "set amp");
 }
 
 void HackrfBoard::set_lna_gain(unsigned db) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_lna_gain(device_, db), "set lna gain");
 }
 
 void HackrfBoard::set_vga_gain(unsigned db) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_vga_gain(device_, db), "set vga gain");
 }
 
 void HackrfBoard::set_tx_vga_gain(unsigned db) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_txvga_gain(device_, db), "set tx vga gain");
 }
 
 void HackrfBoard::set_bias_tee(bool on) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_antenna_enable(device_, on ? 1 : 0), "set bias tee");
 }
 
 void HackrfBoard::set_clock_out(bool on) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_clkout_enable(device_, on ? 1 : 0), "set clock out");
 }
 
 bool HackrfBoard::start_switches_reference() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (!reports_clkin_) {
         return false;
     }
@@ -218,7 +218,7 @@ bool HackrfBoard::start_switches_reference() {
 }
 
 void HackrfBoard::set_hardware_sync(bool on) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     check(hackrf_set_hw_sync_mode(device_, on ? 1 : 0), "set hardware sync");
 }
 
@@ -243,7 +243,7 @@ void HackrfBoard::await_m0(const std::function<bool(const M0Reading&)>& done,
 }
 
 StreamHealth HackrfBoard::stream_health() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (!reports_clkin_) {
         return {};
     }
@@ -255,7 +255,7 @@ StreamHealth HackrfBoard::stream_health() {
 }
 
 bool HackrfBoard::set_tx_underrun_limit(std::uint32_t samples) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (!reports_clkin_) {
         return false;
     }
@@ -290,7 +290,7 @@ void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, 
     // until it has.
     const std::optional<M0Reading> before =
         reports_clkin_ ? std::optional<M0Reading>(read_m0()) : std::nullopt;
-    auto took_up = [&] {
+    auto took_up = [&]() REQUIRES(mutex_) {
         if (!before) {
             return;
         }
@@ -327,7 +327,7 @@ void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, 
 }
 
 void HackrfBoard::start_rx(RxHandler handler) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (streaming_) {
         throw BoardError("start rx: already streaming");
     }
@@ -336,7 +336,7 @@ void HackrfBoard::start_rx(RxHandler handler) {
 }
 
 void HackrfBoard::start_tx(TxHandler handler) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (streaming_) {
         throw BoardError("start tx: already streaming");
     }
@@ -345,7 +345,7 @@ void HackrfBoard::start_tx(TxHandler handler) {
 }
 
 void HackrfBoard::stop() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     if (!streaming_ || device_ == nullptr) {
         return;
     }
@@ -368,7 +368,7 @@ void HackrfBoard::stop() {
 }
 
 bool HackrfBoard::streaming() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const Lock lock(mutex_);
     return streaming_ && hackrf_is_streaming(device_) == HACKRF_TRUE;
 }
 

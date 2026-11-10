@@ -6,12 +6,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include <optional>
 #include <span>
 
 #include "block_ring.hpp"
 #include "format.hpp"
+#include "mutex.hpp"
 
 namespace hackrfduplex {
 
@@ -109,8 +109,8 @@ private:
     std::uint64_t produced_ = 0;
     std::atomic<std::uint64_t> received_{0};
     std::atomic<std::uint64_t> dropped_{0};
-    std::mutex tap_mutex_;
-    RxTap tap_;
+    Mutex tap_mutex_;
+    RxTap tap_ GUARDED_BY(tap_mutex_);
     // Consumer's: the position the next sample should have, and how far
     // into the front block it has read.
     std::uint64_t expected_ = 0;
@@ -126,8 +126,8 @@ private:
         // window it read from.
         std::uint64_t generation = 0;
     };
-    std::mutex window_mutex_;
-    Window window_;
+    Mutex window_mutex_;
+    Window window_ GUARDED_BY(window_mutex_);
 };
 
 }  // namespace hackrfduplex

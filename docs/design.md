@@ -159,6 +159,16 @@ runs on the thread that activated the second stream, before
 `activateStream` returns; a receive reader already running is not
 disturbed, since the burst is heard through a tap beside it.
 
+The locks are taken in one order: the lifecycle lock, then a direction's
+lock (both directions together through one acquisition that cannot
+deadlock), then the board-health poll's, then the time origin's; the
+writer's lock follows the lifecycle lock and is otherwise held alone.
+Every member a lock guards is annotated so (`module/src/mutex.hpp`), and
+Clang's `-Wthread-safety` proves each is touched only under it; the
+stream paths' rings, the stream objects themselves while open, and the
+atomics are the exceptions, each saying why beside it. `tools/ci.sh`
+builds once with Clang to run the analysis where GCC is the compiler.
+
 ## Time
 
 Time is counted on the receiving board's sample clock. The hardware time
@@ -245,7 +255,14 @@ shortfall (Failure handling, below) or a sample rate changes while
 streaming. A shortfall found while the burst is out leaves no origin. Stopping
 either stream leaves it to be found again when both run. Writing the
 `calibrate` setting runs the burst again at any time. `hasHardwareTime`
-is true while an origin holds.
+is true while an origin holds. A board error while the burst is out
+(a retune refused, say) leaves no origin and is logged; the streams keep
+running, and the board's health poll finds a board that has really gone.
+
+While the receive stream is stopped, the hardware time is the time its
+first sample will have when it starts again, since its positions start
+again at 0: `setHardwareTime` then sets that, and a timed
+`activateStream` is measured from it.
 
 ## Latency
 

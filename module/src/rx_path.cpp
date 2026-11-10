@@ -16,7 +16,7 @@ void RxPath::on_transfer(std::span<const std::uint8_t> bytes) {
     const std::size_t size = std::min(bytes.size(), ring_.block_bytes());
     const std::size_t samples = size / kNativeSampleBytes;
     {
-        const std::lock_guard<std::mutex> lock(tap_mutex_);
+        const Lock lock(tap_mutex_);
         if (tap_) {
             tap_(produced_, bytes.first(samples * kNativeSampleBytes));
         }
@@ -37,13 +37,13 @@ void RxPath::on_transfer(std::span<const std::uint8_t> bytes) {
 }
 
 void RxPath::set_tap(RxTap tap) {
-    const std::lock_guard<std::mutex> lock(tap_mutex_);
+    const Lock lock(tap_mutex_);
     tap_ = std::move(tap);
 }
 
 void RxPath::set_window(std::optional<std::uint64_t> start, std::optional<std::uint64_t> count) {
     {
-        const std::lock_guard<std::mutex> lock(window_mutex_);
+        const Lock lock(window_mutex_);
         window_ = Window{start, count, false, window_.generation + 1};
     }
 }
@@ -90,7 +90,7 @@ RxPath::Next RxPath::next(std::size_t max_samples, std::chrono::microseconds tim
     while (true) {
         Window window;
         {
-            const std::lock_guard<std::mutex> lock(window_mutex_);
+            const Lock lock(window_mutex_);
             window = window_;
         }
         Block* block = ring_.front();
@@ -145,7 +145,7 @@ void RxPath::commit(const Next& taken) {
         ring_.pop();
         offset_ = 0;
     }
-    const std::lock_guard<std::mutex> lock(window_mutex_);
+    const Lock lock(window_mutex_);
     if (window_.generation == taken.generation) {
         window_.start.reset();
         if (window_.remaining) {
@@ -157,7 +157,7 @@ void RxPath::commit(const Next& taken) {
 
 void RxPath::reset() {
     {
-        const std::lock_guard<std::mutex> lock(window_mutex_);
+        const Lock lock(window_mutex_);
         window_ = Window{{}, {}, false, window_.generation + 1};
     }
     held_.reset();
