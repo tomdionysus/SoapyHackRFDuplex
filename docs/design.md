@@ -70,6 +70,21 @@ the board, and deactivated to stop it. Activation resets the path so a
 stream always begins at position 0. The pair's destructor stops anything
 running.
 
+A receive stream opened without a depth gets one sized to its rate: at
+each activation, enough transfers for half a second at the receive rate
+of that moment, at least 15 and at most 256 (`rx_auto_slots`). The ring
+is allocated once, at open, for 20 Msps (77 transfers, 20 MB), and each
+activation uses as much of it as the rate needs, so the buffers a
+direct-access reader was given never move and a rate set after the stream
+was opened, as GNU Radio sets it, still counts. Half a second covers a
+reader that stalls while the other stream starts: GNU Radio activates
+receive, then transmit, whose activation sends the calibration burst
+(about 0.25 s) before any block reads, and at 16 Msps the old fixed 15
+transfers (123 ms) overflowed every time (docs/compatibility.md). The
+ring is slack, not delay: it fills only while the reader is behind. A
+transmit stream without a depth keeps 15, which sets how far a writer may
+run ahead.
+
 ### The stream paths
 
 Both paths are built on `BlockRing`, a single-producer single-consumer
@@ -122,7 +137,7 @@ channel, 0, each way).
 | `getHardwareKey`, `getHardwareInfo` | "HackRF Duplex"; both boards' serial, board, revision, firmware, USB API, clock and CLKOUT, the module and libhackrf versions |
 | `getNumChannels`, `getFullDuplex` | 1 each way; full duplex |
 | `getStreamFormats`, `getNativeStreamFormat` | CS8 (native, full scale 128), CS16, CF32, CF64 |
-| `getStreamArgsInfo`, `setupStream` | `buffers`, the ring depth in transfers; any other argument logged and ignored |
+| `getStreamArgsInfo`, `setupStream` | `buffers`, the ring depth in transfers (unset: sized to the rate on receive, 15 on transmit); any other argument logged and ignored |
 | `activateStream` | starts the board; on receive, `SOAPY_SDR_HAS_TIME` starts delivery at that time and `SOAPY_SDR_END_BURST` with a count ends it after that many samples, also on a stream already running; a time passed `SOAPY_SDR_TIME_ERROR`; any other flag, and any on transmit, `SOAPY_SDR_NOT_SUPPORTED` |
 | `deactivateStream` | stops the board at once; flags: `SOAPY_SDR_NOT_SUPPORTED` |
 | `readStream` | samples stamped with `SOAPY_SDR_HAS_TIME`; `SOAPY_SDR_END_BURST` on the last read of a receive burst; overflow with `SOAPY_SDR_END_ABRUPT`; a failed board `SOAPY_SDR_STREAM_ERROR` |

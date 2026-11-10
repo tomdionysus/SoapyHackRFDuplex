@@ -22,6 +22,8 @@ namespace hackrfduplex {
 
 namespace {
 
+// The transmit ring's depth unless set, and the least the receive ring's
+// is (Pair::open_stream).
 constexpr std::size_t kDefaultBuffers = 15;
 // Measured (docs/design.md): receive is clean down to 200 ksps, about
 // where the clock chip's divider runs out; the transmitter goes silent or
@@ -195,9 +197,16 @@ SoapySDR::ArgInfoList SoapyDevice::getStreamArgsInfo(const int direction,
     check(direction, channel);
     SoapySDR::ArgInfo buffers;
     buffers.key = "buffers";
-    buffers.value = std::to_string(kDefaultBuffers);
     buffers.name = "Buffer count";
     buffers.description = "USB transfers the stream can hold between the board and the caller.";
+    if (direction == SOAPY_SDR_RX) {
+        // Left empty, the module sizes it at each activation (Pair::open_stream).
+        buffers.description +=
+            " Unset: enough for 0.5 s at the sample rate when the stream starts, at least " +
+            std::to_string(kDefaultBuffers) + ".";
+    } else {
+        buffers.value = std::to_string(kDefaultBuffers);
+    }
     buffers.units = "transfers";
     buffers.type = SoapySDR::ArgInfo::INT;
     return {buffers};
@@ -210,7 +219,7 @@ SoapySDR::Stream* SoapyDevice::setupStream(const int direction, const std::strin
     if (channels.size() > 1 || (channels.size() == 1 && channels[0] != 0)) {
         throw std::invalid_argument("setupStream: each direction has one channel, 0");
     }
-    std::size_t buffers = kDefaultBuffers;
+    std::optional<std::size_t> buffers;
     const auto it = args.find("buffers");
     if (it != args.end()) {
         const int wanted = std::stoi(it->second);

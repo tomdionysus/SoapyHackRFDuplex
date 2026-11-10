@@ -155,13 +155,13 @@ void RxPath::commit(const Next& taken) {
     }
 }
 
-void RxPath::reset() {
+void RxPath::reset(std::size_t in_use) {
     {
         const Lock lock(window_mutex_);
         window_ = Window{{}, {}, false, window_.generation + 1};
     }
     held_.reset();
-    ring_.reset();
+    ring_.reset(in_use);
     produced_ = 0;
     received_ = 0;
     dropped_ = 0;

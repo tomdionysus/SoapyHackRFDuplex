@@ -29,6 +29,14 @@ constexpr auto kShortfallLog = std::chrono::seconds(1);
 constexpr auto kTriggerWait = std::chrono::milliseconds(500);
 // libhackrf keeps this many transfers in flight in each direction.
 constexpr std::size_t kLibhackrfTransfers = 4;
+// rx_auto_slots(): what the receive ring holds, and its bounds; and the
+// rate a ring left to the module is made for, the HackRF's highest.
+constexpr double kRxHoldSeconds = 0.5;
+constexpr std::size_t kMinAutoSlots = 15;
+constexpr std::size_t kMaxAutoSlots = 256;
+constexpr double kFastestRate = 20e6;
+// A transmit stream left to the module.
+constexpr std::size_t kTxDefaultSlots = 15;
 
 Direction opposite(Direction direction) {
     return direction == Direction::kRx ? Direction::kTx : Direction::kRx;
@@ -96,6 +104,15 @@ private:
 };
 
 }  // namespace
+
+std::size_t rx_auto_slots(double rate_hz, std::size_t transfer_samples) {
+    const double wanted =
+        std::ceil(kRxHoldSeconds * rate_hz / static_cast<double>(transfer_samples));
+    if (wanted >= static_cast<double>(kMaxAutoSlots)) {
+        return kMaxAutoSlots;
+    }
+    return std::max(kMinAutoSlots, static_cast<std::size_t>(wanted));
+}
 
 const char* direction_name(Direction direction) {
     return direction == Direction::kRx ? "RX" : "TX";
@@ -376,16 +393,25 @@ ClockOut Pair::clock_out() {
     return ClockOut::kOff;
 }
 
-void Pair::open_stream(Direction direction, Format format, std::size_t slots) {
+void Pair::open_stream(Direction direction, Format format,
+                       std::optional<std::size_t> wanted_slots) {
     const Lock control(control_mutex_);
     Side& s = side(direction);
     const Lock lock(s.mutex);
     if (s.open) {
         throw std::logic_error(std::string(direction_name(direction)) + " stream already open");
     }
-    if (slots == 0) {
+    if (wanted_slots == 0) {
         throw std::invalid_argument("a stream needs at least one buffer");
     }
+    const std::size_t transfer_samples = s.board->transfer_bytes() / kNativeSampleBytes;
+    std::size_t slots = kTxDefaultSlots;
+    if (wanted_slots) {
+        slots = *wanted_slots;
+    } else if (direction == Direction::kRx) {
+        slots = rx_auto_slots(kFastestRate, transfer_samples);
+    }
+    s.auto_slots = direction == Direction::kRx && !wanted_slots;
     if (direction == Direction::kRx) {
         rx_path_ = std::make_unique<RxPath>(slots, s.board->transfer_bytes());
     } else {
@@ -431,7 +457,16 @@ void Pair::start_stream(Side& s) {
         counted.logged = 0;
     }
     if (s.direction == Direction::kRx) {
-        rx_path_->reset();
+        if (s.auto_slots) {
+            const std::size_t in_use = std::min(
+                rx_path_->slots(),
+                rx_auto_slots(s.sample_rate_hz, s.board->transfer_bytes() / kNativeSampleBytes));
+            rx_path_->reset(in_use);
+            log(LogLevel::kDebug, "RX ring: " + std::to_string(in_use) + " of " +
+                                      std::to_string(rx_path_->slots()) + " buffers in use");
+        } else {
+            rx_path_->reset();
+        }
 #if defined(HACKRFDUPLEX_DSP)
         rx_correction_.reset();
 #endif

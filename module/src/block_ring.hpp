@@ -39,7 +39,9 @@ public:
     BlockRing(const BlockRing&) = delete;
     BlockRing& operator=(const BlockRing&) = delete;
 
+    // Slots allocated; reset() may use fewer of them.
     std::size_t slots() const { return slots_.size(); }
+    std::size_t in_use() const;
     std::size_t block_bytes() const { return block_bytes_; }
     // The slots themselves, for handing a consumer's block out in place.
     Block& slot(std::size_t index) { return slots_.at(index); }
@@ -65,8 +67,11 @@ public:
 
     // Releases both waits, which then report false.
     void wake();
-    // Drops every block. Only with neither side running.
+    // Drops every block, and uses all the slots, or the first `in_use` of
+    // them (std::invalid_argument for 0 or more than there are). Only with
+    // neither side running.
     void reset();
+    void reset(std::size_t in_use);
 
 private:
     mutable Mutex mutex_;
@@ -75,6 +80,7 @@ private:
     // ring's protocol; the indices say which, under the lock.
     std::vector<Block> slots_;
     std::size_t block_bytes_;
+    std::size_t in_use_ GUARDED_BY(mutex_);
     std::size_t head_ GUARDED_BY(mutex_) = 0;
     std::size_t tail_ GUARDED_BY(mutex_) = 0;
     std::size_t count_ GUARDED_BY(mutex_) = 0;

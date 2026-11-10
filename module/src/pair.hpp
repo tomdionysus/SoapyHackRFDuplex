@@ -66,6 +66,14 @@ struct TimedWrite {
     TimedStatus status = TimedStatus::kOk;
 };
 
+// The receive ring's depth in transfers when the application leaves it to
+// the module: enough for half a second at `rate_hz` (0 when unset), so a
+// reader may stall that long, as GNU Radio's does while the second stream
+// starts and the calibration burst goes out, without an overflow. At least
+// the 15 transfers every stream held before, at most 256 (tiny transfers,
+// as the fake boards' are).
+std::size_t rx_auto_slots(double rate_hz, std::size_t transfer_samples);
+
 // Two HackRF boards as one full-duplex radio: one only ever receives,
 // the other only ever transmits, each tuned, filtered and gained on its
 // own. Settings go to the board at once and are remembered; a stream is
@@ -127,8 +135,10 @@ public:
     void set_clock_out(ClockOut which);
     ClockOut clock_out();
 
-    // Streams. `slots` is the ring depth in transfers.
-    void open_stream(Direction direction, Format format, std::size_t slots);
+    // Streams. `slots` is the ring depth in transfers. Empty, for receive,
+    // it is rx_auto_slots() at the rate of each activation, the ring made
+    // once for 20 Msps so its buffers never move; for transmit, 15.
+    void open_stream(Direction direction, Format format, std::optional<std::size_t> slots);
     void close_stream(Direction direction);
     bool stream_open(Direction direction) const;
     // Starts the board; a no-op when already active. Throws std::logic_error
@@ -234,6 +244,8 @@ private:
         // 0: the firmware's automatic choice.
         std::uint32_t bandwidth_hz GUARDED_BY(mutex) = 0;
         bool open GUARDED_BY(mutex) = false;
+        // The receive ring's depth follows the rate (rx_auto_slots).
+        bool auto_slots GUARDED_BY(mutex) = false;
         bool active GUARDED_BY(mutex) = false;
         // Trigger origin: activated, waiting for the other stream to start
         // both boards together.

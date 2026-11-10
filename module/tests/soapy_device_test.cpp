@@ -1168,6 +1168,27 @@ Acquired acquire(SoapySDR::Device& d, SoapySDR::Stream* stream, long timeout_us 
 
 }  // namespace
 
+TEST_CASE("a receive stream without buffers is sized by the module for its rate",
+          "[soapy][direct]") {
+    SoapyRig rig;
+    rig.rx->transfer_bytes_value = 262144;
+    SoapySDR::Device& d = *rig.device;
+    const auto info = d.getStreamArgsInfo(SOAPY_SDR_RX, 0);
+    REQUIRE(info.size() == 1);
+    CHECK(info[0].key == "buffers");
+    CHECK(info[0].value.empty());
+    CHECK(info[0].description.find("0.5 s") != std::string::npos);
+    // Allocated for 20 Msps at setup; how much is used follows the rate at
+    // each activation (pair_test).
+    SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
+    CHECK(d.getNumDirectAccessBuffers(rx) == 77);
+    d.closeStream(rx);
+    // The transmit stream keeps its fixed default.
+    const auto tx_info = d.getStreamArgsInfo(SOAPY_SDR_TX, 0);
+    REQUIRE(tx_info.size() == 1);
+    CHECK(tx_info[0].value == "15");
+}
+
 TEST_CASE("a CS8 receive stream offers its ring for direct access", "[soapy][direct]") {
     SoapyRig rig;
     rig.rx->transfer_bytes_value = 2048;
@@ -1259,14 +1280,17 @@ TEST_CASE("direct access reports an overflow and a failed board as reads do", "[
     RxRig rig;
     REQUIRE(rig.activated == 0);
     SoapySDR::Device& d = *rig.device;
-    // The ring holds 15; twenty drop five whole transfers, which show as a
-    // gap once the next one comes.
-    for (int i = 0; i < 20; ++i) {
+    // At 8 Msps over 1024-sample transfers the ring the module sizes is
+    // its ceiling, all of it in use; five more drop five whole transfers,
+    // which show as a gap once the next one comes.
+    const int depth = static_cast<int>(d.getNumDirectAccessBuffers(rig.stream));
+    REQUIRE(depth == 256);
+    for (int i = 0; i < depth + 5; ++i) {
         rig.rx->deliver_rx(std::vector<std::uint8_t>(2048, 0));
     }
     int overflows = 0;
-    for (int i = 0; i < 18; ++i) {
-        if (i == 15) {
+    for (int i = 0; i < depth + 3; ++i) {
+        if (i == depth) {
             rig.rx->deliver_rx(std::vector<std::uint8_t>(2048, 0));
         }
         const Acquired a = acquire(d, rig.stream);

@@ -83,8 +83,10 @@ public:
 
     // Releases a reader blocked in read(), which then reports a timeout.
     void wake() { ring_.wake(); }
-    // Back to the start of a stream. Only with neither side running.
-    void reset();
+    // Back to the start of a stream, using all the ring's slots or the
+    // first `in_use`. Only with neither side running.
+    void reset() { reset(slots()); }
+    void reset(std::size_t in_use);
 
     // Samples the board delivered, dropped ones included.
     std::uint64_t received() const { return received_.load(); }

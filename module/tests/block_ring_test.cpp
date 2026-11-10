@@ -18,6 +18,38 @@ TEST_CASE("a ring needs slots and bytes", "[ring]") {
     CHECK(ring.size() == 0);
 }
 
+TEST_CASE("a ring reset to use fewer of its slots holds only those", "[ring]") {
+    BlockRing ring(4, 8);
+    ring.reset(2);
+    CHECK(ring.slots() == 4);
+    CHECK(ring.in_use() == 2);
+    for (int k = 0; k < 2; ++k) {
+        Block* block = ring.acquire();
+        REQUIRE(block != nullptr);
+        CHECK(ring.index_of(block) < 2);
+        ring.publish();
+    }
+    CHECK(ring.acquire() == nullptr);
+    CHECK_FALSE(ring.wait_free(0us));
+    // And around again, within the two.
+    ring.pop();
+    Block* again = ring.acquire();
+    REQUIRE(again != nullptr);
+    CHECK(ring.index_of(again) == 0);
+
+    ring.reset(4);
+    CHECK(ring.in_use() == 4);
+    for (int k = 0; k < 4; ++k) {
+        REQUIRE(ring.acquire() != nullptr);
+        ring.publish();
+    }
+    CHECK(ring.acquire() == nullptr);
+    ring.reset();
+    CHECK(ring.in_use() == 4);
+    CHECK_THROWS_AS(ring.reset(0), std::invalid_argument);
+    CHECK_THROWS_AS(ring.reset(5), std::invalid_argument);
+}
+
 TEST_CASE("blocks pass from producer to consumer in order", "[ring]") {
     BlockRing ring(2, 8);
     REQUIRE(ring.front() == nullptr);
