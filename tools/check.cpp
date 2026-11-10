@@ -65,6 +65,10 @@ struct Options {
     // Off: the received samples are counted and nothing more, so the CPU
     // reported is the module's and SoapySDR's.
     bool analyse = true;
+    // The receive stream's format; any but CF32 turns the analysis off.
+    std::string rx_format = SOAPY_SDR_CF32;
+    // CS8 only: read through SoapySDR's direct buffer access.
+    bool direct = false;
     bool help = false;
 };
 
@@ -180,6 +184,9 @@ const char* const kUsage =
     "                    (transmits; excludes --tx-tone and --timed-bursts)\n"
     "  --no-analysis     count the received samples and nothing more, so the CPU\n"
     "                    reported is the module's (no spectrum, no tone report)\n"
+    "  --rx-format F     CS8, CS16, CF32 or CF64 for the receive stream (default\n"
+    "                    CF32); any but CF32 implies --no-analysis\n"
+    "  --direct          receive through direct buffer access (CS8 only)\n"
     "  --help\n";
 
 void parse(int argc, char** argv, Options& options) {
@@ -195,6 +202,11 @@ void parse(int argc, char** argv, Options& options) {
             options.help = true;
         } else if (arg == "--no-analysis") {
             options.analyse = false;
+        } else if (arg == "--rx-format") {
+            options.rx_format = value();
+            format_bytes(options.rx_format);
+        } else if (arg == "--direct") {
+            options.direct = true;
         } else if (arg == "--rx-serial") {
             options.rx_serial = value();
         } else if (arg == "--tx-serial") {
@@ -979,7 +991,13 @@ int main(int argc, char** argv) {
         }
 
         const SoapySDR::Kwargs stream = stream_args(options);
-        SoapySDR::Stream* rx = device->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32, {}, stream);
+        if (options.direct && options.rx_format != SOAPY_SDR_CS8) {
+            throw std::invalid_argument("--direct needs --rx-format CS8");
+        }
+        if (options.rx_format != SOAPY_SDR_CF32) {
+            options.analyse = false;
+        }
+        SoapySDR::Stream* rx = device->setupStream(SOAPY_SDR_RX, options.rx_format, {}, stream);
         SoapySDR::Stream* tx =
             transmit ? device->setupStream(SOAPY_SDR_TX, options.tx_format, {}, stream) : nullptr;
         const std::size_t rx_mtu = device->getStreamMTU(rx);
@@ -1058,7 +1076,8 @@ int main(int argc, char** argv) {
         if (transmit) {
             run_calibrations(device, options.calibrations);
         }
-        std::vector<std::complex<float>> buffer(rx_mtu);
+        std::vector<std::uint8_t> raw(rx_mtu * format_bytes(options.rx_format));
+        const auto* samples = reinterpret_cast<const std::complex<float>*>(raw.data());
         const double cpu_start = cpu_seconds();
         const auto start = std::chrono::steady_clock::now();
         const auto deadline =
@@ -1068,8 +1087,18 @@ int main(int argc, char** argv) {
         while (std::chrono::steady_clock::now() < deadline && !stop) {
             int flags = 0;
             long long time_ns = 0;
-            void* buffs[] = {buffer.data()};
-            const int n = device->readStream(rx, buffs, buffer.size(), flags, time_ns, 200000);
+            int n = 0;
+            if (options.direct) {
+                std::size_t handle = 0;
+                const void* held[] = {nullptr};
+                n = device->acquireReadBuffer(rx, handle, held, flags, time_ns, 200000);
+                if (n > 0) {
+                    device->releaseReadBuffer(rx, handle);
+                }
+            } else {
+                void* buffs[] = {raw.data()};
+                n = device->readStream(rx, buffs, rx_mtu, flags, time_ns, 200000);
+            }
             if (n == SOAPY_SDR_OVERFLOW) {
                 ++rx_result.overflows;
                 continue;
@@ -1089,9 +1118,9 @@ int main(int argc, char** argv) {
             rx_result.last_time_ns = time_ns;
             rx_result.samples += static_cast<std::uint64_t>(n);
             if (options.analyse) {
-                spectrum.add(buffer.data(), static_cast<std::size_t>(n));
+                spectrum.add(samples, static_cast<std::size_t>(n));
                 if (transmit) {
-                    finder.add(buffer.data(), static_cast<std::size_t>(n));
+                    finder.add(samples, static_cast<std::size_t>(n));
                 }
             }
         }
