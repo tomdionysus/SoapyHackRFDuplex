@@ -140,9 +140,11 @@ public:
     std::string getTimeSource() const override;
 
     // Sensors
-    using SoapySDR::Device::getSensorInfo;
-    using SoapySDR::Device::listSensors;
-    using SoapySDR::Device::readSensor;
+    // The device's: ref_locked (Pair::shares_reference) and time_locked
+    // (an origin holds). Each channel's: lo_locked.
+    std::vector<std::string> listSensors() const override;
+    SoapySDR::ArgInfo getSensorInfo(const std::string& key) const override;
+    std::string readSensor(const std::string& key) const override;
     std::vector<std::string> listSensors(const int direction, const size_t channel) const override;
     SoapySDR::ArgInfo getSensorInfo(const int direction, const size_t channel,
                                     const std::string& key) const override;

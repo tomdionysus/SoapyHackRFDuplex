@@ -317,6 +317,15 @@ void Pair::set_clock_out(ClockOut which) {
     } else if (which == ClockOut::kTx) {
         tx_.board->set_clock_out(true);
     }
+    // A board on CLKIN while the other drove CLKOUT was fed by it, and has
+    // lost its reference if that stops; one streaming is not asked again
+    // until its next start.
+    if (rx_.drives_clkout && which != ClockOut::kRx) {
+        tx_.on_clkin = false;
+    }
+    if (tx_.drives_clkout && which != ClockOut::kTx) {
+        rx_.on_clkin = false;
+    }
     rx_.drives_clkout = which == ClockOut::kRx;
     tx_.drives_clkout = which == ClockOut::kTx;
     log(LogLevel::kInfo, std::string("clock out: ") + clock_out_name(which));
@@ -804,6 +813,21 @@ void Pair::log_shortfalls(Direction direction,
     }
 }
 
+bool Pair::shared_reference_locked() const {
+    return (rx_.on_clkin && tx_.on_clkin) || (tx_.on_clkin && rx_.drives_clkout) ||
+           (rx_.on_clkin && tx_.drives_clkout);
+}
+
+bool Pair::shares_reference() {
+    const std::scoped_lock lock(rx_.mutex, tx_.mutex);
+    for (const Direction direction : {Direction::kRx, Direction::kTx}) {
+        if (!side(direction).active) {
+            note_reference(direction);
+        }
+    }
+    return shared_reference_locked();
+}
+
 void Pair::calibrate() {
     const std::lock_guard<std::mutex> control(control_mutex_);
     if (!active(Direction::kRx) || !active(Direction::kTx)) {
@@ -829,9 +853,7 @@ void Pair::calibrate_locked() {
     // burst, so it cannot be heard: say why rather than send it.
     {
         const std::scoped_lock lock(rx_.mutex, tx_.mutex);
-        const bool shared = (rx_.on_clkin && tx_.on_clkin) || (tx_.on_clkin && rx_.drives_clkout) ||
-                            (rx_.on_clkin && tx_.drives_clkout);
-        if (!shared) {
+        if (!shared_reference_locked()) {
             const auto describe = [](const Side& s) {
                 return std::string(s.on_clkin ? "on CLKIN" : "on its own crystal") +
                        (s.drives_clkout ? ", driving CLKOUT" : "");

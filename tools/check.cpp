@@ -483,6 +483,20 @@ void report_lo_locked(SoapySDR::Device* device, bool transmit) {
     std::printf("\n");
 }
 
+// The device's sensors: whether the boards share a reference and whether
+// the streams share a time origin.
+// A board gone from the bus cannot be asked, which is no reason to lose
+// the rest of the report.
+void report_device_sensors(SoapySDR::Device* device, const char* when) {
+    try {
+        const std::string ref = device->readSensor("ref_locked");
+        const std::string time = device->readSensor("time_locked");
+        std::printf("sensors %s: ref_locked %s, time_locked %s\n", when, ref.c_str(), time.c_str());
+    } catch (const std::exception& e) {
+        std::printf("sensors %s: unreadable (%s)\n", when, e.what());
+    }
+}
+
 // The origin found when both streams started, then `count` more
 // calibrations, each reported, and their spread.
 void run_calibrations(SoapySDR::Device* device, int count) {
@@ -955,6 +969,7 @@ int main(int argc, char** argv) {
         TxResult tx_result;
         std::atomic<bool> stop{false};
 
+        report_device_sensors(device, "before the start");
         std::thread tx_thread;
         if (transmit) {
             if (device->activateStream(tx) != 0) {
@@ -1010,6 +1025,7 @@ int main(int argc, char** argv) {
             throw std::runtime_error("RX stream did not activate");
         }
         report_lo_locked(device, transmit);
+        report_device_sensors(device, "running");
         if (transmit) {
             run_calibrations(device, options.calibrations);
         }
@@ -1057,6 +1073,7 @@ int main(int argc, char** argv) {
             device->deactivateStream(tx);
             device->closeStream(tx);
         }
+        report_device_sensors(device, "stopped");
 
         std::printf(
             "rx: %llu samples in %.2f s = %.3f Msps (%.1f%% of nominal), %u overflows, %u "

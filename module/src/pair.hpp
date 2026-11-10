@@ -141,6 +141,13 @@ public:
     // own account: false only while activate() handles a reference switch.
     // Lock-free, so it can be read from any thread during activate().
     bool lo_locked(Direction direction) const;
+    // Whether the boards run from one reference: both on CLKIN, or one
+    // driving its CLKOUT and the other on CLKIN. An idle board is asked;
+    // a streaming one is not, since its clock chip then reads as zero, so
+    // what it reported at its start stands, with CLKOUT changes followed.
+    bool shares_reference();
+    // Whether the streams have a common origin now.
+    bool time_locked() const { return tx_of_rx().has_value(); }
 
     // How the next start of both streams finds a common origin. Takes
     // effect when the streams next start; calibrate() acts at once.
@@ -240,6 +247,8 @@ private:
     void start_stream(Direction direction);
     // Notes the idle board's CLKIN and CLKOUT. Side mutex held.
     void note_reference(Direction direction);
+    // From what note_reference found. Both side mutexes held.
+    bool shared_reference_locked() const;
     // When the next start moves the board to another reference: starts it,
     // retunes on the new reference and stops it. Side mutex held.
     bool settle_reference(Direction direction);

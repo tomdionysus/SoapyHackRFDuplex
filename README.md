@@ -153,7 +153,13 @@ Each channel has an `lo_locked` sensor. libhackrf cannot report
 synthesiser lock, so it is the module's own account: false only while a
 board whose reference clock changed at stream start is being retuned
 (see [docs/design.md](docs/design.md), Reference switches), true
-otherwise.
+otherwise. The device has two more: `ref_locked`, true when the boards
+run from one reference (one board's CLKOUT into the other's CLKIN with
+`clkout` set to that board, or both on CLKIN), and `time_locked`, true
+while the streams share a time origin, as `hasHardwareTime` is. A
+streaming board's clock chip reads as zero, so `ref_locked` takes what
+each streaming board reported at its start; switching CLKOUT off makes
+it false at once.
 
 The receive stream carries a time, counted in samples from the moment the
 stream started, so a gap left by a dropped transfer shows in the

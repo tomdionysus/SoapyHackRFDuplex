@@ -141,7 +141,7 @@ channel, 0, each way).
 | clock sources | `internal`, `rx`, `tx`: the `clkout` setting (`internal` is off) |
 | time sources | `burst`, `trigger`, `none`: the `time_origin` setting |
 | master and reference clock rates | refused |
-| sensors | `lo_locked` per channel (item 9 adds device sensors) |
+| sensors | `lo_locked` per channel; `ref_locked` and `time_locked` for the device |
 | settings | `bias_tx`, `clkout`, `time_origin`, `calibrate`, `tx_underrun_limit`; none per channel |
 | frontend mapping, registers, GPIO, I2C, SPI, UART | none listed; writes refused |
 

@@ -790,6 +790,40 @@ std::string SoapyDevice::getTimeSource() const { return time_origin_name(pair_->
 
 // Sensors
 
+std::vector<std::string> SoapyDevice::listSensors() const { return {"ref_locked", "time_locked"}; }
+
+SoapySDR::ArgInfo SoapyDevice::getSensorInfo(const std::string& key) const {
+    SoapySDR::ArgInfo info;
+    info.key = key;
+    info.value = "false";
+    info.type = SoapySDR::ArgInfo::BOOL;
+    if (key == "ref_locked") {
+        info.name = "Reference locked";
+        info.description =
+            "The two boards run from one reference: one drives its CLKOUT into the other's CLKIN "
+            "(clkout), or both are on CLKIN. A streaming board is not asked: what it reported at "
+            "its start stands.";
+    } else if (key == "time_locked") {
+        info.name = "Time locked";
+        info.description =
+            "The streams share a common time origin, so transmit times and receive timestamps "
+            "are on one clock (hasHardwareTime).";
+    } else {
+        throw std::invalid_argument("getSensorInfo: no sensor " + key);
+    }
+    return info;
+}
+
+std::string SoapyDevice::readSensor(const std::string& key) const {
+    if (key == "ref_locked") {
+        return pair_->shares_reference() ? "true" : "false";
+    }
+    if (key == "time_locked") {
+        return pair_->time_locked() ? "true" : "false";
+    }
+    throw std::invalid_argument("readSensor: no sensor " + key);
+}
+
 std::vector<std::string> SoapyDevice::listSensors(const int direction, const size_t channel) const {
     direction_of(direction);
     check_channel(channel);

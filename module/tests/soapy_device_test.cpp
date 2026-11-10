@@ -101,27 +101,47 @@ TEST_CASE("each direction has an lo_locked sensor", "[soapy]") {
         CHECK_THROWS_AS(rig.device->readSensor(direction, 0, "temperature"), std::invalid_argument);
         CHECK_THROWS_AS(rig.device->readSensor(direction, 1, "lo_locked"), std::invalid_argument);
     }
-    CHECK(rig.device->listSensors().empty());
+    // The device's own sensors are item 9's: ref_locked and time_locked.
+    CHECK(rig.device->listSensors() == std::vector<std::string>{"ref_locked", "time_locked"});
 }
 
-TEST_CASE("lo_locked reads false while a reference switch is handled", "[soapy]") {
+TEST_CASE("the device sensors are booleans named in the listing", "[soapy][sensors]") {
     SoapyRig rig;
-    SoapySDR::Device& device = *rig.device;
-    device.setFrequency(SOAPY_SDR_TX, 0, 868.3e6);
-    rig.tx->reference_switch_pending = true;
-    SoapySDR::Stream* tx = device.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
-    std::vector<std::string> during;
-    rig.tx->on_call = [&](const std::string& call) {
-        if (call.rfind("set_frequency", 0) == 0) {
-            during.push_back(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked"));
-            during.push_back(device.readSensor(SOAPY_SDR_RX, 0, "lo_locked"));
-        }
-    };
-    CHECK(device.activateStream(tx) == 0);
-    rig.tx->on_call = nullptr;
-    CHECK(during == std::vector<std::string>{"false", "true", "false", "true"});
-    CHECK(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked") == "true");
-    device.closeStream(tx);
+    SoapySDR::Device& d = *rig.device;
+    for (const std::string key : {"ref_locked", "time_locked"}) {
+        const SoapySDR::ArgInfo info = d.getSensorInfo(key);
+        CHECK(info.key == key);
+        CHECK(info.type == SoapySDR::ArgInfo::BOOL);
+        CHECK_FALSE(info.description.empty());
+        CHECK(d.readSensor(key) == "false");
+    }
+    CHECK_THROWS_AS(d.readSensor("lo_locked"), std::invalid_argument);
+    CHECK_THROWS_AS(d.getSensorInfo("temperature"), std::invalid_argument);
+}
+
+TEST_CASE("ref_locked says whether the boards run from one reference", "[soapy][sensors]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    // Each on its own crystal.
+    CHECK(d.readSensor("ref_locked") == "false");
+    // The cable from the RX board's CLKOUT to the TX board's CLKIN, CLKOUT
+    // off: the TX board finds no clock there.
+    d.writeSetting("clkout", "rx");
+    CHECK(d.readSensor("ref_locked") == "false");
+    rig.tx->external_clock = true;
+    CHECK(d.readSensor("ref_locked") == "true");
+    // A clock on the TX board's CLKIN that the RX board does not drive.
+    d.writeSetting("clkout", "off");
+    CHECK(d.readSensor("ref_locked") == "false");
+    // The other way about.
+    rig.tx->external_clock = false;
+    rig.rx->external_clock = true;
+    d.writeSetting("clkout", "tx");
+    CHECK(d.readSensor("ref_locked") == "true");
+    // Both fed from one outside reference.
+    d.writeSetting("clkout", "off");
+    rig.tx->external_clock = true;
+    CHECK(d.readSensor("ref_locked") == "true");
 }
 
 TEST_CASE("each direction advertises the sample rates measured to work", "[soapy]") {
@@ -180,6 +200,60 @@ int write_timed(SoapySDR::Device& d, SoapySDR::Stream* stream, std::size_t sampl
 }
 
 }  // namespace
+
+TEST_CASE("ref_locked holds while the boards stream, without asking them", "[soapy][sensors]") {
+    // On the target the clock chip, CLKIN status with it, reads as zero
+    // while a board streams; the reading taken at the start stands.
+    TimedRig rig;
+    SoapySDR::Device& d = *rig.device;
+    d.writeSetting("clkout", "rx");
+    REQUIRE(d.readSensor("ref_locked") == "true");
+    REQUIRE(d.activateStream(rig.rx_stream) == 0);
+    REQUIRE(d.activateStream(rig.tx_stream) == 0);
+    rig.rx->external_clock = false;
+    rig.tx->external_clock = false;
+    const std::size_t rx_calls = rig.rx->calls.size();
+    const std::size_t tx_calls = rig.tx->calls.size();
+    CHECK(d.readSensor("ref_locked") == "true");
+    CHECK(rig.rx->calls.size() == rx_calls);
+    CHECK(rig.tx->calls.size() == tx_calls);
+    // CLKOUT switched off under the streams is seen at once.
+    d.writeSetting("clkout", "off");
+    CHECK(d.readSensor("ref_locked") == "false");
+}
+
+TEST_CASE("time_locked follows the common origin", "[soapy][sensors]") {
+    TimedRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK(d.readSensor("time_locked") == "false");
+    REQUIRE(d.activateStream(rig.rx_stream) == 0);
+    CHECK(d.readSensor("time_locked") == "false");
+    REQUIRE(d.activateStream(rig.tx_stream) == 0);
+    CHECK(d.readSensor("time_locked") == "true");
+    CHECK(d.readSensor("time_locked") == (d.hasHardwareTime() ? "true" : "false"));
+    REQUIRE(d.deactivateStream(rig.tx_stream) == 0);
+    CHECK(d.readSensor("time_locked") == "false");
+}
+
+TEST_CASE("lo_locked reads false while a reference switch is handled", "[soapy]") {
+    SoapyRig rig;
+    SoapySDR::Device& device = *rig.device;
+    device.setFrequency(SOAPY_SDR_TX, 0, 868.3e6);
+    rig.tx->reference_switch_pending = true;
+    SoapySDR::Stream* tx = device.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    std::vector<std::string> during;
+    rig.tx->on_call = [&](const std::string& call) {
+        if (call.rfind("set_frequency", 0) == 0) {
+            during.push_back(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked"));
+            during.push_back(device.readSensor(SOAPY_SDR_RX, 0, "lo_locked"));
+        }
+    };
+    CHECK(device.activateStream(tx) == 0);
+    rig.tx->on_call = nullptr;
+    CHECK(during == std::vector<std::string>{"false", "true", "false", "true"});
+    CHECK(device.readSensor(SOAPY_SDR_TX, 0, "lo_locked") == "true");
+    device.closeStream(tx);
+}
 
 TEST_CASE("the time origin is a device argument and a setting", "[soapy][time]") {
     {
