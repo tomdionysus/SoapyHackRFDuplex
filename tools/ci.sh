@@ -4,7 +4,7 @@
 # The checks a change must pass, in order: formatting, the licence line on
 # every source file, the release build and its tests, the address and
 # undefined-behaviour sanitizer build and its tests, and the thread
-# sanitizer build and its tests. Run from anywhere; it works in the repository's own
+# sanitizer build and its tests where the host can run it. Run from anywhere; it works in the repository's own
 # build trees. Exits non-zero at the first failure.
 #
 #   tools/ci.sh            everything
@@ -83,6 +83,20 @@ fi
 ASAN_OPTIONS="detect_leaks=$leaks:abort_on_error=1" \
     UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1" \
     ./build-asan/module/hackrfduplex_tests
+
+# ThreadSanitizer cannot run on every host: on arm64 it needs a 39, 42 or
+# 48-bit address space, and a Raspberry Pi 5 kernel with 16K pages gives 47.
+# A host that cannot run a sanitized program skips the step, saying why.
+mkdir -p build-tsan-probe
+printf 'int main() { return 0; }\n' >build-tsan-probe/probe.cpp
+if ! "${CXX:-c++}" -fsanitize=thread build-tsan-probe/probe.cpp -o build-tsan-probe/probe \
+    >build-tsan-probe/probe.log 2>&1 ||
+    ! ./build-tsan-probe/probe >>build-tsan-probe/probe.log 2>&1; then
+    step "thread sanitizer: not available on this host, skipped"
+    while IFS= read -r line; do echo "$line"; done <build-tsan-probe/probe.log
+    step "passed (without the thread sanitizer)"
+    exit 0
+fi
 
 step "thread sanitizer build"
 cmake --preset tsan >/dev/null
