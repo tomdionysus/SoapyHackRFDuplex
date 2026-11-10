@@ -187,9 +187,9 @@ TEST_CASE("the finder settles on the burst before the capture ends, where find d
         burst::Finder finder;
         const std::optional<std::size_t> settled_at = feed(finder, iq, 8192);
         REQUIRE(settled_at);
-        // A burst length of lags past the peak, and at most one FFT block more.
+        // A burst length of lags past the peak, and at most one piece more.
         CHECK(*settled_at >= at + 2 * burst::kChips);
-        CHECK(*settled_at < at + 2 * burst::kChips + 16384 + 8192);
+        CHECK(*settled_at < at + 2 * burst::kChips + 8192);
         const burst::Found early = finder.result();
         const burst::Found whole = burst::find(iq);
         CHECK(early.found);

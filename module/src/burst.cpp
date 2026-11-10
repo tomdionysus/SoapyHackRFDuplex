@@ -63,11 +63,11 @@ Finder::Finder() : reference_(kFftSize), block_(kFftSize) {
     }
 }
 
-void Finder::advance(std::span<const std::int8_t> iq) { correlate(iq, false); }
+void Finder::advance(std::span<const std::int8_t> iq) { correlate(iq); }
 
-void Finder::finish(std::span<const std::int8_t> iq) { correlate(iq, true); }
+void Finder::finish(std::span<const std::int8_t> iq) { correlate(iq); }
 
-void Finder::correlate(std::span<const std::int8_t> iq, bool last) {
+void Finder::correlate(std::span<const std::int8_t> iq) {
     const std::size_t count = iq.size() / 2;
     for (; summed_ < count; ++summed_) {
         sum_i_ += iq[2 * summed_];
@@ -79,14 +79,13 @@ void Finder::correlate(std::span<const std::int8_t> iq, bool last) {
     const std::complex<float> dc(static_cast<float>(sum_i_ / static_cast<double>(count)),
                                  static_cast<float>(sum_q_ / static_cast<double>(count)));
     // Overlap-save: each FFT block yields kFftSize - kChips + 1 lags whose
-    // windows lie wholly inside it. Until the capture is complete only
-    // whole blocks are taken.
+    // windows lie wholly inside it. A block the capture does not yet fill
+    // is padded, and only the lags whose windows the capture covers are
+    // kept, so they are what a full block would give; the next call takes
+    // up from the first lag not kept.
     const std::size_t lags = count - kChips + 1;
     const std::size_t step = kFftSize - kChips + 1;
     for (std::size_t start = magnitude_.size(); start < lags; start = magnitude_.size()) {
-        if (!last && start + kFftSize > count) {
-            return;
-        }
         for (std::size_t i = 0; i < kFftSize; ++i) {
             const std::size_t n = start + i;
             block_[i] = n < count ? std::complex<float>(iq[2 * n], iq[2 * n + 1]) - dc

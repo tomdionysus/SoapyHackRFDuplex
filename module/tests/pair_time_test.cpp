@@ -112,6 +112,9 @@ TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]
     Rig rig;
     rig.open();
     Loopback air(rig.tx, rig.rx, 300);
+    // Transfers a millisecond apart, so the correlation keeps up with the
+    // capture as it does on the boards; unpaced, a slow host fills it first.
+    air.pace_us = 1000;
     rig.pair.activate(Direction::kRx);
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
@@ -126,6 +129,7 @@ TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]
         }
     }
     REQUIRE_FALSE(line.empty());
+    CAPTURE(line);
     unsigned long heard = 0;
     unsigned long could = 0;
     REQUIRE(std::sscanf(line.c_str(), "calibration: burst heard after %lu of the %lu", &heard,

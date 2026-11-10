@@ -49,15 +49,16 @@ Found find(std::span<const std::int8_t> iq);
 
 // The same search over a capture as it fills, so a listener can stop as
 // soon as the burst is certain: each call is handed the capture so far
-// and correlates every FFT block that has become complete. The mean taken
-// out of a block is the mean of the capture as it then stood.
+// and correlates every lag it newly covers. The mean taken out of a lag is
+// the mean of the capture as it stood when the lag was correlated.
 class Finder {
 public:
     Finder();
 
     // `iq`: the capture so far, the last call's with more after it.
     void advance(std::span<const std::int8_t> iq);
-    // The capture is complete: correlates the rest, the last block padded.
+    // The capture is complete. The same as advance(), which already
+    // correlates every lag the capture covers; kept so a caller says so.
     void finish(std::span<const std::int8_t> iq);
 
     // Found, with a burst's length of lags past the peak correlated, so the
@@ -67,7 +68,7 @@ public:
     Found result() const;
 
 private:
-    void correlate(std::span<const std::int8_t> iq, bool last);
+    void correlate(std::span<const std::int8_t> iq);
 
     std::vector<std::complex<float>> reference_;
     std::vector<std::complex<float>> block_;

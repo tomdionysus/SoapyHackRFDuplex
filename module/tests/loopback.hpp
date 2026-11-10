@@ -38,6 +38,9 @@ public:
     std::atomic<bool> paused{false};
     // Keep every byte the transmitter was pulled for; set before it starts.
     std::atomic<bool> record{false};
+    // The wait between transfers, in microseconds. Real transfers are 6.5 ms
+    // or more apart; the default keeps the tests quick.
+    std::atomic<long> pace_us{20};
     // After stop(): what was recorded.
     const std::vector<std::int8_t>& sent() const { return sent_; }
 
@@ -74,7 +77,7 @@ private:
                 rx_.deliver_rx(heard);
             } catch (const std::logic_error&) {
             }
-            std::this_thread::sleep_for(std::chrono::microseconds(20));
+            std::this_thread::sleep_for(std::chrono::microseconds(pace_us.load()));
         }
     }
 

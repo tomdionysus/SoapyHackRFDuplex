@@ -957,12 +957,12 @@ void Pair::calibrate_locked() {
 
     if (!settled) {
         finder.finish(capture.samples(held));
-    } else {
-        log(LogLevel::kDebug, "calibration: burst heard after " + std::to_string(held) +
-                                  " of the " + std::to_string(capture.capacity()) +
-                                  " samples it could take");
     }
     const burst::Found found = finder.result();
+    log(LogLevel::kDebug, "calibration: burst heard after " + std::to_string(held) + " of the " +
+                              std::to_string(capture.capacity()) +
+                              " samples it could take, its peak at sample " +
+                              std::to_string(found.offset));
     char level[64];
     std::snprintf(level, sizeof(level), "%.1f dB", found.peak_over_median_db);
     if (!found.found) {
