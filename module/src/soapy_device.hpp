@@ -58,6 +58,16 @@ public:
     int readStreamStatus(SoapySDR::Stream* stream, size_t& chanMask, int& flags, long long& timeNs,
                          const long timeoutUs) override;
 
+    // Direct access: a CS8 receive stream's ring, one buffer held at a time.
+    // Nothing on a stream in another format, which converts, or on the
+    // transmit stream.
+    size_t getNumDirectAccessBuffers(SoapySDR::Stream* stream) override;
+    int getDirectAccessBufferAddrs(SoapySDR::Stream* stream, const size_t handle,
+                                   void** buffs) override;
+    int acquireReadBuffer(SoapySDR::Stream* stream, size_t& handle, const void** buffs, int& flags,
+                          long long& timeNs, const long timeoutUs) override;
+    void releaseReadBuffer(SoapySDR::Stream* stream, const size_t handle) override;
+
     // Antenna
     std::vector<std::string> listAntennas(const int direction, const size_t channel) const override;
     void setAntenna(const int direction, const size_t channel, const std::string& name) override;
@@ -187,6 +197,8 @@ private:
     static void check_channel(const size_t channel);
     // Both, throwing std::invalid_argument for either.
     static Direction check(const int direction, const size_t channel);
+    // A read's flags, time and return value, as readStream gives them.
+    int report_read(const RxRead& read, int& flags, long long& timeNs) const;
 
     std::unique_ptr<Pair> pair_;
     // Stream handles: addresses of these, one per direction.

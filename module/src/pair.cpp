@@ -1007,6 +1007,47 @@ RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds 
     if (!rx_path_) {
         throw std::logic_error("RX stream not open");
     }
+    const Format format = rx_.format;
+    return read_polled(timeout,
+                       [&](std::chrono::microseconds slice) {
+                           return RxView{rx_path_->read(dst, max_samples, format, slice)};
+                       })
+        .read;
+}
+
+RxView Pair::acquire_read(std::size_t max_samples, std::chrono::microseconds timeout) {
+    if (!rx_path_) {
+        throw std::logic_error("RX stream not open");
+    }
+    return read_polled(timeout, [&](std::chrono::microseconds slice) {
+        return rx_path_->acquire(max_samples, slice);
+    });
+}
+
+void Pair::release_read(std::size_t slot) {
+    if (!rx_path_) {
+        throw std::logic_error("RX stream not open");
+    }
+    rx_path_->release(slot);
+}
+
+std::size_t Pair::rx_slots() const { return rx_path_ ? rx_path_->slots() : 0; }
+
+std::uint8_t* Pair::rx_slot_bytes(std::size_t slot) {
+    if (!rx_path_ || slot >= rx_path_->slots()) {
+        throw std::invalid_argument("no receive buffer " + std::to_string(slot));
+    }
+    return rx_path_->slot_bytes(slot);
+}
+
+Format Pair::stream_format(Direction direction) const {
+    const Side& s = side(direction);
+    const std::lock_guard<std::mutex> lock(s.mutex);
+    return s.format;
+}
+
+RxView Pair::read_polled(std::chrono::microseconds timeout,
+                         const std::function<RxView(std::chrono::microseconds)>& take) {
     const auto deadline = Clock::now() + timeout;
     while (true) {
         poll_boards();
@@ -1014,10 +1055,10 @@ RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds 
             return {};
         }
         if (rx_.shortfall_pending.exchange(false)) {
-            return RxRead{0, 0, true};
+            return RxView{RxRead{0, 0, true}};
         }
-        const RxRead result = rx_path_->read(dst, max_samples, rx_.format, slice_until(deadline));
-        if (result.samples > 0 || result.overflow || Clock::now() >= deadline ||
+        const RxView result = take(slice_until(deadline));
+        if (result.read.samples > 0 || result.read.overflow || Clock::now() >= deadline ||
             !active(Direction::kRx)) {
             return result;
         }

@@ -30,7 +30,7 @@ Documentation:
 | Component | Working | Notes |
 |---|---|---|
 | Discovery and opening a pair | ✓ | two boards pair themselves; more need `rx_serial` and `tx_serial` |
-| Receive stream | ✓ | CS8, CS16, CF32, CF64; a stream time from the board's sample count; overflows reported |
+| Receive stream | ✓ | CS8, CS16, CF32, CF64; a stream time from the board's sample count; overflows reported; direct buffer access in CS8, one buffer at a time |
 | Transmit stream | ✓ | the same formats; end of burst; underflows reported through the stream status |
 | Tuning, filter, gains, bias tee | ✓ | per direction; an overall gain is split over the stages |
 | `hackrfduplex-check` | ✓ | receives, optionally transmits a tone, and reports rates, drops and levels |

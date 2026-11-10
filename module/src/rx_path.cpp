@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 
 #include "convert.hpp"
 
@@ -48,6 +50,41 @@ void RxPath::set_window(std::optional<std::uint64_t> start, std::optional<std::u
 
 RxRead RxPath::read(void* dst, std::size_t max_samples, Format format,
                     std::chrono::microseconds timeout) {
+    if (held_) {
+        throw std::logic_error("read: a direct-access buffer is held; release it first");
+    }
+    const Next n = next(max_samples, timeout);
+    if (n.block == nullptr) {
+        return n.result;
+    }
+    from_native(n.first, format, dst, n.result.samples);
+    commit(n);
+    return n.result;
+}
+
+RxView RxPath::acquire(std::size_t max_samples, std::chrono::microseconds timeout) {
+    if (held_) {
+        throw std::logic_error("acquire: a direct-access buffer is held; one at a time");
+    }
+    const Next n = next(max_samples, timeout);
+    if (n.block == nullptr) {
+        return {n.result};
+    }
+    held_ = n;
+    return {n.result, reinterpret_cast<const std::uint8_t*>(n.first), ring_.index_of(n.block)};
+}
+
+void RxPath::release(std::size_t slot) {
+    if (!held_ || ring_.index_of(held_->block) != slot) {
+        throw std::invalid_argument("release: buffer " + std::to_string(slot) +
+                                    " is not the one held");
+    }
+    const Next n = *held_;
+    held_.reset();
+    commit(n);
+}
+
+RxPath::Next RxPath::next(std::size_t max_samples, std::chrono::microseconds timeout) {
     using Clock = std::chrono::steady_clock;
     const auto deadline = Clock::now() + timeout;
     while (true) {
@@ -76,7 +113,9 @@ RxRead RxPath::read(void* dst, std::size_t max_samples, Format format,
         }
         if (offset_ == 0 && block->position != expected_) {
             expected_ = block->position;
-            return RxRead{0, block->position, true};
+            Next gap;
+            gap.result = RxRead{0, block->position, true};
+            return gap;
         }
         if (window.start && block->position + offset_ < *window.start) {
             offset_ = static_cast<std::size_t>(*window.start - block->position);
@@ -88,27 +127,31 @@ RxRead RxPath::read(void* dst, std::size_t max_samples, Format format,
             taken = static_cast<std::size_t>(std::min<std::uint64_t>(taken, *window.remaining));
             end_burst = taken == *window.remaining;
         }
-        const auto* first = reinterpret_cast<const std::int8_t*>(block->bytes.data()) +
-                            offset_ * kNativeSampleBytes;
-        from_native(first, format, dst, taken);
-        const RxRead result{taken, block->position + offset_, false, end_burst};
-        offset_ += taken;
-        expected_ = block->position + offset_;
-        if (offset_ * kNativeSampleBytes == block->size) {
-            ring_.pop();
-            offset_ = 0;
+        Next n;
+        n.block = block;
+        n.result = RxRead{taken, block->position + offset_, false, end_burst};
+        n.first = reinterpret_cast<const std::int8_t*>(block->bytes.data()) +
+                  offset_ * kNativeSampleBytes;
+        n.generation = window.generation;
+        return n;
+    }
+}
+
+void RxPath::commit(const Next& taken) {
+    const std::size_t samples = taken.result.samples;
+    offset_ += samples;
+    expected_ = taken.block->position + offset_;
+    if (offset_ * kNativeSampleBytes == taken.block->size) {
+        ring_.pop();
+        offset_ = 0;
+    }
+    const std::lock_guard<std::mutex> lock(window_mutex_);
+    if (window_.generation == taken.generation) {
+        window_.start.reset();
+        if (window_.remaining) {
+            *window_.remaining -= samples;
+            window_.done = *window_.remaining == 0;
         }
-        {
-            const std::lock_guard<std::mutex> lock(window_mutex_);
-            if (window_.generation == window.generation) {
-                window_.start.reset();
-                if (window_.remaining) {
-                    *window_.remaining -= taken;
-                    window_.done = *window_.remaining == 0;
-                }
-            }
-        }
-        return result;
     }
 }
 
@@ -117,6 +160,7 @@ void RxPath::reset() {
         const std::lock_guard<std::mutex> lock(window_mutex_);
         window_ = Window{{}, {}, false, window_.generation + 1};
     }
+    held_.reset();
     ring_.reset();
     produced_ = 0;
     received_ = 0;

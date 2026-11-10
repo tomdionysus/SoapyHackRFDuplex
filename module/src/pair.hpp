@@ -169,6 +169,17 @@ public:
     // shortfall on the receiving board is reported once as an overflow.
     // Returns nothing once the board has failed (failed()).
     RxRead read(void* dst, std::size_t max_samples, std::chrono::microseconds timeout);
+    // Reader thread: as read(), the samples left in the ring until
+    // release_read() (RxPath::acquire). Throws std::logic_error with no RX
+    // stream open or one already held.
+    RxView acquire_read(std::size_t max_samples, std::chrono::microseconds timeout);
+    void release_read(std::size_t slot);
+    // The receive ring's slots, and where each one's bytes are; 0 with no
+    // receive stream open.
+    std::size_t rx_slots() const;
+    std::uint8_t* rx_slot_bytes(std::size_t slot);
+    // The format a direction's stream was opened in.
+    Format stream_format(Direction direction) const;
     // What the receive stream delivers from here on (RxPath::set_window):
     // from receive position `start`, `count` samples. Throws
     // std::logic_error with no RX stream open.
@@ -265,6 +276,10 @@ private:
     // found a new shortfall. Takes poll_mutex_; callers may hold a side's.
     bool poll_boards(bool force = false);
     void mark_failed(Direction direction, const std::string& why);
+    // read() and acquire_read(): `take` waits up to its argument for the
+    // ring, between looks at the boards.
+    RxView read_polled(std::chrono::microseconds timeout,
+                       const std::function<RxView(std::chrono::microseconds)>& take);
     // Logs the shortfalls seen and not yet logged: the first at once, the
     // rest at most once a second, or when the stream stops (`now` empty).
     // poll_mutex_ held.

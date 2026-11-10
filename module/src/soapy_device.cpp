@@ -310,7 +310,17 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
     if (!pair_->active(Direction::kRx)) {
         return SOAPY_SDR_STREAM_ERROR;
     }
-    const RxRead read = pair_->read(buffs[0], numElems, timeout_of(timeoutUs));
+    RxRead read;
+    try {
+        read = pair_->read(buffs[0], numElems, timeout_of(timeoutUs));
+    } catch (const std::logic_error& e) {
+        soapy_log(LogLevel::kError, std::string("readStream: ") + e.what());
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
+    return report_read(read, flags, timeNs);
+}
+
+int SoapyDevice::report_read(const RxRead& read, int& flags, long long& timeNs) const {
     flags = 0;
     if (read.overflow) {
         flags |= SOAPY_SDR_END_ABRUPT;
@@ -326,6 +336,53 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
     timeNs = SoapySDR::ticksToTimeNs(static_cast<long long>(read.position) + pair_->time_offset(),
                                      pair_->sample_rate(Direction::kRx));
     return static_cast<int>(read.samples);
+}
+
+size_t SoapyDevice::getNumDirectAccessBuffers(SoapySDR::Stream* stream) {
+    if (direction_of(stream) != Direction::kRx ||
+        pair_->stream_format(Direction::kRx) != Format::kCs8) {
+        return 0;
+    }
+    return pair_->rx_slots();
+}
+
+int SoapyDevice::getDirectAccessBufferAddrs(SoapySDR::Stream* stream, const size_t handle,
+                                            void** buffs) {
+    if (handle >= getNumDirectAccessBuffers(stream)) {
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
+    buffs[0] = pair_->rx_slot_bytes(handle);
+    return 0;
+}
+
+int SoapyDevice::acquireReadBuffer(SoapySDR::Stream* stream, size_t& handle, const void** buffs,
+                                   int& flags, long long& timeNs, const long timeoutUs) {
+    if (getNumDirectAccessBuffers(stream) == 0) {
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
+    if (!pair_->active(Direction::kRx)) {
+        return SOAPY_SDR_STREAM_ERROR;
+    }
+    RxView view;
+    try {
+        view = pair_->acquire_read(pair_->mtu(Direction::kRx), timeout_of(timeoutUs));
+    } catch (const std::logic_error& e) {
+        soapy_log(LogLevel::kError, std::string("acquireReadBuffer: ") + e.what());
+        return SOAPY_SDR_NOT_SUPPORTED;
+    }
+    const int result = report_read(view.read, flags, timeNs);
+    if (result > 0) {
+        handle = view.slot;
+        buffs[0] = view.data;
+    }
+    return result;
+}
+
+void SoapyDevice::releaseReadBuffer(SoapySDR::Stream* stream, const size_t handle) {
+    if (getNumDirectAccessBuffers(stream) == 0) {
+        refuse("releaseReadBuffer", "no direct access on this stream");
+    }
+    pair_->release_read(handle);
 }
 
 int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,

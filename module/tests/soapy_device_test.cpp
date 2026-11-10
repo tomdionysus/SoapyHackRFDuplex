@@ -1129,3 +1129,148 @@ TEST_CASE("time sources are the time_origin setting by another name", "[soapy][s
     CHECK_THROWS_AS(d.setTimeSource("pps"), std::invalid_argument);
     CHECK(d.getTimeSource() == "none");
 }
+
+namespace {
+
+// One direct-access read on a WindowRig: the result, its handle and flags,
+// and the position its first sample carries.
+struct Acquired {
+    int result = 0;
+    std::size_t handle = 0;
+    int flags = 0;
+    long long time_ns = 0;
+    const std::uint8_t* data = nullptr;
+    std::uint64_t first = 0;
+};
+
+Acquired acquire(SoapySDR::Device& d, SoapySDR::Stream* stream, long timeout_us = 0) {
+    Acquired a;
+    const void* buffs[1] = {nullptr};
+    a.result = d.acquireReadBuffer(stream, a.handle, buffs, a.flags, a.time_ns, timeout_us);
+    if (a.result > 0) {
+        a.data = static_cast<const std::uint8_t*>(buffs[0]);
+        a.first = a.data[0] | (static_cast<std::uint64_t>(a.data[1]) << 8);
+    }
+    return a;
+}
+
+}  // namespace
+
+TEST_CASE("a CS8 receive stream offers its ring for direct access", "[soapy][direct]") {
+    SoapyRig rig;
+    rig.rx->transfer_bytes_value = 2048;
+    rig.tx->transfer_bytes_value = 2048;
+    SoapySDR::Device& d = *rig.device;
+    SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8, {}, {{"buffers", "6"}});
+    CHECK(d.getNumDirectAccessBuffers(rx) == 6);
+    for (std::size_t handle = 0; handle < 6; ++handle) {
+        void* buffs[1] = {nullptr};
+        CHECK(d.getDirectAccessBufferAddrs(rx, handle, buffs) == 0);
+        CHECK(buffs[0] != nullptr);
+    }
+    void* beyond[1] = {nullptr};
+    CHECK(d.getDirectAccessBufferAddrs(rx, 6, beyond) == SOAPY_SDR_NOT_SUPPORTED);
+    d.closeStream(rx);
+
+    // Any other format converts, so there is nothing to hand over; nor on
+    // the transmit side.
+    rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32);
+    CHECK(d.getNumDirectAccessBuffers(rx) == 0);
+    REQUIRE(d.activateStream(rx) == 0);
+    CHECK(acquire(d, rx).result == SOAPY_SDR_NOT_SUPPORTED);
+    d.closeStream(rx);
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    CHECK(d.getNumDirectAccessBuffers(tx) == 0);
+    std::size_t handle = 0;
+    void* buffs[1] = {nullptr};
+    CHECK(d.acquireWriteBuffer(tx, handle, buffs, 0) == SOAPY_SDR_NOT_SUPPORTED);
+    d.closeStream(tx);
+}
+
+TEST_CASE("direct access hands over the transfers in place, stamped as reads are",
+          "[soapy][direct]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    REQUIRE(d.activateStream(rig.stream) == 0);
+    CHECK(acquire(d, rig.stream).result == SOAPY_SDR_TIMEOUT);
+    rig.deliver(3);
+    for (std::uint64_t transfer = 0; transfer < 3; ++transfer) {
+        const Acquired a = acquire(d, rig.stream);
+        REQUIRE(a.result == 1024);
+        CHECK(a.first == transfer * 1024);
+        CHECK((a.flags & SOAPY_SDR_HAS_TIME) != 0);
+        CHECK(a.time_ns == WindowRig::ns(static_cast<long long>(transfer * 1024)));
+        // In the ring itself, not a copy.
+        void* buffs[1] = {nullptr};
+        REQUIRE(d.getDirectAccessBufferAddrs(rig.stream, a.handle, buffs) == 0);
+        CHECK(static_cast<const void*>(a.data) == buffs[0]);
+        // One at a time: a second before the release is refused, as is a
+        // read meanwhile.
+        CHECK(acquire(d, rig.stream).result == SOAPY_SDR_NOT_SUPPORTED);
+        CHECK(rig.read().result == SOAPY_SDR_NOT_SUPPORTED);
+        d.releaseReadBuffer(rig.stream, a.handle);
+    }
+    CHECK_THROWS_AS(d.releaseReadBuffer(rig.stream, 0), std::invalid_argument);
+    // Reads and direct access mix, each taking up where the other left off.
+    rig.deliver(2);
+    const WindowRig::Read part = rig.read(100);
+    CHECK(part.first == 3072);
+    const Acquired rest = acquire(d, rig.stream);
+    CHECK(rest.result == 924);
+    CHECK(rest.first == 3172);
+    d.releaseReadBuffer(rig.stream, rest.handle);
+    CHECK(acquire(d, rig.stream).first == 4096);
+}
+
+TEST_CASE("direct access reports gaps and keeps to a timed window", "[soapy][direct]") {
+    WindowRig rig;
+    SoapySDR::Device& d = *rig.device;
+    // Stream position 1500 on, 1000 samples.
+    REQUIRE(d.activateStream(rig.stream, SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST,
+                             WindowRig::ns(1500), 1000) == 0);
+    rig.deliver(4);
+    const Acquired first = acquire(d, rig.stream);
+    REQUIRE(first.result == 548);
+    CHECK(first.first == 1500);
+    CHECK(first.time_ns == WindowRig::ns(1500));
+    CHECK((first.flags & SOAPY_SDR_END_BURST) == 0);
+    d.releaseReadBuffer(rig.stream, first.handle);
+    const Acquired last = acquire(d, rig.stream);
+    REQUIRE(last.result == 452);
+    CHECK(last.first == 2048);
+    CHECK((last.flags & SOAPY_SDR_END_BURST) != 0);
+    d.releaseReadBuffer(rig.stream, last.handle);
+    CHECK(acquire(d, rig.stream).result == SOAPY_SDR_TIMEOUT);
+}
+
+TEST_CASE("direct access reports an overflow and a failed board as reads do", "[soapy][direct]") {
+    RxRig rig;
+    REQUIRE(rig.activated == 0);
+    SoapySDR::Device& d = *rig.device;
+    // The ring holds 15; twenty drop five whole transfers, which show as a
+    // gap once the next one comes.
+    for (int i = 0; i < 20; ++i) {
+        rig.rx->deliver_rx(std::vector<std::uint8_t>(2048, 0));
+    }
+    int overflows = 0;
+    for (int i = 0; i < 18; ++i) {
+        if (i == 15) {
+            rig.rx->deliver_rx(std::vector<std::uint8_t>(2048, 0));
+        }
+        const Acquired a = acquire(d, rig.stream);
+        if (a.result == SOAPY_SDR_OVERFLOW) {
+            ++overflows;
+            CHECK((a.flags & SOAPY_SDR_END_ABRUPT) != 0);
+        } else if (a.result > 0) {
+            d.releaseReadBuffer(rig.stream, a.handle);
+        }
+    }
+    CHECK(overflows == 1);
+    rig.rx->stopped_itself = true;
+    int result = 0;
+    const auto start = std::chrono::steady_clock::now();
+    while (result != SOAPY_SDR_STREAM_ERROR && since(start) < std::chrono::milliseconds(500)) {
+        result = acquire(d, rig.stream, 50000).result;
+    }
+    CHECK(result == SOAPY_SDR_STREAM_ERROR);
+}

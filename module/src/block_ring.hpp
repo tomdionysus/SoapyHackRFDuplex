@@ -40,6 +40,11 @@ public:
 
     std::size_t slots() const { return slots_.size(); }
     std::size_t block_bytes() const { return block_bytes_; }
+    // The slots themselves, for handing a consumer's block out in place.
+    Block& slot(std::size_t index) { return slots_.at(index); }
+    std::size_t index_of(const Block* block) const {
+        return static_cast<std::size_t>(block - slots_.data());
+    }
     // Blocks published and not yet popped.
     std::size_t size() const;
 

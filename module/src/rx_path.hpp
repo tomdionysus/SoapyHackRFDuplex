@@ -28,6 +28,15 @@ struct RxRead {
     bool end_burst = false;
 };
 
+// A read's samples left where they lie in the ring (RxPath::acquire).
+struct RxView {
+    RxRead read;
+    // The first sample, when read.samples is not 0.
+    const std::uint8_t* data = nullptr;
+    // The ring slot holding them, to give to release().
+    std::size_t slot = 0;
+};
+
 // Called on the board's thread with each transfer's stream position and
 // its native bytes, whether or not the ring had room for it.
 using RxTap = std::function<void(std::uint64_t, std::span<const std::uint8_t>)>;
@@ -42,6 +51,9 @@ public:
 
     // Samples per transfer, the most one read() returns.
     std::size_t mtu() const { return ring_.block_bytes() / kNativeSampleBytes; }
+    std::size_t slots() const { return ring_.slots(); }
+    // A slot's bytes, wherever its block is in the stream.
+    std::uint8_t* slot_bytes(std::size_t slot) { return ring_.slot(slot).bytes.data(); }
 
     // Board thread.
     void on_transfer(std::span<const std::uint8_t> bytes);
@@ -51,8 +63,16 @@ public:
     void set_tap(RxTap tap);
 
     // Reader: up to `max_samples` into `dst`, waiting at most `timeout`.
+    // Throws std::logic_error while acquire() holds a block.
     RxRead read(void* dst, std::size_t max_samples, Format format,
                 std::chrono::microseconds timeout);
+    // Reader: as read(), but the samples stay in the ring, native, and the
+    // block holding them is held until release(): one at a time, so this
+    // and read() throw std::logic_error while one is held.
+    RxView acquire(std::size_t max_samples, std::chrono::microseconds timeout);
+    // Reader: gives back what acquire() handed out. Throws
+    // std::invalid_argument for any other slot.
+    void release(std::size_t slot);
 
     // Any thread: what the reader delivers from here on. With `start`, the
     // samples before that position are dropped and the first read begins
@@ -71,7 +91,20 @@ public:
     std::uint64_t dropped() const { return dropped_.load(); }
 
 private:
+    // What the next read delivers: `block` null when it delivers nothing
+    // (a timeout or a gap, in `result`).
+    struct Next {
+        Block* block = nullptr;
+        RxRead result;
+        const std::int8_t* first = nullptr;
+        std::uint64_t generation = 0;
+    };
+    Next next(std::size_t max_samples, std::chrono::microseconds timeout);
+    // Moves past what `taken` delivered.
+    void commit(const Next& taken);
+
     BlockRing ring_;
+    std::optional<Next> held_;
     // Producer's: where the next transfer starts.
     std::uint64_t produced_ = 0;
     std::atomic<std::uint64_t> received_{0};

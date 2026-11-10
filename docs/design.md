@@ -129,7 +129,7 @@ channel, 0, each way).
 | `writeStream` | `SOAPY_SDR_HAS_TIME`, `SOAPY_SDR_END_BURST`, `SOAPY_SDR_ONE_PACKET`; any other flag `SOAPY_SDR_NOT_SUPPORTED` |
 | `readStreamStatus` | transmit: underflow, time error, stream error; receive: `SOAPY_SDR_NOT_SUPPORTED` |
 | `getStreamMTU` | one transfer of samples |
-| `acquireReadBuffer` and the rest of direct access | SoapySDR's: not supported (item 11 adds CS8) |
+| `acquireReadBuffer`, `releaseReadBuffer`, `getNumDirectAccessBuffers`, `getDirectAccessBufferAddrs` | a CS8 receive stream's ring, the samples handed over where they lie, one buffer held at a time (a second acquire, or a read, before the release: `SOAPY_SDR_NOT_SUPPORTED`); flags, times, overflows, windows and errors as `readStream`; other formats and the transmit stream: no buffers, `SOAPY_SDR_NOT_SUPPORTED` |
 | antennas | `TX/RX`, the one port |
 | gains | overall, and `LNA`, `VGA`, `AMP` (receive), `VGA`, `AMP` (transmit); automatic gain refused |
 | `setFrequency`, `getFrequency` | the `RF` component only; tuning arguments refused |
