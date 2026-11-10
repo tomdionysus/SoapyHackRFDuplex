@@ -77,6 +77,20 @@ on hardware Tom does not have yet.
   the target stay at about 30 s, with the power read before and after;
   the ten-minute lead confirmations (item 2), the ten-minute 20 Msps run
   (item 11) and the soak (item 15) wait until Tom has sorted the power.
+- 2026-11-10, 02:16 GMT: the target rebooted again, this time during
+  `tools/ci-pi.sh` (the address sanitizer tests), with both boards idle
+  and nothing transmitting; seven full CI runs had passed on it earlier
+  that day. So the reboots are not down to the boards streaming alone.
+  Nothing more is run there until Tom says. Waiting on the target: the CI
+  for the eight commits after `131d8ab` (they pass on the workstation in
+  the release, address and thread sanitizer builds, 141 test cases, and
+  passed on the target before the last fix to `burst::Finder`), so they
+  are not pushed; item 9's probe of `ref_locked` and `time_locked`; item
+  10's activation times; item 11's CPU table; item 2 at 11.52, 15.36 and
+  20 Msps. Item 2 so far, 30 s runs, three starts each: 5 transfers clean
+  and 4.75 late on every write at 2 and 8 Msps, with the default ring and
+  with 4 buffers alike (327.7 and 81.9 ms); the ring depth does not move
+  it. The ten-minute confirmations are not done.
 
 Nothing blocks the work. Decided 2026-11-09 and recorded under standing
 decisions: the target's bench, its power, the transmit underrun limit,
