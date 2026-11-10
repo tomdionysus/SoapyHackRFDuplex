@@ -2,7 +2,11 @@
 #include "hackrf_board.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <thread>
+
+#include "m0.hpp"
 
 namespace hackrfduplex {
 
@@ -218,16 +222,36 @@ void HackrfBoard::set_hardware_sync(bool on) {
     check(hackrf_set_hw_sync_mode(device_, on ? 1 : 0), "set hardware sync");
 }
 
+M0Reading HackrfBoard::read_m0() {
+    hackrf_m0_state state{};
+    check(hackrf_get_m0_state(device_, &state), "read m0 state");
+    return M0Reading{state.active_mode, state.m0_count, state.num_shortfalls, state.error};
+}
+
+void HackrfBoard::await_m0(const std::function<bool(const M0Reading&)>& done,
+                           const std::string& what) {
+    // A few milliseconds in practice: the M4 passes the request on between
+    // other work. Polled, as the firmware has no way to say.
+    constexpr auto kLimit = std::chrono::milliseconds(500);
+    const auto deadline = std::chrono::steady_clock::now() + kLimit;
+    while (!done(read_m0())) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            throw BoardError(what + " within 500 ms");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
 StreamHealth HackrfBoard::stream_health() {
     const std::lock_guard<std::mutex> lock(mutex_);
     if (!reports_clkin_) {
         return {};
     }
-    hackrf_m0_state state{};
-    check(hackrf_get_m0_state(device_, &state), "read m0 state");
     // The M0 sets an error (1 receive, 2 transmit timeout) as it drops to
-    // idle over a shortfall past its limit, and clears it at the next start.
-    return StreamHealth{state.num_shortfalls, state.error != 0};
+    // idle over a shortfall past its limit, and clears it at the next start,
+    // which start() waits for.
+    const M0Reading m0 = read_m0();
+    return StreamHealth{m0.shortfalls, m0.error != 0};
 }
 
 bool HackrfBoard::set_tx_underrun_limit(std::uint32_t samples) {
@@ -261,9 +285,29 @@ int HackrfBoard::tx_trampoline(hackrf_transfer* transfer) {
 
 void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
                         hackrf_sample_block_cb_fn callback, const char* what) {
+    // Until the M0 takes up the start it reads as the stream before did,
+    // shortfalls and error included (m0.hpp), so the start is not done
+    // until it has.
+    const std::optional<M0Reading> before =
+        reports_clkin_ ? std::optional<M0Reading>(read_m0()) : std::nullopt;
+    auto took_up = [&] {
+        if (!before) {
+            return;
+        }
+        try {
+            await_m0([&](const M0Reading& now) { return m0_took_up_start(*before, now); },
+                     std::string(what) + ": the board's streaming engine did not start");
+        } catch (const BoardError&) {
+            hackrf_stop_rx(device_);
+            hackrf_stop_tx(device_);
+            streaming_ = false;
+            throw;
+        }
+    };
     check(begin(device_, callback, this), what);
     if (hackrf_is_streaming(device_) == HACKRF_TRUE) {
         streaming_ = true;
+        took_up();
         return;
     }
     // The board accepted the command but its transfer thread is not
@@ -279,6 +323,7 @@ void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, 
                          hackrf_error_name(static_cast<hackrf_error>(state)) + ")");
     }
     streaming_ = true;
+    took_up();
 }
 
 void HackrfBoard::start_rx(RxHandler handler) {
@@ -314,6 +359,11 @@ void HackrfBoard::stop() {
     tx_ = nullptr;
     if (rx != HACKRF_SUCCESS && tx != HACKRF_SUCCESS) {
         check(rx, "stop");
+    }
+    // The M0 runs on in its mode until the M4 passes the stop on; a start
+    // before then would take the old stream's state for the new one's.
+    if (reports_clkin_) {
+        await_m0(m0_idle, "stop: the board's streaming engine did not go idle");
     }
 }
 

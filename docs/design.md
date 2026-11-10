@@ -467,7 +467,16 @@ long its timeout.
   rest at most once a second, with their count, and any left when the
   stream stops: at 20 Msps on the target a starved stream falls short
   at every poll. The firmware counts shortfalls from each start, and so
-  does the pair.
+  does the pair. It zeroes the count, and the error a self-stop leaves,
+  only when its M0 takes the start up, a few milliseconds after the USB
+  request is acknowledged; until then they read as the last stream left
+  them, even another process's. So a board's start returns only once
+  the M0 has left idle or its counts have moved, and its stop only once
+  the M0 is idle, each within 500 ms or the call fails (`m0.hpp`). Before
+  that, a start after a stream with shortfalls read the old count and
+  then the zero as a restart under the stream (found on the target,
+  2026-11-10: a 2 Msps start after a starved 20 Msps run failed 3 times
+  in 3, and with the wait 0 in 3).
 - A board whose transfers have stopped, on which a libhackrf call fails
   (as on one pulled from the bus), or whose shortfall count goes back,
   which only a start under the stream does, has failed: the error is logged

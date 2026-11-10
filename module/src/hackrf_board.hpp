@@ -5,11 +5,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "board.hpp"
+#include "m0.hpp"
 
 namespace hackrfduplex {
 
@@ -71,6 +74,11 @@ private:
     void start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
                hackrf_sample_block_cb_fn callback, const char* what);
     static void check(int result, const char* what);
+    // The M0's state; the caller holds mutex_.
+    M0Reading read_m0();
+    // Reads the M0 until `done`, for at most 500 ms, then throws BoardError
+    // with `what`. The caller holds mutex_.
+    void await_m0(const std::function<bool(const M0Reading&)>& done, const std::string& what);
 
     HackrfSession session_;
     std::string serial_;

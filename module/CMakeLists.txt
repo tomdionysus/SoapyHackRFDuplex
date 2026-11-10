@@ -16,7 +16,8 @@ add_library(hackrfduplex_core STATIC
     src/pair.cpp
     src/selection.cpp
     src/fft.cpp
-    src/burst.cpp)
+    src/burst.cpp
+    src/m0.cpp)
 target_include_directories(hackrfduplex_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/generated)
@@ -55,7 +56,8 @@ if(HACKRFDUPLEX_BUILD_TESTS)
         tests/pair_test.cpp
         tests/selection_test.cpp
         tests/burst_test.cpp
-        tests/pair_time_test.cpp)
+        tests/pair_time_test.cpp
+        tests/m0_test.cpp)
     target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_core Catch2::Catch2WithMain)
     if(HACKRFDUPLEX_BUILD_MODULE)
         target_sources(hackrfduplex_tests PRIVATE tests/soapy_device_test.cpp)
