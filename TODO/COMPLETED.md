@@ -3,6 +3,89 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-10: performance
+
+Item 11, accepted on the target with 20 Msps recorded as the host's
+limit. The check tool reports process CPU and receives in any format or
+through direct buffer access (`--rx-format`, `--direct`,
+`--no-analysis`); a CS8 receive stream offers SoapySDR direct buffer
+access (`[direct]` tests); `convert.cpp` is built at -O3, where GCC
+vectorises its loops (float to native 5.1 to 1.4 ns a sample, CS16 2.0
+to 0.5), and a test pins the float rounding over every tie. The table
+and the conversions' timings are in `docs/design.md`, "Rates and CPU on
+the target". Receiving 20 Msps costs the module 2 to 5% of a core;
+full duplex at 16 Msps 25 to 30% for the whole process. The 20 Msps
+limit is the target's USB: `hackrf_transfer` alone with stock libhackrf
+moves only 36.7 to 37.0 MB/s of 40 transmitting from either board, with
+a board shortfall per 16 KiB, and receives with 977 to 5633 shortfalls
+in 4 s; it transmits cleanly at 16 Msps and below. So the ten minutes
+were run at 16 Msps instead: full duplex in CF32, 9.60 G samples
+received at 100.0% of nominal, one overflow (the activation backlog),
+no shortfall, 0 underflows, the origin held, 25% of one core. At 18
+Msps the transmitter falls short. The first 81% at 20 Msps was the check
+tool's analysis (95% of a core alone; the module 5%). Power `0x50000`
+throughout.
+
+## 2026-11-10: a start no longer reads the last stream's M0 state
+
+Found on the target while measuring item 10, fixed in `95872c8`. The
+firmware acknowledges a start from its USB interrupt and its M0 zeroes
+the shortfall count and error only when it takes the start up, a few
+milliseconds later; moving to idle never zeroes them
+(`sgpio_m0.s`, "Don't reset counts on a transition to IDLE"). A poll in
+between read the previous stream's count, even another process's, then
+the zero, and the pair failed the board as restarted under the stream.
+After a 20 Msps run that left 1477, 1430 and 1423 shortfalls on the RX
+board, three 2 Msps starts in three failed naming exactly those counts;
+after a clean 8 Msps run, the same start was clean. `HackrfBoard` now
+returns from a start once the M0 has left idle or its counts have moved
+(`m0.hpp`, tested), and from a stop once the M0 is idle, each within
+500 ms. With the wait, after stale counts of 1507, 1463 and 1434, three
+starts in three found their origin. The same wait covers the error a
+self-stop leaves (item 6's kill test leaves 2). The origin at start moved
+by about 2 ms of samples (+4765 to +8765 at 2 Msps), the starts' new
+spacing; timed bursts still land at +0 (1217 at 8 Msps, 302 at 2 Msps).
+Before item 4 made a count that goes back fatal, the stale count read as
+a shortfall and lost the origin at start instead. Power `0x50000`
+throughout.
+
+## 2026-11-10: bounded activation, calibration ends early
+
+Item 10, accepted on the target. Calibration correlates the capture as
+it fills (`burst::Finder`) and stops once a peak clears the threshold
+with a burst's length of correlation past it. Tests: `[burst]` Finder
+cases, and "calibration stops listening once the burst is certain"
+against the fake. On the target, the second activation (full duplex, a
+100 kHz tone at TX gain 0, `--no-analysis`), three starts each, the
+module at `ace0dd8` against the module after `111c15e`, both through
+today's check tool:
+
+| Rate | Before (s) | After (s) |
+|---|---|---|
+| 2 Msps | 2.46, 2.46, 2.46 | 0.58, 0.65, 0.59 |
+| 8 Msps | 1.17, 1.25, 1.16 | 0.24, 0.29, 0.38 |
+| 20 Msps | 1.00, 1.02, 1.00 | 0.65, 0.76, 0.51 |
+
+At 20 Msps neither finds an origin: both boards fall short of the host
+at that rate (item 11), so the burst is never trusted. Ten calibrations
+in one run at 8 Msps: +18167 every time, spread 0 samples over 11
+findings; three more runs of three each at 2 and 8 Msps, spread 0. The
+remaining activation time is the transmit ring draining ahead of the
+burst, which is placed behind everything already queued. Power
+`0x50000` throughout.
+
+## 2026-11-10: device sensors ref_locked and time_locked
+
+Item 9, accepted on the target. `listSensors()` gives `ref_locked` (the
+boards share one reference, from the CLKIN and CLKOUT state each board
+had when last idle) and `time_locked` (an origin holds), booleans read
+without touching the boards. Tests: `[sensors]`, four cases. On the
+target, receive only: with `--clkout off`, `ref_locked` false before,
+during and after (TX on its own crystal); with `--clkout rx`, true
+throughout. Full duplex with `--clkout rx`: `time_locked` false before
+the start, true while both streams run, false once they stop. Power
+`0x50000`.
+
 ## 2026-11-10: timed receive windows
 
 Item 7, accepted on the target. `activateStream` on the receive stream

@@ -296,8 +296,48 @@ With transmit, the receive rate reads 102 to 108% of nominal and there is
 one overflow: the receive ring fills while activation calibrates, and
 the check tool's clock starts after that, so the backlog is counted
 within the run. That is the check tool's accounting, not the rate.
-20 Msps receive through the check tool reaches only 81% here, with USB
-alone carrying the full rate (ACTIVE item 11).
+
+#### Rates and CPU on the target
+
+The target's USB carries neither direction cleanly at 20 Msps, with or
+without the module. `hackrf_transfer` alone, stock libhackrf, either
+board: receiving 20 Msps it moves the full 39.8 MB/s but the board's M0
+falls short 977 to 5633 times in 4 s; transmitting zeros at 20 Msps it
+moves 36.7 to 37.0 MB/s of 40 and falls short 9765 times in 4 s, once
+per 16 KiB the firmware moves. Transmitting at 16, 15.36 and 12 Msps it
+falls short not at all. The module's 95 receive overflows in 10 s at 20
+Msps, the same in every format, are those shortfalls. The 81% first
+measured here was the check tool's own analysis: receiving 20 Msps in
+CF32 it now takes 95% of a core with its analysis and 5% without, and
+reaches 99.8% of nominal since its window became a table.
+
+Process CPU through the check tool, `--no-analysis`, so what is counted
+is the module, libhackrf and the tool's loops, as a share of one core:
+
+| Run | CS8 | CS16 | CF32 | CF64 | CS8, direct access |
+|---|---|---|---|---|---|
+| Receive, 8 Msps | 1% | 3% | 3% | 3% | 1% |
+| Receive, 20 Msps, conversions at -O2 | 3% | 8% | 7% | 8% | 2% |
+| Receive, 20 Msps, conversions at -O3 | | 4% | 5% | | |
+| Full duplex, 11.52 Msps, both ways in the format | 21% | | | | |
+| Full duplex, 15.36 Msps | 27% | | 29% | | |
+| Full duplex, 16 Msps | 28% | | 30% | | |
+
+The conversions alone (`to_native`, `from_native`, timed on the target
+over 20 M samples): at -O2, which GCC's cheapest cost model leaves
+unvectorised, float to native 5.1 ns a sample and native to float 1.7;
+at -O3, 1.4 and 1.1, CS16 0.5 each way. `convert.cpp` is built at -O3.
+Full duplex is clean through 16 Msps in CF32 and CS8 (no shortfall, the
+origin found, one overflow from the activation backlog); at 18 Msps the
+transmitter falls short of the host, and no origin holds. With the
+check tool's own analysis on, CF32 full duplex overflows from 15.36
+Msps (110% of a core): the tool's spectrum, not the module.
+
+Ten minutes of full duplex at 16 Msps in CF32, `--tx-tone 100e3
+--no-analysis --seconds 600`: 9.60 G samples received, 100.0% of
+nominal, one overflow (the activation backlog), no shortfall, 0
+underflows, the origin held throughout, 25% of one core. Power `0x50000`
+before and after.
 
 ### On the workstation
 

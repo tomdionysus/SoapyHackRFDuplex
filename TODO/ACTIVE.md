@@ -33,7 +33,7 @@ run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
 Work the items in order. Item 2 finishes measuring the hardware time
-(items 1 and 3 to 8 are done), items 9 to 16 take the module to
+(items 1 and 3 to 11 are done), items 12 to 16 take the module to
 the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
 on hardware Tom does not have yet.
 
@@ -63,34 +63,28 @@ on hardware Tom does not have yet.
   transmitter stops itself within its underrun limit, the probe lists
   everything as designed, and timed receive windows catch timed bursts
   to the sample. 128 test cases.
+- 2026-11-10, later: items 9 and 10 accepted on the target, and a start
+  that read the previous stream's M0 state fixed (COMPLETED.md). 146
+  test cases. The target's USB carries neither direction cleanly at 20
+  Msps, with the stock tools as with the module; full duplex is clean
+  through 16 Msps, ten minutes of it at 25% of a core (item 11).
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
-## Waits on Tom
+## The target's power
 
-- The target's power. On 2026-11-09 at about 17:20 the target rebooted
-  about two minutes into a 600 s full-duplex run at 2 Msps (the lead
-  sweep, item 2); it booted again at 01:14 GMT on 2026-11-10 with no run
-  of this work going since the first. The journal keeps only the
-  current boot, so neither cause is recorded. Tom, 2026-11-10: "keep runs
-  short, and do all you can until I need to sort this out." So runs on
-  the target stay at about 30 s, with the power read before and after;
-  the ten-minute lead confirmations (item 2), the ten-minute 20 Msps run
-  (item 11) and the soak (item 15) wait until Tom has sorted the power.
-- 2026-11-10, 02:16 GMT: the target rebooted again, this time during
-  `tools/ci-pi.sh` (the address sanitizer tests), with both boards idle
-  and nothing transmitting; seven full CI runs had passed on it earlier
-  that day. So the reboots are not down to the boards streaming alone.
-  Nothing more is run there until Tom says. Waiting on the target: the CI
-  for the eight commits after `131d8ab` (they pass on the workstation in
-  the release, address and thread sanitizer builds, 141 test cases, and
-  passed on the target before the last fix to `burst::Finder`), so they
-  are not pushed; item 9's probe of `ref_locked` and `time_locked`; item
-  10's activation times; item 11's CPU table; item 2 at 11.52, 15.36 and
-  20 Msps. Item 2 so far, 30 s runs, three starts each: 5 transfers clean
-  and 4.75 late on every write at 2 and 8 Msps, with the default ring and
-  with 4 buffers alike (327.7 and 81.9 ms); the ring depth does not move
-  it. The ten-minute confirmations are not done.
+- The target rebooted three times on 2026-11-09 and 10: once two
+  minutes into a 600 s full-duplex run, once with nothing of this work
+  running, and once during the CI's sanitizer tests with the boards
+  idle. The journal keeps only the current boot, so no cause is
+  recorded. Tom, 2026-11-10, asked whether and how hard to use it: "Yes,
+  go for it." So long runs are back; the power is still read before and
+  after every run, and another reboot stops hardware work until Tom has
+  seen it.
+- ThreadSanitizer cannot run on the target: on arm64 it needs a 39, 42
+  or 48-bit address space and the Pi 5's 16K-page kernel gives 47, with
+  GCC 14 and clang 19 alike. `tools/ci.sh` skips the step there, saying
+  so; the workstation still runs it.
 
 Nothing blocks the work. Decided 2026-11-09 and recorded under standing
 decisions: the target's bench, its power, the transmit underrun limit,
@@ -207,49 +201,17 @@ first, by Tom's choice; 1.0.0 after it has been used):
   Figures so far, from the workstation before the boards moved: 2 Msps
   clean at 5.25 transfers (default buffers) and 5.5 (buffers 4, where
   5.25 had 4 late writes in ten minutes); 8 Msps clean at 5.0 for 30 s.
+  On the target, 2026-11-10, 30 s runs, three starts each: 5 transfers
+  clean and 4.75 late on every write at 2 and 8 Msps, with the default
+  ring and with 4 buffers alike (327.7 and 81.9 ms); the ring depth does
+  not move it. The ten-minute confirmations are not done. 20 Msps cannot
+  be clean on the target (item 11), so its point is 16 Msps instead.
   Every write is late or none is, and the threshold moves by up to a
   transfer between starts, because it depends on how the two boards'
   transfer boundaries fall: so measure several starts per point and
   state the worst. Acceptance: the table in `docs/design.md` "Measured",
   the `buffers` default revisited in its light, and the README's
   hardware time paragraph stating the lead a writer should allow.
-
-### 9. Device-level sensors
-
-- [ ] Beside the per-channel `lo_locked`: `ref_locked` (the boards share
-  one reference: the fed board sees its CLKIN and the other drives
-  CLKOUT) and `time_locked` (an origin holds), both booleans, read
-  without disturbing the streams. Clock-chip registers read as zero
-  while a board streams, so `ref_locked` comes from CLKIN status, not
-  the registers. Acceptance: fake-board tests for both; on the target,
-  `ref_locked` false with `clkout=off` and true with `clkout=rx`, and
-  `time_locked` following the streams.
-
-### 10. Bounded activation and an early end to calibration
-
-- [ ] Calibration listens for its worst case (about 27 transfers, 0.45 s
-  at 8 Msps, 1.8 s at 1.92 Msps) inside `activateStream`, and a reader
-  not yet running overflows meanwhile. Correlate transfer by transfer
-  as the capture fills and stop at a peak that clears the threshold
-  with the burst's full length behind it. Acceptance: fake-board tests
-  that it stops early and finds the same origin; on the target the
-  activation time at 2, 8 and 20 Msps before and after, and the origin
-  unchanged across ten calibrations.
-
-### 11. Performance
-
-- [ ] On the target, 20 Msps receive through the check tool reached only
-  81% with 265 overflows while USB alone carried the full rate: find
-  where the CPU goes (the check tool's spectrum calls `cos()` per sample;
-  the module converts per sample too). Measure CPU per direction and
-  format at 2, 8 and 20 Msps (the check tool reporting process CPU
-  time), make the conversions vectorise by hand-written loops the
-  compiler can auto-vectorise (no library), and add SoapySDR's direct
-  buffer access (`acquireReadBuffer` and friends) for CS8, so a
-  native-format reader copies nothing. Acceptance: before and after
-  table in `docs/design.md`; direct access tests against the fake; full
-  duplex at 20 Msps both ways for ten minutes on the target with no
-  overflow, underflow or shortfall, or the limit and its cause recorded.
 
 ### 12. Optional DSP: DC removal and I/Q balance on receive
 

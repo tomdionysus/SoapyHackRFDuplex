@@ -34,7 +34,7 @@ Documentation:
 | Transmit stream | ✓ | the same formats; end of burst; underflows reported through the stream status |
 | Tuning, filter, gains, bias tee | ✓ | per direction; an overall gain is split over the stages |
 | `hackrfduplex-check` | ✓ | receives, optionally transmits a tone, and reports rates, drops and levels |
-| Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow |
+| Receive verified on two boards | ✓ | 2, 8 and 20 Msps for 10 s without an overflow on an Intel Mac; on a Raspberry Pi 5, full duplex clean for ten minutes at 16 Msps |
 | Transmit verified on two boards | ✓ | a tone in each of CS8, CS16, CF32 and CF64 received at exactly its sent offset, levels within 0.3 dB, 0 underflows |
 | Shared reference clock | ✓ | the `clkout` setting; one TCXO board drives both through a CLKOUT to CLKIN cable; a board whose reference changes at a stream start is retuned and restarted, so it can be switched freely between runs |
 | Hardware time and timed transmit | ✓ | one time for both streams, from a calibration burst when both start; timed bursts land at the sample asked for |
@@ -144,7 +144,11 @@ Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
 and switches the amplifier on only when the others cannot reach it.
 Sample rates 0.2 to 20 Msps for receive and 1.2 to 20 Msps for
 transmit, as measured ([docs/design.md](docs/design.md), Low sample
-rates); 8 Msps and up give the cleanest spectrum. The baseband filter
+rates); 8 Msps and up give the cleanest spectrum. The host's USB sets
+the top in practice: on a Raspberry Pi 5 full duplex is clean through
+16 Msps, while at 20 Msps the boards fall short of the host in both
+directions, with `hackrf_transfer` as with the module
+([docs/design.md](docs/design.md), Rates and CPU on the target). The baseband filter
 follows the rate at three quarters of it until set, never narrower than
 1.75 MHz, and a set bandwidth rounds down to the nearest of the
 MAX2837's filters.
@@ -231,7 +235,7 @@ SoapySDR device. Open work toward the 0.2.0 release is in
    and time sources, reference and time sensors, unsupported calls
    refused rather than ignored.
 4. Shorter activation, measured CPU use, zero-copy reads, full duplex at
-   20 Msps.
+   the host's limit.
 5. Optional receive DC removal and I/Q balance correction, compiled in
    only on request, using liquid-dsp.
 6. Quality gates, application compatibility, a hardware acceptance
