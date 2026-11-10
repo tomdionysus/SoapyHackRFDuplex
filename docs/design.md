@@ -148,7 +148,7 @@ channel, 0, each way).
 | antennas | `TX/RX`, the one port |
 | gains | overall, and `LNA`, `VGA`, `AMP` (receive), `VGA`, `AMP` (transmit); automatic gain refused |
 | `setFrequency`, `getFrequency` | the `RF` component only; tuning arguments refused |
-| `setSampleRate`, ranges, lists | passed through; ranges as measured (Low sample rates) |
+| `setSampleRate`, ranges, lists | ranges as measured (Low sample rates): receive 0.2 to 20 Msps, transmit 1.2 to 20 Msps; a rate outside its direction's range refused, naming the range, and the rate before kept |
 | `setBandwidth`, ranges, lists | the filter widths, rounding down; 0 or less for the automatic filter |
 | DC offset, I/Q balance, frequency correction | none: the neutral value (off, zero) accepted, any other refused (item 12 adds DC and I/Q on receive as a build option) |
 | hardware time | the receive count plus an offset; no named time sources |

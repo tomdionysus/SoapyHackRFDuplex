@@ -175,6 +175,35 @@ TEST_CASE("each direction advertises the sample rates measured to work", "[soapy
     }
 }
 
+TEST_CASE("a sample rate outside the advertised range is refused by name", "[soapy]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    // The ends themselves are in range.
+    CHECK_NOTHROW(d.setSampleRate(SOAPY_SDR_RX, 0, 200e3));
+    CHECK_NOTHROW(d.setSampleRate(SOAPY_SDR_TX, 0, 1.2e6));
+    CHECK_NOTHROW(d.setSampleRate(SOAPY_SDR_RX, 0, 20e6));
+    CHECK_NOTHROW(d.setSampleRate(SOAPY_SDR_TX, 0, 20e6));
+    for (const auto& [direction, rate] : std::vector<std::pair<int, double>>{{SOAPY_SDR_RX, 199e3},
+                                                                             {SOAPY_SDR_TX, 1.1e6},
+                                                                             {SOAPY_SDR_RX, 20.1e6},
+                                                                             {SOAPY_SDR_TX, 21e6},
+                                                                             {SOAPY_SDR_RX, 0},
+                                                                             {SOAPY_SDR_TX, -1}}) {
+        CAPTURE(direction, rate);
+        try {
+            d.setSampleRate(direction, 0, rate);
+            FAIL("accepted");
+        } catch (const std::invalid_argument& e) {
+            CHECK(std::string(e.what()).find("Msps") != std::string::npos);
+        }
+    }
+    // A refused rate leaves the one set before, on the board too.
+    CHECK(d.getSampleRate(SOAPY_SDR_RX, 0) == 20e6);
+    CHECK(d.getSampleRate(SOAPY_SDR_TX, 0) == 20e6);
+    CHECK(rig.rx->sample_rate_hz == 20e6);
+    CHECK(rig.tx->sample_rate_hz == 20e6);
+}
+
 namespace {
 
 // Both streams set up at 8 Msps in CS8 over 1024-sample transfers, the

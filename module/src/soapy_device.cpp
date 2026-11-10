@@ -9,6 +9,7 @@
 #include <SoapySDR/Time.hpp>
 #include <chrono>
 #include <cmath>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 
@@ -804,8 +805,18 @@ double SoapyDevice::getFrequencyCorrection(const int direction, const size_t cha
 // Sample rate and bandwidth
 
 void SoapyDevice::setSampleRate(const int direction, const size_t channel, const double rate) {
-    check_channel(channel);
-    pair_->set_sample_rate(direction_of(direction), rate);
+    const Direction dir = check(direction, channel);
+    // Outside the measured range the boards misbehave rather than fail:
+    // the receiver degrades, the transmitter goes silent or loses a channel.
+    const double minimum = dir == Direction::kRx ? kMinRxSampleRate : kMinTxSampleRate;
+    if (!(rate >= minimum && rate <= kMaxSampleRate)) {
+        std::ostringstream text;
+        text << "setSampleRate: " << rate / 1e6 << " Msps is outside the "
+             << (dir == Direction::kRx ? "receive" : "transmit") << " range, " << minimum / 1e6
+             << " to " << kMaxSampleRate / 1e6 << " Msps";
+        throw std::invalid_argument(text.str());
+    }
+    pair_->set_sample_rate(dir, rate);
 }
 
 double SoapyDevice::getSampleRate(const int direction, const size_t channel) const {

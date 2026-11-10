@@ -168,7 +168,7 @@ Gains, per direction: RX `LNA` (0 to 40 dB in 8 dB steps), `VGA` (0 to
 `AMP` (0 or 14 dB). Setting one overall gain spreads it over the stages
 and switches the amplifier on only when the others cannot reach it.
 Sample rates 0.2 to 20 Msps for receive and 1.2 to 20 Msps for
-transmit, as measured ([docs/design.md](docs/design.md), Low sample
+transmit, a rate outside them refused, as measured ([docs/design.md](docs/design.md), Low sample
 rates); 8 Msps and up give the cleanest spectrum. The host's USB sets
 the top in practice: on a Raspberry Pi 5 full duplex is clean through
 16 Msps, while at 20 Msps the boards fall short of the host in both

@@ -180,8 +180,9 @@ larger `buffers` stream argument holds more, at the cost of memory.
 **Low sample rates.** Receive is clean from 0.2 Msps and transmit from
 1.2 Msps, the ranges `getSampleRateRange` reports; below them the
 receiver degrades and the transmitter goes silent or loses a channel.
-The module does not refuse a rate below the range, so keep to it. 8 Msps
-and up give the cleanest spectrum.
+The module refuses a rate outside its direction's range with an
+exception naming the range, and keeps the rate it had. 8 Msps and up
+give the cleanest spectrum.
 
 **The DC spike at the centre.** Every HackRF receiver has one. Tune a
 little off the signal, or build the module with the receive corrections
