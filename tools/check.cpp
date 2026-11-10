@@ -1021,9 +1021,15 @@ int main(int argc, char** argv) {
             });
         }
 
+        const auto activating = std::chrono::steady_clock::now();
         if (device->activateStream(rx) != 0) {
             throw std::runtime_error("RX stream did not activate");
         }
+        // The second activation is the one that calibrates.
+        std::printf(
+            "activation: rx in %.3f s%s\n",
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - activating).count(),
+            transmit ? ", after tx, so with the calibration" : "");
         report_lo_locked(device, transmit);
         report_device_sensors(device, "running");
         if (transmit) {

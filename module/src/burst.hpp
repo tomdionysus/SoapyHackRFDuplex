@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -45,5 +46,35 @@ struct Found {
 // offset can dwarf a weak burst. Fast correlation by overlap-save, so a
 // capture of millions of samples takes a fraction of a second.
 Found find(std::span<const std::int8_t> iq);
+
+// The same search over a capture as it fills, so a listener can stop as
+// soon as the burst is certain: each call is handed the capture so far
+// and correlates every FFT block that has become complete. The mean taken
+// out of a block is the mean of the capture as it then stood.
+class Finder {
+public:
+    Finder();
+
+    // `iq`: the capture so far, the last call's with more after it.
+    void advance(std::span<const std::int8_t> iq);
+    // The capture is complete: correlates the rest, the last block padded.
+    void finish(std::span<const std::int8_t> iq);
+
+    // Found, with a burst's length of lags past the peak correlated, so the
+    // whole of the burst's correlation is in and nothing later is it.
+    bool settled() const;
+    // As find() reports, over the lags correlated so far.
+    Found result() const;
+
+private:
+    void correlate(std::span<const std::int8_t> iq, bool last);
+
+    std::vector<std::complex<float>> reference_;
+    std::vector<std::complex<float>> block_;
+    std::vector<float> magnitude_;
+    double sum_i_ = 0;
+    double sum_q_ = 0;
+    std::size_t summed_ = 0;
+};
 
 }  // namespace hackrfduplex::burst

@@ -186,7 +186,12 @@ two ways:
   to hold it however full the transmit ring was, and an overlap-save
   correlation over a hand-written FFT finds it; the capture's mean is
   removed first, because the receiver's DC offset can be many times the
-  burst. A peak 20 dB over the median correlation is accepted; anything
+  burst. The correlation runs block by block as the capture fills
+  (`burst::Finder`), each block taking the mean of the capture as it
+  then stood, and the listen ends once a peak clears the threshold with
+  a burst's length of correlation past it, so activation waits for the
+  burst rather than for the worst case (about 27 transfers, 1.8 s at
+  1.92 Msps). A peak 20 dB over the median correlation is accepted; anything
   less leaves no origin and logs the level found. If the two directions
   are tuned apart, the transmitter is retuned to the receive frequency
   for the burst and back afterwards; tuned alike it is not touched,

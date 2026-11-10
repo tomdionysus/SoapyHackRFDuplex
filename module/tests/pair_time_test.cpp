@@ -7,6 +7,7 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <thread>
@@ -101,6 +102,35 @@ TEST_CASE("the burst gives the origin: the loop's delay", "[pair][time]") {
     CHECK(rig.logged("common time origin from the calibration burst"));
     // Tuned alike, so the transmitter was not retuned for the burst.
     CHECK(frequency_calls(rig.tx, tx_calls).empty());
+    air.stop();
+}
+
+TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]") {
+    // The listen is sized for the worst case, a full transmit ring ahead of
+    // the burst; on the target that is about 27 transfers, 1.8 s at 1.92
+    // Msps, inside activateStream. Correlated as it fills, the burst ends it.
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    CHECK(*rig.pair.tx_of_rx() == -300);
+    std::string line;
+    {
+        const std::lock_guard<std::mutex> lock(rig.log_mutex);
+        for (const std::string& m : rig.logs) {
+            if (m.find("calibration: burst heard after") != std::string::npos) {
+                line = m;
+            }
+        }
+    }
+    REQUIRE_FALSE(line.empty());
+    unsigned long heard = 0;
+    unsigned long could = 0;
+    REQUIRE(std::sscanf(line.c_str(), "calibration: burst heard after %lu of the %lu", &heard,
+                        &could) == 2);
+    CHECK(heard < could);
     air.stop();
 }
 

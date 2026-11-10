@@ -48,26 +48,31 @@ public:
         const std::size_t take = std::min(bytes.size(), bytes_.size() - filled_);
         std::copy_n(bytes.begin(), take, bytes_.begin() + static_cast<long>(filled_));
         filled_ += take;
-        if (filled_ == bytes_.size()) {
-            full_.notify_all();
+        if (take > 0) {
+            grown_.notify_all();
         }
     }
 
-    // True when full within `timeout`.
-    bool wait(std::chrono::milliseconds timeout) {
+    // Samples held once more than `held` are, or it is full, or the
+    // deadline passes.
+    std::size_t wait_beyond(std::size_t held, std::chrono::steady_clock::time_point deadline) {
         std::unique_lock<std::mutex> lock(mutex_);
-        return full_.wait_for(lock, timeout, [&] { return filled_ == bytes_.size(); });
+        grown_.wait_until(lock, deadline, [&] {
+            return filled_ > held * kNativeSampleBytes || filled_ == bytes_.size();
+        });
+        return filled_ / kNativeSampleBytes;
     }
+    std::size_t capacity() const { return bytes_.size() / kNativeSampleBytes; }
 
-    // After the tap is removed.
-    std::span<const std::int8_t> samples() const {
-        return {reinterpret_cast<const std::int8_t*>(bytes_.data()), filled_};
+    // The first `count` samples, which are no longer written.
+    std::span<const std::int8_t> samples(std::size_t count) const {
+        return {reinterpret_cast<const std::int8_t*>(bytes_.data()), count * kNativeSampleBytes};
     }
     std::uint64_t start() const { return start_; }
 
 private:
     std::mutex mutex_;
-    std::condition_variable full_;
+    std::condition_variable grown_;
     std::vector<std::uint8_t> bytes_;
     std::size_t filled_ = 0;
     std::uint64_t start_ = 0;
@@ -914,11 +919,25 @@ void Pair::calibrate_locked() {
             sent_at = at;
         }
     }
+    // Correlated as it fills, so the listen ends as soon as the burst is
+    // certain rather than at its worst case.
     const double seconds = static_cast<double>(listen) / rx_rate;
-    const bool full =
-        sent_at &&
-        capture.wait(std::chrono::milliseconds(static_cast<long>(2000.0 * seconds) + 2000));
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(static_cast<long>(2000.0 * seconds) + 2000);
+    burst::Finder finder;
+    std::size_t held = 0;
+    bool settled = false;
+    while (sent_at && !settled && held < capture.capacity()) {
+        const std::size_t now_held = capture.wait_beyond(held, deadline);
+        if (now_held == held) {
+            break;
+        }
+        held = now_held;
+        finder.advance(capture.samples(held));
+        settled = finder.settled();
+    }
     rx_path_->set_tap(nullptr);
+    const bool full = held == capture.capacity();
     if (retune) {
         // What the pair holds now, not what it held before the burst: the
         // application may have tuned the transmitter meanwhile.
@@ -932,11 +951,18 @@ void Pair::calibrate_locked() {
         set_origin(OriginState::kAbsent);
         return;
     }
-    if (!full) {
+    if (!full && !settled) {
         log(LogLevel::kWarning, "calibration: the receive stream delivered less than expected");
     }
 
-    const burst::Found found = burst::find(capture.samples());
+    if (!settled) {
+        finder.finish(capture.samples(held));
+    } else {
+        log(LogLevel::kDebug, "calibration: burst heard after " + std::to_string(held) +
+                                  " of the " + std::to_string(capture.capacity()) +
+                                  " samples it could take");
+    }
+    const burst::Found found = finder.result();
     char level[64];
     std::snprintf(level, sizeof(level), "%.1f dB", found.peak_over_median_db);
     if (!found.found) {

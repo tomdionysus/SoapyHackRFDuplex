@@ -158,3 +158,73 @@ TEST_CASE("a capture shorter than the burst finds nothing", "[burst]") {
     const std::vector<std::int8_t> iq(2 * (burst::kChips - 1), 0);
     CHECK_FALSE(burst::find(iq).found);
 }
+
+namespace {
+
+// Feeds `iq` to a finder in pieces of `piece` samples, as a capture
+// fills; returns how many samples it had when it settled, if it did.
+std::optional<std::size_t> feed(burst::Finder& finder, const std::vector<std::int8_t>& iq,
+                                std::size_t piece) {
+    const std::size_t total = iq.size() / 2;
+    for (std::size_t have = piece; have < total + piece; have += piece) {
+        const std::size_t n = std::min(have, total);
+        finder.advance(std::span<const std::int8_t>(iq.data(), 2 * n));
+        if (finder.settled()) {
+            return n;
+        }
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+TEST_CASE("the finder settles on the burst before the capture ends, where find does", "[burst]") {
+    const std::size_t length = 400'000;
+    for (const std::size_t at : {std::size_t{30'000}, std::size_t{131'072}, std::size_t{200'001}}) {
+        CAPTURE(at);
+        const std::vector<std::int8_t> iq =
+            receive(length, Air{6.0, {}, at, 0.0119, 1.1, static_cast<std::uint32_t>(at + 3)});
+        burst::Finder finder;
+        const std::optional<std::size_t> settled_at = feed(finder, iq, 8192);
+        REQUIRE(settled_at);
+        // A burst length of lags past the peak, and at most one FFT block more.
+        CHECK(*settled_at >= at + 2 * burst::kChips);
+        CHECK(*settled_at < at + 2 * burst::kChips + 16384 + 8192);
+        const burst::Found early = finder.result();
+        const burst::Found whole = burst::find(iq);
+        CHECK(early.found);
+        CHECK(early.offset == at);
+        CHECK(whole.offset == at);
+    }
+}
+
+TEST_CASE("the finder settles under a DC offset many times the burst", "[burst]") {
+    const std::vector<std::int8_t> iq =
+        receive(300'000, Air{0.64, {3.0, -2.0}, 100'000, 0.0016, 0.4, 11});
+    burst::Finder finder;
+    REQUIRE(feed(finder, iq, 131'072 / 8));
+    CHECK(finder.result().offset == 100'000);
+}
+
+TEST_CASE("the finder never settles on noise, and finishing reports what find does", "[burst]") {
+    const std::vector<std::int8_t> iq = receive(300'000, Air{20.0, {}, {}, 0, 0, 7});
+    burst::Finder finder;
+    CHECK_FALSE(feed(finder, iq, 4096));
+    finder.finish(iq);
+    CHECK_FALSE(finder.settled());
+    CHECK_FALSE(finder.result().found);
+    // The blocks correlated early took the DC of the capture so far.
+    CHECK(std::abs(finder.result().peak_over_median_db - burst::find(iq).peak_over_median_db) <
+          0.5);
+}
+
+TEST_CASE("a burst at the very end is found only when the finder finishes", "[burst]") {
+    const std::size_t length = 100'000;
+    const std::vector<std::int8_t> iq =
+        receive(length, Air{6.0, {}, length - burst::kChips, 0.0119, 0.3, 5});
+    burst::Finder finder;
+    CHECK_FALSE(feed(finder, iq, 10'000));
+    finder.finish(iq);
+    CHECK(finder.result().found);
+    CHECK(finder.result().offset == length - burst::kChips);
+}

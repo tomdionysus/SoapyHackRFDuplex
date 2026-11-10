@@ -47,57 +47,71 @@ std::vector<std::int8_t> samples() {
 }
 
 Found find(std::span<const std::int8_t> iq) {
-    const std::size_t count = iq.size() / 2;
-    if (count < kChips) {
-        return {};
-    }
-    // Overlap-save: each FFT block yields kFftSize - kChips + 1 lags whose
-    // windows lie wholly inside it.
-    const std::size_t lags = count - kChips + 1;
-    const std::size_t step = kFftSize - kChips + 1;
+    Finder finder;
+    finder.finish(iq);
+    return finder.result();
+}
 
-    std::vector<std::complex<float>> reference(kFftSize);
+Finder::Finder() : reference_(kFftSize), block_(kFftSize) {
     const std::vector<std::int8_t> c = chips();
     for (std::size_t k = 0; k < kChips; ++k) {
-        reference[k] = static_cast<float>(c[k]);
+        reference_[k] = static_cast<float>(c[k]);
     }
-    fft(reference, false);
-    for (std::complex<float>& r : reference) {
+    fft(reference_, false);
+    for (std::complex<float>& r : reference_) {
         r = std::conj(r);
     }
+}
 
-    double sum_i = 0;
-    double sum_q = 0;
-    for (std::size_t n = 0; n < count; ++n) {
-        sum_i += iq[2 * n];
-        sum_q += iq[2 * n + 1];
+void Finder::advance(std::span<const std::int8_t> iq) { correlate(iq, false); }
+
+void Finder::finish(std::span<const std::int8_t> iq) { correlate(iq, true); }
+
+void Finder::correlate(std::span<const std::int8_t> iq, bool last) {
+    const std::size_t count = iq.size() / 2;
+    for (; summed_ < count; ++summed_) {
+        sum_i_ += iq[2 * summed_];
+        sum_q_ += iq[2 * summed_ + 1];
     }
-    const std::complex<float> dc(static_cast<float>(sum_i / static_cast<double>(count)),
-                                 static_cast<float>(sum_q / static_cast<double>(count)));
-
-    std::vector<float> magnitude(lags);
-    std::vector<std::complex<float>> block(kFftSize);
-    for (std::size_t start = 0; start < lags; start += step) {
+    if (count < kChips) {
+        return;
+    }
+    const std::complex<float> dc(static_cast<float>(sum_i_ / static_cast<double>(count)),
+                                 static_cast<float>(sum_q_ / static_cast<double>(count)));
+    // Overlap-save: each FFT block yields kFftSize - kChips + 1 lags whose
+    // windows lie wholly inside it. Until the capture is complete only
+    // whole blocks are taken.
+    const std::size_t lags = count - kChips + 1;
+    const std::size_t step = kFftSize - kChips + 1;
+    for (std::size_t start = magnitude_.size(); start < lags; start = magnitude_.size()) {
+        if (!last && start + kFftSize > count) {
+            return;
+        }
         for (std::size_t i = 0; i < kFftSize; ++i) {
             const std::size_t n = start + i;
-            block[i] = n < count ? std::complex<float>(iq[2 * n], iq[2 * n + 1]) - dc
-                                 : std::complex<float>(0, 0);
+            block_[i] = n < count ? std::complex<float>(iq[2 * n], iq[2 * n + 1]) - dc
+                                  : std::complex<float>(0, 0);
         }
-        fft(block, false);
+        fft(block_, false);
         for (std::size_t i = 0; i < kFftSize; ++i) {
-            block[i] *= reference[i];
+            block_[i] *= reference_[i];
         }
-        fft(block, true);
+        fft(block_, true);
         for (std::size_t k = 0; k < step && start + k < lags; ++k) {
-            magnitude[start + k] = std::abs(block[k]);
+            magnitude_.push_back(std::abs(block_[k]));
         }
     }
+}
 
-    const auto peak = std::max_element(magnitude.begin(), magnitude.end());
+Found Finder::result() const {
     Found found;
-    found.offset = static_cast<std::size_t>(peak - magnitude.begin());
+    if (magnitude_.empty()) {
+        return found;
+    }
+    const auto peak = std::max_element(magnitude_.begin(), magnitude_.end());
+    found.offset = static_cast<std::size_t>(peak - magnitude_.begin());
     const float peak_value = *peak;
-    std::vector<float> sorted = magnitude;
+    std::vector<float> sorted = magnitude_;
     const auto middle = sorted.begin() + static_cast<long>(sorted.size() / 2);
     std::nth_element(sorted.begin(), middle, sorted.end());
     const double median = *middle;
@@ -107,6 +121,11 @@ Found find(std::span<const std::int8_t> iq) {
     found.peak_over_median_db = median > 0 ? 20.0 * std::log10(peak_value / median) : 200.0;
     found.found = found.peak_over_median_db >= kMinPeakOverMedianDb;
     return found;
+}
+
+bool Finder::settled() const {
+    const Found found = result();
+    return found.found && magnitude_.size() > found.offset + kChips;
 }
 
 }  // namespace hackrfduplex::burst
