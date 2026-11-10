@@ -264,6 +264,34 @@ first sample will have when it starts again, since its positions start
 again at 0: `setHardwareTime` then sets that, and a timed
 `activateStream` is measured from it.
 
+## Receive corrections
+
+Built only with `-DHACKRFDUPLEX_DSP=ON` (liquid-dsp found), off at run
+time until an application sets one, and on the receive channel only
+(`module/src/rx_correction.*`). They run on the reader's thread, on the
+samples `readStream` delivers, in the application's format (the integer
+formats through a float copy, rounded and saturated on the way back), so
+the transfer thread is untouched; the calibration tap and direct buffer
+access see the samples as the board sent them.
+
+- DC: automatic removal is liquid-dsp's one-pole DC blocker, its pole
+  1e-4 inside the unit circle, so it follows an offset over about 10 000
+  samples (1.25 ms at 8 Msps) and passes anything a few hundred hertz
+  from centre. A set offset (`setDCOffset`, at full scale 1.0) is
+  subtracted while automatic removal is off.
+- I/Q balance: corrected as y = x + b conj(x), which for a receiver whose
+  image is x + k conj(x) removes it to first order at b = -k. A set
+  balance is b. Automatic mode estimates b blind: for a balanced signal
+  E[y^2] is 0, and E[y^2] / E[|y|^2] is close to 2 (k + b), so each read
+  moves b by half of it, weighted by the read's share of 65 536 samples.
+  A read of 16 384 samples removes a fifth of the error it sees; a
+  26 dB image falls below 50 dB within half a million samples (tested).
+  `getIQBalance` reads the estimate.
+
+The streams' sensors, reads and timestamps are unchanged by them. Their
+cost per rate and their effect on the target are measured in "Rates and
+CPU on the target" and below it.
+
 ## Latency
 
 libhackrf moves 256 KiB per USB transfer, four transfers deep, and the

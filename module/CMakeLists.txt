@@ -22,6 +22,13 @@ target_include_directories(hackrfduplex_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(hackrfduplex_core PUBLIC Threads::Threads)
+# Optional receive corrections (docs/design.md, Receive corrections): only
+# with HACKRFDUPLEX_DSP, and only then is liquid-dsp linked.
+if(HACKRFDUPLEX_DSP)
+    target_sources(hackrfduplex_core PRIVATE src/rx_correction.cpp)
+    target_compile_definitions(hackrfduplex_core PUBLIC HACKRFDUPLEX_DSP=1)
+    target_link_libraries(hackrfduplex_core PUBLIC liquid::liquid)
+endif()
 # The format conversions run on every sample. GCC vectorises their loops
 # only from -O3 (at -O2 its cheapest cost model declines them): on the
 # target, float to native went from 5.1 to 1.4 ns a sample, CS16 from 2.0
@@ -65,6 +72,9 @@ if(HACKRFDUPLEX_BUILD_TESTS)
         tests/burst_test.cpp
         tests/pair_time_test.cpp
         tests/m0_test.cpp)
+    if(HACKRFDUPLEX_DSP)
+        target_sources(hackrfduplex_tests PRIVATE tests/rx_correction_test.cpp)
+    endif()
     target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_core Catch2::Catch2WithMain)
     if(HACKRFDUPLEX_BUILD_MODULE)
         target_sources(hackrfduplex_tests PRIVATE tests/soapy_device_test.cpp)

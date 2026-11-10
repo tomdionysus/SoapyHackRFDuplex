@@ -3,7 +3,8 @@
 #
 # The checks a change must pass, in order: formatting, the licence line on
 # every source file, the release build and its tests, the address and
-# undefined-behaviour sanitizer build and its tests, a Clang build for
+# undefined-behaviour sanitizer build and its tests, the build with the
+# receive corrections (HACKRFDUPLEX_DSP) and its tests, a Clang build for
 # the thread-safety analysis where Clang is not the default compiler, and
 # the thread sanitizer build and its tests where the host can run it. Run
 # from anywhere; it works in the repository's own build trees. Exits
@@ -85,6 +86,14 @@ fi
 ASAN_OPTIONS="detect_leaks=$leaks:abort_on_error=1" \
     UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1" \
     ./build-asan/module/hackrfduplex_tests
+
+# The receive corrections are built only on request (HACKRFDUPLEX_DSP,
+# with liquid-dsp); both builds must pass.
+step "DSP build (receive corrections, liquid-dsp)"
+cmake --preset dsp >/dev/null
+cmake --build build-dsp -j "$jobs"
+step "DSP tests"
+./build-dsp/module/hackrfduplex_tests
 
 # Clang's thread-safety analysis proves the locking annotations
 # (module/src/mutex.hpp); GCC ignores them. Where the default compiler is

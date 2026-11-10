@@ -432,6 +432,9 @@ void Pair::start_stream(Side& s) {
     }
     if (s.direction == Direction::kRx) {
         rx_path_->reset();
+#if defined(HACKRFDUPLEX_DSP)
+        rx_correction_.reset();
+#endif
         RxPath* path = rx_path_.get();
         s.board->start_rx(
             [path](std::span<const std::uint8_t> bytes) { path->on_transfer(bytes); });
@@ -1077,6 +1080,9 @@ RxRead Pair::read(void* dst, std::size_t max_samples, std::chrono::microseconds 
     const RxRead result = read_polled(timeout, [&](std::chrono::microseconds slice) {
                               return RxView{rx_path_->read(dst, max_samples, format, slice)};
                           }).read;
+#if defined(HACKRFDUPLEX_DSP)
+    rx_correction_.apply(dst, format, result.samples);
+#endif
     return result;
 }
 

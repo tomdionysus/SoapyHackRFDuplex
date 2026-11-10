@@ -75,6 +75,12 @@ struct SoapyRig {
     std::unique_ptr<SoapyDevice> device;
 };
 
+#if defined(HACKRFDUPLEX_DSP)
+constexpr bool kDspBuild = true;
+#else
+constexpr bool kDspBuild = false;
+#endif
+
 }  // namespace
 
 TEST_CASE("an unknown setting written is logged and otherwise ignored", "[soapy]") {
@@ -696,17 +702,21 @@ TEST_CASE("corrections and modes the device lacks are refused unless neutral", "
         CHECK_THROWS_AS(d.setGainMode(dir, 0, true), std::invalid_argument);
         CHECK_FALSE(d.getGainMode(dir, 0));
 
-        CHECK_FALSE(d.hasDCOffsetMode(dir, 0));
-        CHECK_NOTHROW(d.setDCOffsetMode(dir, 0, false));
-        CHECK_THROWS_AS(d.setDCOffsetMode(dir, 0, true), std::invalid_argument);
-        CHECK_FALSE(d.hasDCOffset(dir, 0));
-        CHECK_THROWS_AS(d.setDCOffset(dir, 0, {0.1, 0.0}), std::invalid_argument);
+        // A build with the receive corrections has them on the receive
+        // channel ("receive corrections in a DSP build", below).
+        if (!kDspBuild || dir == SOAPY_SDR_TX) {
+            CHECK_FALSE(d.hasDCOffsetMode(dir, 0));
+            CHECK_NOTHROW(d.setDCOffsetMode(dir, 0, false));
+            CHECK_THROWS_AS(d.setDCOffsetMode(dir, 0, true), std::invalid_argument);
+            CHECK_FALSE(d.hasDCOffset(dir, 0));
+            CHECK_THROWS_AS(d.setDCOffset(dir, 0, {0.1, 0.0}), std::invalid_argument);
 
-        CHECK_FALSE(d.hasIQBalance(dir, 0));
-        CHECK_THROWS_AS(d.setIQBalance(dir, 0, {1.0, 0.0}), std::invalid_argument);
-        CHECK_FALSE(d.hasIQBalanceMode(dir, 0));
-        CHECK_NOTHROW(d.setIQBalanceMode(dir, 0, false));
-        CHECK_THROWS_AS(d.setIQBalanceMode(dir, 0, true), std::invalid_argument);
+            CHECK_FALSE(d.hasIQBalance(dir, 0));
+            CHECK_THROWS_AS(d.setIQBalance(dir, 0, {1.0, 0.0}), std::invalid_argument);
+            CHECK_FALSE(d.hasIQBalanceMode(dir, 0));
+            CHECK_NOTHROW(d.setIQBalanceMode(dir, 0, false));
+            CHECK_THROWS_AS(d.setIQBalanceMode(dir, 0, true), std::invalid_argument);
+        }
 
         CHECK_FALSE(d.hasFrequencyCorrection(dir, 0));
         CHECK_NOTHROW(d.setFrequencyCorrection(dir, 0, 0.0));
@@ -1565,3 +1575,59 @@ TEST_CASE("a read or write of no samples returns at once", "[soapy]") {
     device.closeStream(tx);
     device.closeStream(rx);
 }
+
+#if defined(HACKRFDUPLEX_DSP)
+TEST_CASE("receive corrections in a DSP build: offered, kept and read back", "[soapy][dsp]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    CHECK(d.hasDCOffsetMode(SOAPY_SDR_RX, 0));
+    CHECK(d.hasDCOffset(SOAPY_SDR_RX, 0));
+    CHECK(d.hasIQBalance(SOAPY_SDR_RX, 0));
+    CHECK(d.hasIQBalanceMode(SOAPY_SDR_RX, 0));
+    // All off until set.
+    CHECK_FALSE(d.getDCOffsetMode(SOAPY_SDR_RX, 0));
+    CHECK_FALSE(d.getIQBalanceMode(SOAPY_SDR_RX, 0));
+    CHECK(d.getDCOffset(SOAPY_SDR_RX, 0) == std::complex<double>{});
+    CHECK(d.getIQBalance(SOAPY_SDR_RX, 0) == std::complex<double>{});
+    d.setDCOffsetMode(SOAPY_SDR_RX, 0, true);
+    CHECK(d.getDCOffsetMode(SOAPY_SDR_RX, 0));
+    d.setDCOffset(SOAPY_SDR_RX, 0, {0.1, -0.2});
+    CHECK(d.getDCOffset(SOAPY_SDR_RX, 0) == std::complex<double>{0.1, -0.2});
+    d.setIQBalance(SOAPY_SDR_RX, 0, {0.01, 0.02});
+    CHECK(d.getIQBalance(SOAPY_SDR_RX, 0) == std::complex<double>{0.01, 0.02});
+    d.setIQBalanceMode(SOAPY_SDR_RX, 0, true);
+    CHECK(d.getIQBalanceMode(SOAPY_SDR_RX, 0));
+    // The transmitter still has none.
+    CHECK_FALSE(d.hasDCOffsetMode(SOAPY_SDR_TX, 0));
+    CHECK_THROWS_AS(d.setDCOffset(SOAPY_SDR_TX, 0, {0.1, 0.0}), std::invalid_argument);
+    CHECK_THROWS_AS(d.setIQBalanceMode(SOAPY_SDR_TX, 0, true), std::invalid_argument);
+}
+
+TEST_CASE("receive corrections in a DSP build: a set offset comes off what is read",
+          "[soapy][dsp]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    d.writeSetting("time_origin", "none");
+    d.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
+    d.setDCOffset(SOAPY_SDR_RX, 0, {0.25, -0.25});
+    SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32);
+    REQUIRE(d.activateStream(rx) == 0);
+    // Eight samples at (0.5, -0.5) as the board delivers them.
+    std::vector<std::uint8_t> transfer(rig.rx->transfer_bytes_value);
+    for (std::size_t i = 0; i < transfer.size(); i += 2) {
+        transfer[i] = static_cast<std::uint8_t>(64);
+        transfer[i + 1] = static_cast<std::uint8_t>(-64);
+    }
+    rig.rx->deliver_rx(transfer);
+    std::vector<std::complex<float>> out(8);
+    void* buffs[] = {out.data()};
+    int flags = 0;
+    long long time_ns = 0;
+    REQUIRE(d.readStream(rx, buffs, out.size(), flags, time_ns, 100'000) == 8);
+    for (const auto& sample : out) {
+        CHECK(std::abs(sample - std::complex<float>(0.25F, -0.25F)) < 1e-6F);
+    }
+    d.deactivateStream(rx);
+    d.closeStream(rx);
+}
+#endif

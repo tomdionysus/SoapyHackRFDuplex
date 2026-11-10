@@ -17,6 +17,7 @@ endif()
 option(HACKRFDUPLEX_BUILD_MODULE "Build the SoapySDR module (needs SoapySDR)" ON)
 option(HACKRFDUPLEX_BUILD_TESTS "Build the unit tests (needs Catch2 3)" ON)
 option(HACKRFDUPLEX_BUILD_TOOLS "Build hackrfduplex-check (needs SoapySDR)" ON)
+option(HACKRFDUPLEX_DSP "Receive DC removal and I/Q balance correction (needs liquid-dsp)" OFF)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror)
 # Clang proves the locking annotations (module/src/mutex.hpp); GCC has no
@@ -31,6 +32,15 @@ include(cmake/Instrumentation.cmake)
 include(cmake/LibHackRF.cmake)
 
 find_package(Threads REQUIRED)
+
+if(HACKRFDUPLEX_DSP)
+    find_path(LIQUID_INCLUDE_DIR liquid/liquid.h REQUIRED)
+    find_library(LIQUID_LIBRARY liquid REQUIRED)
+    add_library(liquid::liquid UNKNOWN IMPORTED)
+    set_target_properties(liquid::liquid PROPERTIES
+        IMPORTED_LOCATION ${LIQUID_LIBRARY}
+        INTERFACE_INCLUDE_DIRECTORIES ${LIQUID_INCLUDE_DIR})
+endif()
 
 if(HACKRFDUPLEX_BUILD_MODULE OR HACKRFDUPLEX_BUILD_TOOLS)
     find_package(SoapySDR 0.8 CONFIG REQUIRED)
@@ -48,4 +58,5 @@ if(HACKRFDUPLEX_BUILD_TOOLS)
 endif()
 
 message(STATUS "hackrfduplex ${HACKRFDUPLEX_VERSION}: module ${HACKRFDUPLEX_BUILD_MODULE}, "
-               "tests ${HACKRFDUPLEX_BUILD_TESTS}, tools ${HACKRFDUPLEX_BUILD_TOOLS}")
+               "tests ${HACKRFDUPLEX_BUILD_TESTS}, tools ${HACKRFDUPLEX_BUILD_TOOLS}, "
+               "DSP ${HACKRFDUPLEX_DSP}")

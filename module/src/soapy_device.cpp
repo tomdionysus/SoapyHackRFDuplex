@@ -662,64 +662,116 @@ SoapySDR::RangeList SoapyDevice::getFrequencyRange(const int direction, const si
     return {SoapySDR::Range(kMinFrequency, kMaxFrequency)};
 }
 
-// Corrections and modes
+// Corrections and modes. With HACKRFDUPLEX_DSP the receive channel has DC
+// removal and I/Q balance correction (rx_correction.hpp); without it, and
+// on the transmit channel always, they are refused.
+
+#if defined(HACKRFDUPLEX_DSP)
+#define HACKRFDUPLEX_CORRECTS(direction, channel) (check(direction, channel) == Direction::kRx)
+#else
+#define HACKRFDUPLEX_CORRECTS(direction, channel) (check(direction, channel), false)
+#endif
 
 bool SoapyDevice::hasDCOffsetMode(const int direction, const size_t channel) const {
-    check(direction, channel);
-    return false;
+    return HACKRFDUPLEX_CORRECTS(direction, channel);
 }
 
 void SoapyDevice::setDCOffsetMode(const int direction, const size_t channel, const bool automatic) {
-    check(direction, channel);
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        pair_->rx_correction().set_dc_automatic(automatic);
+#endif
+        return;
+    }
     if (automatic) {
-        refuse("setDCOffsetMode", "no DC offset removal in this build");
+        refuse("setDCOffsetMode", "no DC offset removal on this channel in this build");
     }
 }
 
 bool SoapyDevice::getDCOffsetMode(const int direction, const size_t channel) const {
-    check(direction, channel);
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        return pair_->rx_correction().dc_automatic();
+#endif
+    }
     return false;
 }
 
 bool SoapyDevice::hasDCOffset(const int direction, const size_t channel) const {
-    check(direction, channel);
-    return false;
+    return HACKRFDUPLEX_CORRECTS(direction, channel);
 }
 
 void SoapyDevice::setDCOffset(const int direction, const size_t channel,
-                              const std::complex<double>&) {
-    check(direction, channel);
-    refuse("setDCOffset", "no DC offset correction in this build");
+                              [[maybe_unused]] const std::complex<double>& offset) {
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        pair_->rx_correction().set_dc_offset(offset);
+#endif
+        return;
+    }
+    refuse("setDCOffset", "no DC offset correction on this channel in this build");
+}
+
+std::complex<double> SoapyDevice::getDCOffset(const int direction, const size_t channel) const {
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        return pair_->rx_correction().dc_offset();
+#endif
+    }
+    return {};
 }
 
 bool SoapyDevice::hasIQBalance(const int direction, const size_t channel) const {
-    check(direction, channel);
-    return false;
+    return HACKRFDUPLEX_CORRECTS(direction, channel);
 }
 
 void SoapyDevice::setIQBalance(const int direction, const size_t channel,
-                               const std::complex<double>&) {
-    check(direction, channel);
-    refuse("setIQBalance", "no I/Q balance correction in this build");
+                               [[maybe_unused]] const std::complex<double>& balance) {
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        pair_->rx_correction().set_iq_balance(balance);
+#endif
+        return;
+    }
+    refuse("setIQBalance", "no I/Q balance correction on this channel in this build");
+}
+
+std::complex<double> SoapyDevice::getIQBalance(const int direction, const size_t channel) const {
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        return pair_->rx_correction().iq_balance();
+#endif
+    }
+    return {};
 }
 
 bool SoapyDevice::hasIQBalanceMode(const int direction, const size_t channel) const {
-    check(direction, channel);
-    return false;
+    return HACKRFDUPLEX_CORRECTS(direction, channel);
 }
 
 void SoapyDevice::setIQBalanceMode(const int direction, const size_t channel,
                                    const bool automatic) {
-    check(direction, channel);
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        pair_->rx_correction().set_iq_automatic(automatic);
+#endif
+        return;
+    }
     if (automatic) {
-        refuse("setIQBalanceMode", "no I/Q balance correction in this build");
+        refuse("setIQBalanceMode", "no I/Q balance correction on this channel in this build");
     }
 }
 
 bool SoapyDevice::getIQBalanceMode(const int direction, const size_t channel) const {
-    check(direction, channel);
+    if (HACKRFDUPLEX_CORRECTS(direction, channel)) {
+#if defined(HACKRFDUPLEX_DSP)
+        return pair_->rx_correction().iq_automatic();
+#endif
+    }
     return false;
 }
+
+#undef HACKRFDUPLEX_CORRECTS
 
 bool SoapyDevice::hasFrequencyCorrection(const int direction, const size_t channel) const {
     check(direction, channel);

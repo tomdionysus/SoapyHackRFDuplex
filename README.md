@@ -86,6 +86,17 @@ sudo cmake --install build
 `cmake --install` places the module in SoapySDR's modules directory
 under the install prefix and `hackrfduplex-check` in `bin`.
 
+Optionally, the receive channel can remove its DC offset and correct its
+I/Q balance, automatically or by values the application sets
+(`setDCOffsetMode`, `setDCOffset`, `setIQBalance`, `setIQBalanceMode`).
+That needs liquid-dsp and a build that asks for it; without the option
+the module neither links liquid-dsp nor offers the calls:
+
+```
+sudo apt install libliquid-dev
+cmake -S . -B build -DHACKRFDUPLEX_DSP=ON
+```
+
 On Debian (trixie), the `debian/` directory builds two packages: the
 module as `soapysdr0.8-module-hackrfduplex` and the check tool as
 `hackrfduplex-tools`:
@@ -96,8 +107,8 @@ dpkg-buildpackage -us -uc -b
 sudo apt install ../soapysdr0.8-module-hackrfduplex_*.deb ../hackrfduplex-tools_*.deb
 SoapySDRUtil --find="driver=hackrfduplex"
 ```
- To use the
-module from the build tree instead, point SoapySDR at it:
+
+To use the module from the build tree instead, point SoapySDR at it:
 
 ```
 export SOAPY_SDR_PLUGIN_PATH=$PWD/build/module

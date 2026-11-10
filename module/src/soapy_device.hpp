@@ -110,9 +110,11 @@ public:
     bool hasDCOffset(const int direction, const size_t channel) const override;
     void setDCOffset(const int direction, const size_t channel,
                      const std::complex<double>& offset) override;
+    std::complex<double> getDCOffset(const int direction, const size_t channel) const override;
     bool hasIQBalance(const int direction, const size_t channel) const override;
     void setIQBalance(const int direction, const size_t channel,
                       const std::complex<double>& balance) override;
+    std::complex<double> getIQBalance(const int direction, const size_t channel) const override;
     bool hasIQBalanceMode(const int direction, const size_t channel) const override;
     void setIQBalanceMode(const int direction, const size_t channel, const bool automatic) override;
     bool getIQBalanceMode(const int direction, const size_t channel) const override;

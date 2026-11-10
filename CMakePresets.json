@@ -28,6 +28,15 @@
       }
     },
     {
+      "name": "dsp",
+      "displayName": "Release with the receive corrections (liquid-dsp)",
+      "binaryDir": "${sourceDir}/build-dsp",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "HACKRFDUPLEX_DSP": "ON"
+      }
+    },
+    {
       "name": "coverage",
       "displayName": "gcov instrumentation with an lcov report target",
       "binaryDir": "${sourceDir}/build-coverage",
@@ -41,7 +50,8 @@
     { "name": "default", "configurePreset": "default" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "tsan", "configurePreset": "tsan" },
-    { "name": "coverage", "configurePreset": "coverage" }
+    { "name": "coverage", "configurePreset": "coverage" },
+    { "name": "dsp", "configurePreset": "dsp" }
   ],
   "testPresets": [
     {

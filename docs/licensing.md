@@ -21,6 +21,7 @@ copyright line beneath the SPDX line.
 | SoapySDR | Boost Software License 1.0 | The API this module implements; linked | https://github.com/pothosware/SoapySDR |
 | libhackrf | BSD 3-clause | The board library; linked | https://github.com/greatscottgadgets/hackrf |
 | Catch2 | Boost Software License 1.0 | The test framework; linked by the tests only | https://github.com/catchorg/Catch2 |
+| liquid-dsp | MIT | The receive DC blocker; linked only by a build with `HACKRFDUPLEX_DSP` | https://github.com/jgaeddert/liquid-dsp |
 | SoapyHackRF | MIT | The conventions single-board SoapySDR applications expect of a HackRF (gain element names, the `buffers` stream argument); no code | https://github.com/pothosware/SoapyHackRF |
 
 "HackRF" is the name of Great Scott Gadgets' product.

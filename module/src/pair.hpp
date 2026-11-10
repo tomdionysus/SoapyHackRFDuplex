@@ -16,6 +16,9 @@
 #include "gain.hpp"
 #include "mutex.hpp"
 #include "rx_path.hpp"
+#if defined(HACKRFDUPLEX_DSP)
+#include "rx_correction.hpp"
+#endif
 #include "tx_path.hpp"
 
 namespace hackrfduplex {
@@ -204,6 +207,12 @@ public:
     // origin lost to a board's shortfall. Also polls the shortfalls.
     bool take_time_error();
 
+#if defined(HACKRFDUPLEX_DSP)
+    // DC and I/Q corrections on what read() delivers (rx_correction.hpp);
+    // direct access and the calibration burst see the raw samples.
+    RxCorrection& rx_correction() { return rx_correction_; }
+#endif
+
     std::uint64_t rx_received() const;
     std::uint64_t tx_sent() const;
     std::uint64_t tx_underflows() const;
@@ -321,6 +330,9 @@ private:
     std::unique_ptr<RxPath> rx_path_;
     std::unique_ptr<TxPath> tx_path_;
     Log log_;
+#if defined(HACKRFDUPLEX_DSP)
+    RxCorrection rx_correction_;
+#endif
 
     // Stream lifecycle: open, close, activate, deactivate, calibrate.
     Mutex control_mutex_;

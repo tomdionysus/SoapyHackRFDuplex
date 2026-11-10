@@ -69,6 +69,9 @@ struct Options {
     std::string rx_format = SOAPY_SDR_CF32;
     // CS8 only: read through SoapySDR's direct buffer access.
     bool direct = false;
+    // The receive corrections, in a build with them (HACKRFDUPLEX_DSP).
+    bool dc_removal = false;
+    bool iq_balance = false;
     bool help = false;
 };
 
@@ -187,6 +190,9 @@ const char* const kUsage =
     "  --rx-format F     CS8, CS16, CF32 or CF64 for the receive stream (default\n"
     "                    CF32); any but CF32 implies --no-analysis\n"
     "  --direct          receive through direct buffer access (CS8 only)\n"
+    "  --dc-removal      remove the receiver's DC offset automatically (a module\n"
+    "                    built with HACKRFDUPLEX_DSP)\n"
+    "  --iq-balance      correct the receiver's I/Q balance automatically (likewise)\n"
     "  --help\n";
 
 void parse(int argc, char** argv, Options& options) {
@@ -207,6 +213,10 @@ void parse(int argc, char** argv, Options& options) {
             format_bytes(options.rx_format);
         } else if (arg == "--direct") {
             options.direct = true;
+        } else if (arg == "--dc-removal") {
+            options.dc_removal = true;
+        } else if (arg == "--iq-balance") {
+            options.iq_balance = true;
         } else if (arg == "--rx-serial") {
             options.rx_serial = value();
         } else if (arg == "--tx-serial") {
@@ -1005,6 +1015,22 @@ int main(int argc, char** argv) {
         SoapySDR::Stream* tx =
             transmit ? device->setupStream(SOAPY_SDR_TX, options.tx_format, {}, stream) : nullptr;
         const std::size_t rx_mtu = device->getStreamMTU(rx);
+        if (options.dc_removal) {
+            if (!device->hasDCOffsetMode(SOAPY_SDR_RX, 0)) {
+                throw std::runtime_error(
+                    "--dc-removal: this module has no receive corrections (build it with "
+                    "-DHACKRFDUPLEX_DSP=ON)");
+            }
+            device->setDCOffsetMode(SOAPY_SDR_RX, 0, true);
+        }
+        if (options.iq_balance) {
+            if (!device->hasIQBalanceMode(SOAPY_SDR_RX, 0)) {
+                throw std::runtime_error(
+                    "--iq-balance: this module has no receive corrections (build it with "
+                    "-DHACKRFDUPLEX_DSP=ON)");
+            }
+            device->setIQBalanceMode(SOAPY_SDR_RX, 0, true);
+        }
 
         const double expected_offset =
             options.tx_tone_hz + (options.tx_frequency_hz - options.rx_frequency_hz);
@@ -1174,6 +1200,12 @@ int main(int argc, char** argv) {
             std::printf(
                 "rx: mean %.1f dBFS, peak %.3f of full scale, median bin %.1f dBFS (%zu bins)\n",
                 spectrum.mean_dbfs(), spectrum.peak(), spectrum.median_bin_dbfs(), Spectrum::kBins);
+            std::printf("rx: centre bin (the DC offset) %.1f dBFS, DC removal %s\n",
+                        spectrum.level_at(0.0), options.dc_removal ? "on" : "off");
+            if (options.iq_balance) {
+                const std::complex<double> b = device->getIQBalance(SOAPY_SDR_RX, 0);
+                std::printf("rx: I/Q balance correction found %+.5f %+.5fj\n", b.real(), b.imag());
+            }
             std::printf("rx: strongest bins across the band (offset from %.4f MHz):\n",
                         options.rx_frequency_hz / 1e6);
             for (const Spectrum::Peak& p : spectrum.peaks(6)) {
