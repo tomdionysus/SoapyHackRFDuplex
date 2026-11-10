@@ -72,6 +72,11 @@ struct Options {
     // The receive corrections, in a build with them (HACKRFDUPLEX_DSP).
     bool dc_removal = false;
     bool iq_balance = false;
+    // Timed mode: when the origin is lost, calibrate again and go on,
+    // counting each loss and whether calibration brought the origin back.
+    bool recover = false;
+    // Timed mode: a line of running totals this often, in seconds; 0 none.
+    double progress_seconds = 0;
     bool help = false;
 };
 
@@ -181,6 +186,9 @@ const char* const kUsage =
     "  --timed-bursts US transmit a 4096-sample burst at each receive timestamp plus\n"
     "                    US microseconds, and report where each arrived (transmits;\n"
     "                    excludes --tx-tone)\n"
+    "  --recover         with --timed-bursts: when the origin is lost, calibrate\n"
+    "                    again and go on; the run passes if every loss was recovered\n"
+    "  --progress S      with --timed-bursts: print running totals every S seconds\n"
     "  --timed-window US transmit a burst US microseconds after the time now and\n"
     "                    open a timed receive window just around it, again and\n"
     "                    again, and report where in each window it arrived\n"
@@ -250,6 +258,10 @@ void parse(int argc, char** argv, Options& options) {
             options.calibrations = std::stoi(value());
         } else if (arg == "--timed-bursts") {
             options.timed_delay_us = std::stod(value());
+        } else if (arg == "--recover") {
+            options.recover = true;
+        } else if (arg == "--progress") {
+            options.progress_seconds = std::stod(value());
         } else if (arg == "--timed-window") {
             options.window_delay_us = std::stod(value());
         } else {
@@ -591,6 +603,9 @@ struct TimedResult {
     // getHardwareTime between two reads, against their timestamps.
     unsigned clock_checks = 0;
     unsigned clock_outside = 0;
+    // --recover: origins lost, and calibrations that found one again.
+    unsigned origins_lost = 0;
+    unsigned recovered = 0;
     std::map<long long, unsigned> errors;
 };
 
@@ -633,7 +648,48 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     const auto deadline = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                                       std::chrono::duration<double>(options.seconds));
     std::optional<long long> previous_read_ns;
+    // Calibrates again when the origin has gone; true when it is back.
+    const auto recover = [&]() {
+        if (!options.recover || device->hasHardwareTime()) {
+            return;
+        }
+        ++result.origins_lost;
+        device->writeSetting("calibrate", "");
+        const auto value = take_tx_of_rx();
+        if (device->hasHardwareTime()) {
+            ++result.recovered;
+            std::printf(
+                "timed: origin lost after %.0f s; calibrated again: transmit position = "
+                "receive position %+lld\n",
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(),
+                value.value_or(0));
+        } else {
+            std::printf(
+                "timed: origin lost after %.0f s; calibration found none\n",
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+        }
+        std::fflush(stdout);
+        // Bursts already scheduled were timed on the old origin.
+        result.lost += static_cast<unsigned>(pending.size());
+        pending.clear();
+        history.clear();
+        previous_read_ns.reset();
+    };
+    auto next_progress = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                     std::chrono::duration<double>(options.progress_seconds));
     while (std::chrono::steady_clock::now() < deadline) {
+        if (options.progress_seconds > 0 && std::chrono::steady_clock::now() >= next_progress) {
+            next_progress += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(options.progress_seconds));
+            std::printf(
+                "timed: %.0f s: %u written, %u found, %u not found, %u lost, %u late writes, %u "
+                "overflows, %u time errors, %u underflows, %u origins lost, %u recovered\n",
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(),
+                result.written, result.found, result.missing, result.lost, result.late_writes,
+                result.overflows, result.time_errors, result.underflows, result.origins_lost,
+                result.recovered);
+            std::fflush(stdout);
+        }
         int flags = 0;
         long long time_ns = 0;
         void* buffs[] = {buffer.data()};
@@ -642,6 +698,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
         if (n == SOAPY_SDR_OVERFLOW) {
             ++result.overflows;
             previous_read_ns.reset();
+            recover();
             continue;
         }
 
@@ -686,7 +743,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
             previous_read_ns = time_ns;
         }
         const long long at = tick + delay;
-        if (live && at >= last_scheduled + 4 * chips) {
+        if (live && at >= last_scheduled + 4 * chips && device->hasHardwareTime()) {
             int write_flags = SOAPY_SDR_HAS_TIME | SOAPY_SDR_END_BURST;
             const void* out[] = {burst.data()};
             const int w = device->writeStream(tx, out, burst.size() / 2, write_flags,
@@ -729,6 +786,7 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
                 break;
             }
         }
+        recover();
 
         const long long end = history_start + static_cast<long long>(history.size() / 2);
         while (!pending.empty() && pending.front() + chips + margin <= end) {
@@ -769,12 +827,21 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
                 result.underflows);
     std::printf("timed: hardware time between two reads' timestamps: %u of %u\n",
                 result.clock_checks - result.clock_outside, result.clock_checks);
+    if (options.recover) {
+        std::printf("timed: %u origins lost, %u found again by calibrating\n", result.origins_lost,
+                    result.recovered);
+    }
     std::printf("timed: arrival against the time asked, in samples:");
     for (const auto& [error, count] : result.errors) {
         std::printf(" %+lld (x%u)", error, count);
     }
     std::printf("\n");
-    const bool clean = result.late_writes == 0 && result.time_errors == 0 && result.missing == 0 &&
+    // With --recover, a lost origin is a pass when calibrating found it
+    // again; the time errors that reported each loss go with it.
+    const bool time_ok = options.recover ? result.recovered == result.origins_lost &&
+                                               result.time_errors <= result.origins_lost
+                                         : result.time_errors == 0;
+    const bool clean = result.late_writes == 0 && time_ok && result.missing == 0 &&
                        result.errors.size() <= 1 && result.clock_outside == 0;
     std::printf("timed: %s\n", clean ? "every burst on time and in place" : "NOT CLEAN");
     return clean ? 0 : 1;
