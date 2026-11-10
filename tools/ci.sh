@@ -6,8 +6,8 @@
 # undefined-behaviour sanitizer build and its tests, the build with the
 # receive corrections (HACKRFDUPLEX_DSP) and its tests, a Clang build for
 # the thread-safety analysis where Clang is not the default compiler,
-# clang-tidy where the host has it, and the thread sanitizer build and its
-# tests where the host can run it. Run
+# clang-tidy where the host has it, the coverage summary where lcov is,
+# and the thread sanitizer build and its tests where the host can run it. Run
 # from anywhere; it works in the repository's own build trees. Exits
 # non-zero at the first failure.
 #
@@ -143,6 +143,21 @@ else
         exit 1
     }
     echo "clean"
+fi
+
+# Line coverage of the unit-tested sources (cmake/Instrumentation.cmake
+# lists what is left out and why), where lcov is installed.
+if command -v lcov >/dev/null && command -v genhtml >/dev/null; then
+    step "coverage"
+    cmake --preset coverage >/dev/null
+    cmake --build build-coverage -j "$jobs"
+    cmake --build build-coverage --target coverage >build-coverage/coverage.log 2>&1 || {
+        tail -n 20 build-coverage/coverage.log
+        exit 1
+    }
+    grep -A3 "Summary coverage" build-coverage/coverage.log
+else
+    step "coverage: lcov not on this host, skipped"
 fi
 
 # ThreadSanitizer cannot run on every host: on arm64 it needs a 39, 42 or

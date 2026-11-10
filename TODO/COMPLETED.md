@@ -3,6 +3,38 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-10: quality gates
+
+Item 13, accepted on the target: `tools/ci-pi.sh` passes with all of it.
+
+- Thread-safety annotations on every lock-guarded member
+  (`module/src/mutex.hpp`), `-Wthread-safety` clean, proved by a
+  clang++-19 build in `tools/ci.sh`; the lock order beside the locks and
+  in `docs/design.md`, Threads. The analysis found `bias_tee()` reading
+  unlocked.
+- A `tsan` preset; ThreadSanitizer runs on the workstation only, since
+  the target's 16K-page kernel gives a 47-bit address space it cannot
+  use (GCC 14 and clang 19 alike), and `tools/ci.sh` says so there.
+- clang-tidy-19 with a checked-in `.clang-tidy`, clean, run by
+  `tools/ci.sh`; it found 45 things, all fixed (optionals read after a
+  check it could not see, empty catches now each saying why, widening
+  and narrowing, floating loop counters, missing const).
+- Coverage on the target (lcov, gcov with atomic counters, which the
+  threaded tests need): 96.8% of 2121 lines and 98.4% of functions over
+  the unit-tested sources, the SoapySDR translation now included; the
+  core 98.8%, the translation 92.7%. Left out: the libhackrf binding and
+  the SoapySDR registration, which only hardware and SoapySDR's loader
+  run. The core's gaps are enum fallbacks that cannot be reached, a ring
+  that reports room and then has none, and error handlers that ignore a
+  stop that fails after a failure; the translation's are refusals of
+  odd arguments.
+- A review of the whole module (no `0.1.0` tag exists; `main` holds the
+  2023 code), by an independent reader: seven defects, all fixed with a
+  test written first and seen to fail; one recorded and not fixed, a
+  failed reopen in `HackrfBoard` leaving no libhackrf handle (needs a
+  hardware fault to reach).
+- 179 test cases, 189 with the receive corrections, from 146.
+
 ## 2026-11-10: transmit lead time
 
 Item 2, accepted on the target. `tools/lead-sweep.sh` at 2, 8, 11.52,

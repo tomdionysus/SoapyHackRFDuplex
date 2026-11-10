@@ -29,7 +29,9 @@ if(HACKRFDUPLEX_TSAN)
 endif()
 
 if(HACKRFDUPLEX_COVERAGE)
-    add_compile_options(--coverage -O0)
+    # Atomic counters: the tests run several threads through the same
+    # code, and plain counters lose increments and can even read negative.
+    add_compile_options(--coverage -O0 -fprofile-update=atomic)
     add_link_options(--coverage)
 
     find_program(LCOV_EXECUTABLE lcov REQUIRED)
@@ -44,9 +46,9 @@ if(HACKRFDUPLEX_COVERAGE)
         "*/tests/*"
         "*/generated/*"
         "*/hackrf_board.cpp"
+        "*/hackrf_board.hpp"
         "*/registration.cpp"
-        "*/tools/*"
-        CACHE STRING "lcov patterns excluded from the coverage report")
+        "*/tools/*")
 
     add_custom_target(coverage
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${_cov_dir}
