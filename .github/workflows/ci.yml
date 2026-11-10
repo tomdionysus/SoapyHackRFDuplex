@@ -4,7 +4,8 @@
 # distribution the target runs: formatting, licence lines, the release,
 # sanitizer and receive-correction builds and their tests, Clang's
 # thread-safety analysis, clang-tidy, the coverage report (its summary in
-# the job's page, the HTML kept as an artifact) and ThreadSanitizer, which
+# the job's page, the HTML kept as an artifact, the report sent to
+# Codecov) and ThreadSanitizer, which
 # the Raspberry Pi target cannot run. Everything runs against the fake
 # boards; the hardware is checked on the target with hackrfduplex-check,
 # and the run there (tools/ci-pi.sh) stays the merge gate.
@@ -33,7 +34,8 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential cmake pkgconf git ca-certificates \
             libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2 libliquid-dev \
-            clang-19 clang-tidy-19 clang-format lcov
+            clang-19 clang-tidy-19 clang-format lcov \
+            curl gnupg  # Codecov's uploader verifies its own signature
 
       - uses: actions/checkout@v4
         with:
@@ -64,3 +66,11 @@ jobs:
           name: coverage-html
           path: build-coverage/coverage/html
           if-no-files-found: ignore
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: build-coverage/coverage/coverage.info
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

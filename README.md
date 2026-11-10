@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 
 Version 0.1.0
 

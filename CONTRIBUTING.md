@@ -82,7 +82,8 @@ ctest --test-dir build
 
 Run it before a commit that touches code. GitHub Actions runs the whole
 of it on every push to `develop` and `main` in a Debian trixie container,
-keeps the coverage report as an artifact, and runs CodeQL; the run on
+keeps the coverage report as an artifact and sends it to Codecov
+(`CODECOV_TOKEN`, a repository secret), and runs CodeQL; the run on
 the target, with the boards attached, stays the gate for a change.
 
 The build of record runs on the target, a Debian trixie host with both
