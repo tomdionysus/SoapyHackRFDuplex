@@ -10,7 +10,7 @@
 #   tools/soak.sh [SECONDS_PER_RATE] [RATE...]     (default 7200, 8e6 16e6)
 #
 # Writes build/soak/<rate>.log (the check's report, power before and
-# after, its exit status) and build/soak/<rate>.samples (one line a
+# after, its exit status, the kernel's USB and power events) and build/soak/<rate>.samples (one line a
 # minute: epoch seconds, VmRSS in KiB, get_throttled). Exits 0 when every
 # rate's check passed. Detach it to survive the session that started it:
 #
@@ -39,6 +39,7 @@ for rate in $rates; do
         echo "power before: $(throttled)"
     } >"$log"
     : >"$samples"
+    started=$(date +%s)
     SOAPY_SDR_PLUGIN_PATH=$PWD/build/module "$check" --clkout rx --rate "$rate" \
         --timed-bursts "$delay_us" --seconds "$seconds" --recover --progress 60 >>"$log" 2>&1 &
     pid=$!
@@ -57,6 +58,11 @@ for rate in $rates; do
         echo "exit: $code"
         echo "power after: $(throttled)"
         echo "finished $(date -u +%FT%TZ)"
+        # USB and supply faults during the run, so a shortfall can be laid at
+        # the host's door rather than the module's.
+        echo "kernel USB and power events:"
+        journalctl -k --since "@$started" --no-pager 2>/dev/null |
+            grep -iE 'over-current|disconnect|under-voltage|xhci' || echo "  none"
     } >>"$log"
     [ "$code" -eq 0 ] || status=1
 done
