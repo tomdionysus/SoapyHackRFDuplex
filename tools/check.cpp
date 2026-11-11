@@ -1093,7 +1093,11 @@ int run_acceptance(const std::string& self, const Options& options) {
         const Child c = run({"--rate", rate, "--seconds", seconds, "--no-analysis"});
         const auto pct = number(c.output, kRxRate);
         const auto over = number(c.output, kOverflows);
-        line(c.status == 0 && pct && *pct >= 99.0 && over && *over == 0,
+        // Samples arrive a transfer (131072) at a time: 655 ms at 200 ksps,
+        // so a run's count is short by up to one transfer of its length.
+        const double transfer_pct = 100.0 * 131072.0 / (std::stod(rate) * std::stod(seconds));
+        line(c.status == 0 && pct && *pct >= std::min(99.0, 100.0 - transfer_pct) && over &&
+                 *over == 0,
              fmt("receive %s sps %s s", rate.c_str(), seconds.c_str()),
              pct && over ? fmt("%.1f%% of nominal, %.0f overflows", *pct, *over)
                          : "no report (exit " + std::to_string(c.status) + ")");
@@ -1109,10 +1113,19 @@ int run_acceptance(const std::string& self, const Options& options) {
                                 : "no report");
     }
 
-    // A reference switch each way, the boards onto their own clocks and
-    // back onto the shared one, with the sensors read each time.
+    // The sensors follow the reference: the boards on their own clocks,
+    // then on the shared one again. Receive only, the transmitting board,
+    // whose clock is the one that switches, never starts; with --transmit
+    // a tone makes it start, and the switch itself is judged each way.
     {
-        const std::vector<std::string> args{"--rate", "8e6", "--seconds", "3"};
+        // No analysis: these lines judge the switch and the sensors, and
+        // the analysis at 8 Msps takes more than a core on the target.
+        std::vector<std::string> args{"--rate", "8e6", "--seconds", "3", "--no-analysis"};
+        if (options.transmit) {
+            args.insert(args.end(), {"--tx-tone", "100e3", "--tx-gain", "0"});
+            // Start from the shared reference, so the next run switches.
+            run(args);
+        }
         std::vector<std::string> off_args{"--clkout", "off"};
         for (const std::string& key : {std::string("--rx-serial"), std::string("--tx-serial")}) {
             const std::string& value = key == "--rx-serial" ? options.rx_serial : options.tx_serial;
@@ -1121,43 +1134,81 @@ int run_acceptance(const std::string& self, const Options& options) {
             }
         }
         off_args.insert(off_args.end(), args.begin(), args.end());
+        const auto judge = [&](const Child& c, bool shared) {
+            // Overflows, not the rate. With an origin to find, one overflow
+            // at the start is the activation backlog: this tool activates
+            // transmit first, its writer fills the transmit ring, and the
+            // calibration burst waits behind it for 0.8 s or so at 8 Msps,
+            // longer than the receive ring holds (docs/design.md).
+            const auto over = number(c.output, kOverflows);
+            const double allowed = shared && options.transmit ? 1 : 0;
+            bool ok = c.status == 0 && over && *over <= allowed &&
+                      has(c.output, "rx lo_locked true") &&
+                      has(c.output, shared ? "sensors running: ref_locked true"
+                                           : "sensors running: ref_locked false");
+            std::string detail = shared ? "ref_locked true" : "ref_locked false";
+            if (over) {
+                detail += fmt(", %.0f overflows", *over);
+            }
+            if (options.transmit) {
+                const bool switched = has(c.output, "TX board changed reference clock");
+                ok = ok && switched && has(c.output, "tx lo_locked true");
+                detail += switched ? ", TX board's switch handled, tx lo_locked true"
+                                   : ", no switch on the TX board";
+            }
+            return std::make_pair(ok, detail);
+        };
         const Child off = run_child(self, off_args);
-        const auto off_pct = number(off.output, kRxRate);
-        line(off.status == 0 && has(off.output, "sensors running: ref_locked false") &&
-                 has(off.output, "rx lo_locked true") && off_pct && *off_pct >= 99.0,
-             "reference switch to the boards' own clocks",
-             std::string(has(off.output, "changed reference clock") ? "switch handled"
-                                                                    : "no switch needed") +
-                 ", ref_locked false, rx lo_locked true");
+        const auto [off_ok, off_detail] = judge(off, false);
+        line(off_ok,
+             options.transmit ? "reference switch to the boards' own clocks"
+                              : "sensors with the boards on their own clocks",
+             off_detail);
         const Child on = run(args);
-        const auto on_pct = number(on.output, kRxRate);
-        line(on.status == 0 && has(on.output, "sensors running: ref_locked true") &&
-                 has(on.output, "rx lo_locked true") && on_pct && *on_pct >= 99.0,
-             "reference switch back to the shared reference (clkout " + clkout + ")",
-             std::string(has(on.output, "changed reference clock") ? "switch handled"
-                                                                   : "no switch needed") +
-                 ", ref_locked true, rx lo_locked true");
+        const auto [on_ok, on_detail] = judge(on, true);
+        line(on_ok,
+             options.transmit
+                 ? "reference switch back to the shared reference (clkout " + clkout + ")"
+                 : "sensors with the shared reference (clkout " + clkout + ")",
+             on_detail);
     }
 
     if (options.transmit) {
         // A tone in each format: at its sent offset every second, the four
-        // levels within 0.3 dB of each other.
+        // levels within 0.3 dB of each other. At 2 Msps, where the tool's
+        // spectrum analysis keeps up on the target (at 8 it takes more than
+        // a core, drops samples, and the gaps move the estimate by a hertz
+        // or two); the first second, which holds the start, is not judged.
         std::vector<double> levels;
         for (const std::string format : {"CS8", "CS16", "CF32", "CF64"}) {
-            const Child c = run({"--rate", "8e6", "--seconds", "4", "--tx-tone", "100e3",
+            const Child c = run({"--rate", "2e6", "--seconds", "6", "--tx-tone", "100e3",
                                  "--tx-gain", "0", "--tx-format", format});
             const auto level =
                 number(c.output, R"(tone: expected at [-+\d.]+ kHz: ([-\d.]+) dBFS)");
-            const auto spread = number(c.output, R"(tone: offset spread ([\d.]+) Hz)");
             const auto under =
                 number(c.output, R"(tx: \d+ samples in [\d.]+ s = [\d.]+ Msps, (\d+) underflows)");
+            const auto over = number(c.output, kOverflows);
+            std::vector<double> offsets;
+            const std::regex second(R"(\n +(\d+) s: +([-+\d.]+) Hz)");
+            for (auto it = std::sregex_iterator(c.output.begin(), c.output.end(), second);
+                 it != std::sregex_iterator(); ++it) {
+                if (std::stoi((*it)[1].str()) >= 2) {
+                    offsets.push_back(std::stod((*it)[2].str()));
+                }
+            }
+            const bool on_offset =
+                offsets.size() >= 3 &&
+                std::all_of(offsets.begin(), offsets.end(), [](double hz) { return hz == 0; });
             if (level) {
                 levels.push_back(*level);
             }
-            line(c.status == 0 && level && spread && *spread == 0 && under && *under == 0,
+            line(c.status == 0 && level && on_offset && under && *under == 0 && over && *over == 0,
                  "tone in " + format,
-                 level && spread ? fmt("%.1f dBFS, offset spread %.1f Hz", *level, *spread)
-                                 : "no tone report");
+                 level ? fmt("%.1f dBFS, %zu seconds judged, %s, %.0f overflows", *level,
+                             offsets.size(),
+                             on_offset ? "every one at +0.0 Hz" : "NOT all at +0.0 Hz",
+                             over.value_or(-1))
+                       : "no tone report");
         }
         if (levels.size() == 4) {
             const auto [low, high] = std::minmax_element(levels.begin(), levels.end());
@@ -1222,7 +1273,12 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (options.acceptance) {
-        return run_acceptance(argv[0], options);
+        try {
+            return run_acceptance(argv[0], options);
+        } catch (const std::exception& e) {
+            std::cerr << "hackrfduplex-check: acceptance: " << e.what() << "\n";
+            return 1;
+        }
     }
     if (options.tx_rate_hz == 0) {
         options.tx_rate_hz = options.rate_hz;
