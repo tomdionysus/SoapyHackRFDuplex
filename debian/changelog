@@ -1,3 +1,21 @@
+hackrfduplex (0.2.0) unstable; urgency=medium
+
+  * One shared time for both streams, from a calibration burst or a
+    trigger edge, and timed transmit and receive to the sample.
+  * Faults reported as stream statuses: lost samples, a stopped or
+    unplugged board, a lost time origin; the transmitter stops by itself
+    if its host stops feeding it.
+  * The rest of the SoapySDR contract: clock and time sources, the
+    lo_locked, ref_locked and time_locked sensors, direct buffer access,
+    sample rates refused outside their range, unsupported calls refused.
+  * A receive ring sized to the sample rate; the device opens at the
+    boards' own 10 Msps.
+  * Optional receive DC removal and I/Q balance correction (liquid-dsp).
+  * hackrfduplex-check: timed bursts, recovery, the acceptance battery,
+    and a man page.
+
+ -- Tom Cully <mail@tomcully.com>  Thu, 12 Nov 2026 13:35:42 +0000
+
 hackrfduplex (0.1.0) unstable; urgency=medium
 
   * First packaging: the SoapySDR module and hackrfduplex-check.

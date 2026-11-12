@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
 
-Version 0.1.0
+Version 0.2.0
 
 - Every SoapySDR call behaves as the contract says, per direction; what
   the device cannot do it refuses, never silently ignores.
