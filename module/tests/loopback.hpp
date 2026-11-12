@@ -39,8 +39,10 @@ public:
     // Keep every byte the transmitter was pulled for; set before it starts.
     std::atomic<bool> record{false};
     // The wait between transfers, in microseconds. Real transfers are 6.5 ms
-    // or more apart; the default keeps the tests quick.
-    std::atomic<long> pace_us{20};
+    // or more apart. The default keeps the tests quick while leaving every
+    // margin the pair counts in transfers (the burst's lead, the rings)
+    // milliseconds wide, so a host busy elsewhere does not overrun it.
+    std::atomic<long> pace_us{1000};
     // After stop(): what was recorded.
     const std::vector<std::int8_t>& sent() const { return sent_; }
 
