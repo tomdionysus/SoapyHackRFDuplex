@@ -111,6 +111,41 @@ The hardware check is `hackrfduplex-check` on two attached boards; what
 it should report is the acceptance test of each hardware item in
 [TODO/ACTIVE.md](TODO/ACTIVE.md).
 
+Several tests run the pair against a simulated link that moves a transfer
+a millisecond, and some of what they check, such as a burst landing at
+its time, depends on threads being scheduled within a few milliseconds.
+They pass on an idle host and under a parallel `ctest -j`; a host pinned
+by other work can still fail one now and then (about one run in ten with
+six busy loops beside the suite). Such a failure is rerun on a quiet host
+before it is taken as a finding.
+
+## Releases
+
+A release is a version number, a tag, and packages for amd64 and arm64
+in the project's apt repository. In order:
+
+1. On `develop`: the version in `project(... VERSION ...)` in
+   `CMakeLists.txt`, an entry at the top of [CHANGELOG.md](CHANGELOG.md),
+   a matching entry at the top of `debian/changelog`, and the version in
+   the README. One commit, `Version x.y.z`.
+2. `tools/ci-pi.sh` passes on the target, and GitHub Actions passes on
+   `develop`, the package jobs included.
+3. Merge `develop` into `main` (`--no-ff`), tag `x.y.z` on `main`
+   (annotated, no `v`), and push `main`, the tag and `develop`.
+4. Build the release packages from the tag, never from a working tree:
+   arm64 on the target from `git archive x.y.z` (`dpkg-buildpackage -us
+   -uc -b`, then lintian), amd64 with `tools/deb-amd64.sh x.y.z` (Docker).
+   Both must be free of lintian errors and warnings.
+5. On the target, install the arm64 packages and run the receive smoke
+   test and, with transmit allowed, the timed bursts (TODO/ACTIVE.md,
+   "Resume here"); then remove the packages, which would otherwise
+   shadow the build tree's module.
+6. Put the packages in the apt repository and sign it, following that
+   repository's own README. Before uploading, install from a copy of
+   the signed tree in clean `debian:trixie` containers for both
+   architectures; after uploading, install from the live repository the
+   way the README says, again for both.
+
 ## Safety
 
 - No transmit test without the board owner's explicit permission for that
