@@ -31,7 +31,7 @@ constexpr auto kTriggerWait = std::chrono::milliseconds(500);
 constexpr std::size_t kLibhackrfTransfers = 4;
 // How far ahead of the transmitter the calibration burst is queued, in
 // transfers: a stall that long between choosing its time and writing it
-// (26 ms at 20 Msps) leaves it on time.
+// (52 ms at 20 Msps) leaves it on time.
 constexpr std::size_t kBurstLeadTransfers = 2 * kLibhackrfTransfers;
 // rx_auto_slots(): what the receive ring holds, and its bounds; and the
 // rate a ring left to the module is made for, the HackRF's highest.
