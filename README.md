@@ -6,17 +6,6 @@
 
 Version 0.2.0
 
-- Every SoapySDR call behaves as the contract says, per direction; what
-  the device cannot do it refuses, never silently ignores.
-- Timed transmit to the sample: in a four-hour soak on the real pair,
-  over a million timed bursts were each received at the sample asked.
-- Unit tests against simulated boards on every push, with address,
-  undefined-behaviour and thread sanitizers, Clang's thread-safety
-  analysis, clang-tidy and CodeQL.
-- A hardware acceptance battery certifies a pair in one command.
-- Runs with GNU Radio, SoapyRemote, rtl_433 and SoapySDR's Python
-  bindings.
-
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
 makes two [HackRF One](https://greatscottgadgets.com/hackrf/one/) boards
 one full-duplex radio. One board receives and the other transmits, and
@@ -30,6 +19,17 @@ sharing one clock and one timeline.
 - `hackrfduplex-ft8`, an example FT8 decoder through SoapySDR
 
 It works with stock HackRF firmware and stock libhackrf.
+
+- Every SoapySDR call behaves as the contract says, per direction; what
+  the device cannot do it refuses, never silently ignores.
+- Timed transmit to the sample: in a four-hour soak on the real pair,
+  over a million timed bursts were each received at the sample asked.
+- Unit tests against simulated boards on every push, with address,
+  undefined-behaviour and thread sanitizers, Clang's thread-safety
+  analysis, clang-tidy and CodeQL.
+- A hardware acceptance battery certifies a pair in one command.
+- Runs with GNU Radio, SoapyRemote, rtl_433 and SoapySDR's Python
+  bindings.
 
 ## Install
 
