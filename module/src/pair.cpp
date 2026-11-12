@@ -29,6 +29,10 @@ constexpr auto kShortfallLog = std::chrono::seconds(1);
 constexpr auto kTriggerWait = std::chrono::milliseconds(500);
 // libhackrf keeps this many transfers in flight in each direction.
 constexpr std::size_t kLibhackrfTransfers = 4;
+// How far ahead of the transmitter the calibration burst is queued, in
+// transfers: a stall that long between choosing its time and writing it
+// (26 ms at 20 Msps) leaves it on time.
+constexpr std::size_t kBurstLeadTransfers = 2 * kLibhackrfTransfers;
 // rx_auto_slots(): what the receive ring holds, and its bounds; and the
 // rate a ring left to the module is made for, the HackRF's highest.
 constexpr double kRxHoldSeconds = 1.5;
@@ -1005,12 +1009,13 @@ void Pair::calibrate_burst(double rx_rate) {
         }
     }
 
-    // Listen from now for as long as the burst can take to come round: a
-    // full transmit ring ahead of it, libhackrf's transfers in flight each
-    // way, and some margin.
+    // Listen from now for as long as the burst can take to come round: its
+    // lead, a full transmit ring ahead of it, libhackrf's transfers in
+    // flight each way, and some margin.
     const std::size_t transfer = std::max(mtu(Direction::kRx), mtu(Direction::kTx));
     const std::size_t listen =
-        burst::kChips + (tx_path_->slots() + 2 * kLibhackrfTransfers + 4) * transfer;
+        burst::kChips +
+        (kBurstLeadTransfers + tx_path_->slots() + 2 * kLibhackrfTransfers + 4) * transfer;
     Capture capture(listen);
     rx_path_->set_tap([&capture](std::uint64_t position, std::span<const std::uint8_t> bytes) {
         capture.add(position, bytes);
@@ -1022,7 +1027,7 @@ void Pair::calibrate_burst(double rx_rate) {
     {
         const Lock lock(write_mutex_);
         const std::vector<std::int8_t> samples = burst::samples();
-        const std::uint64_t at = tx_path_->queued() + mtu(Direction::kTx);
+        const std::uint64_t at = tx_path_->queued() + kBurstLeadTransfers * mtu(Direction::kTx);
         const auto timeout = std::chrono::seconds(2);
         const TxWrite first =
             tx_path_->write_at(samples.data(), burst::kChips, Format::kCs8, true, at,

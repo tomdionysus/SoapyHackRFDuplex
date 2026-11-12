@@ -106,9 +106,10 @@ TEST_CASE("the burst gives the origin: the loop's delay", "[pair][time]") {
 }
 
 TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]") {
-    // The listen is sized for the worst case, a full transmit ring ahead of
-    // the burst; on the target that is about 27 transfers, 1.8 s at 1.92
-    // Msps, inside activateStream. Correlated as it fills, the burst ends it.
+    // The listen is sized for the worst case, the burst's lead and a full
+    // transmit ring ahead of it; on the target that is about 35 transfers,
+    // 2.4 s at 1.92 Msps, inside activateStream. Correlated as it fills, the
+    // burst ends it.
     Rig rig;
     rig.open();
     Loopback air(rig.tx, rig.rx, 300);
@@ -137,6 +138,35 @@ TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]
                         &could) == 2);
     CHECK(heard < could);
     air.stop();
+}
+
+TEST_CASE("the calibration burst is queued far enough ahead that a stall does not make it late",
+          "[pair][time]") {
+    // Queued one transfer ahead of the transmitter, the burst was late, and
+    // the origin lost, whenever the activating thread stalled for longer
+    // than a transfer (6.5 ms at 20 Msps) between choosing its time and
+    // writing it. Eight transfers, twice what libhackrf has in flight, ride
+    // out a stall eight times as long.
+    constexpr std::size_t kLeadTransfers = 8;
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    air.record = true;
+    rig.pair.activate(Direction::kRx);
+    // Held, the transmitter pulls nothing before the burst is queued, so
+    // where the burst goes out is where it was queued.
+    air.paused = true;
+    std::thread start([&] { rig.pair.activate(Direction::kTx); });
+    std::this_thread::sleep_for(50ms);
+    air.paused = false;
+    start.join();
+    air.stop();
+    REQUIRE(rig.pair.tx_of_rx());
+    const std::vector<std::int8_t>& sent = air.sent();
+    const auto first = std::find_if(sent.begin(), sent.end(), [](std::int8_t v) { return v != 0; });
+    REQUIRE(first != sent.end());
+    const auto at = static_cast<std::size_t>(first - sent.begin()) / 2;
+    CHECK(at >= kLeadTransfers * kTransferSamples);
 }
 
 TEST_CASE("the transmitter is tuned to the receiver for the burst and back", "[pair][time]") {
