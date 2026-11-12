@@ -171,6 +171,14 @@ untested against hardware, and item 17 waits for them.
   application is rtl_433; SoapyRemote is measured and documented with no
   system setting changed; the failed-reopen defect in `HackrfBoard` is
   fixed before the tag.
+- Tom, 2026-11-12, from the interoperability runs: a read on a receive
+  stream not yet active waits out its timeout and returns
+  `SOAPY_SDR_TIMEOUT`, as other drivers do (SoapyRemote's server reads
+  from `setupStream` on), while one whose board failed still returns
+  `SOAPY_SDR_STREAM_ERROR`; SoapyRemote's own keys pass without a
+  warning; the device opens at 10 Msps both ways, the boards' own
+  start-up rate ("If the boards start at 10Msps, it makes sense to use
+  their defaults").
 
 ## Release 0.2.0
 
