@@ -31,7 +31,7 @@ constexpr auto kTriggerWait = std::chrono::milliseconds(500);
 constexpr std::size_t kLibhackrfTransfers = 4;
 // rx_auto_slots(): what the receive ring holds, and its bounds; and the
 // rate a ring left to the module is made for, the HackRF's highest.
-constexpr double kRxHoldSeconds = 0.5;
+constexpr double kRxHoldSeconds = 1.5;
 constexpr std::size_t kMinAutoSlots = 15;
 constexpr std::size_t kMaxAutoSlots = 256;
 constexpr double kFastestRate = 20e6;

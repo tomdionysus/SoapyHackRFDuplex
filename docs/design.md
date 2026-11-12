@@ -71,16 +71,22 @@ stream always begins at position 0. The pair's destructor stops anything
 running.
 
 A receive stream opened without a depth gets one sized to its rate: at
-each activation, enough transfers for half a second at the receive rate
-of that moment, at least 15 and at most 256 (`rx_auto_slots`). The ring
-is allocated once, at open, for 20 Msps (77 transfers, 20 MB), and each
+each activation, enough transfers for 1.5 s at the receive rate of
+that moment, at least 15 and at most 256 (`rx_auto_slots`). The ring is
+allocated once, at open, for 20 Msps (229 transfers, 60 MB), and each
 activation uses as much of it as the rate needs, so the buffers a
 direct-access reader was given never move and a rate set after the stream
-was opened, as GNU Radio sets it, still counts. Half a second covers a
-reader that stalls while the other stream starts: GNU Radio activates
-receive, then transmit, whose activation sends the calibration burst
-(about 0.25 s) before any block reads, and at 16 Msps the old fixed 15
-transfers (123 ms) overflowed every time (docs/compatibility.md). The
+was opened, as GNU Radio sets it, still counts. 1.5 s covers a reader
+that stalls while the other stream starts. GNU Radio activates receive,
+then transmit, whose activation sends the calibration burst (about 0.25
+s) before any block reads, and at 16 Msps the old fixed 15 transfers (123
+ms) overflowed every time (docs/compatibility.md). Activated the other
+way, transmit first with its ring already full, the burst waits behind
+the queued transfers and the receive activation takes 0.54 to 0.97 s at
+8 Msps on the target (0.41 at 4, 0.58 to 0.79 at 2, 1.16 at 1.2, where
+the 15-transfer floor holds 1.6 s); a half-second ring, the first sizing,
+overflowed once there, and 1.5 s leaves half as much again as the
+slowest start seen. The
 ring is slack, not delay: it fills only while the reader is behind. A
 transmit stream without a depth keeps 15, which sets how far a writer may
 run ahead.

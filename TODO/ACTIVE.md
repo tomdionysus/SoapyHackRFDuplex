@@ -26,8 +26,8 @@ tools/ci-pi.sh -- bash -c 'SOAPY_SDR_PLUGIN_PATH=$PWD/build/module ./build/tools
 The last line is the receive smoke test: 99.9% of nominal, 0 overflows,
 both boards `clock: external`. With transmit allowed, add `--tx-tone
 100e3 --tx-gain 0`: the origin found at start, the tone at +0.0 Hz every
-second, 0 underflows, at most 1 overflow (the receive ring fills while
-the second activation calibrates); and `--timed-bursts 81920 --seconds
+second, 0 underflows, 0 overflows (the receive ring holds 1.5 s, more
+than the second activation takes to calibrate); and `--timed-bursts 81920 --seconds
 60`: every burst at +0 samples. Leave `clkout=rx` set at the end of a
 run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
@@ -162,6 +162,15 @@ untested against hardware, and item 17 waits for them.
   code coverage and GitHub Actions gate every push, with the quality
   setup corvus-radioberry publishes (Tom, 2026-11-10). LTE and anything needing a changed
   libhackrf or firmware stays out of scope (Tom, 2026-11-10, again).
+- Tom, 2026-11-12, for 0.2.0: the 16 Msps soak repeat is accepted with
+  its one late write put down to the coinciding under-voltage, and the
+  README says the soak ran on an under-powered host; the receive ring
+  holds 1.5 s at the rate (Tom chose 1.5 over 1 after 1 s left 5% margin) (at least 15 transfers), so a transmit-first
+  start does not overflow; `--recover` deactivates and reactivates both
+  streams when a board stops, then recalibrates; the receive-only
+  application is rtl_433; SoapyRemote is measured and documented with no
+  system setting changed; the failed-reopen defect in `HackrfBoard` is
+  fixed before the tag.
 
 ## Release 0.2.0
 

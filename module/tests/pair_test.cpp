@@ -445,14 +445,15 @@ TEST_CASE("the hardware time while receive is stopped is where the next start be
     CHECK(rig.pair.time_ticks() == 1008);
 }
 
-TEST_CASE("the automatic receive depth holds half a second at the rate, within bounds",
+TEST_CASE("the automatic receive depth holds one and a half seconds at the rate, within bounds",
           "[pair][ring]") {
     // libhackrf's transfer: 131072 samples.
     CHECK(rx_auto_slots(0, 131072) == 15);
-    CHECK(rx_auto_slots(2e6, 131072) == 15);
-    CHECK(rx_auto_slots(8e6, 131072) == 31);
-    CHECK(rx_auto_slots(16e6, 131072) == 62);
-    CHECK(rx_auto_slots(20e6, 131072) == 77);
+    CHECK(rx_auto_slots(1e6, 131072) == 15);
+    CHECK(rx_auto_slots(2e6, 131072) == 23);
+    CHECK(rx_auto_slots(8e6, 131072) == 92);
+    CHECK(rx_auto_slots(16e6, 131072) == 184);
+    CHECK(rx_auto_slots(20e6, 131072) == 229);
     // Tiny transfers stop at the ceiling.
     CHECK(rx_auto_slots(20e6, 8) == 256);
 }
@@ -479,24 +480,24 @@ TEST_CASE("a receive stream left to the module holds as much as its rate needs a
     rig.pair.set_sample_rate(Direction::kRx, 2e6);
     rig.pair.open_stream(Direction::kRx, Format::kCs8, std::nullopt);
     // Allocated once for the fastest rate, so its buffers never move.
-    CHECK(rig.pair.rx_slots() == 77);
+    CHECK(rig.pair.rx_slots() == 229);
     const std::vector<std::uint8_t> transfer(262144, 0);
 
     rig.pair.activate(Direction::kRx);
-    for (int k = 0; k < 80; ++k) {
+    for (int k = 0; k < 250; ++k) {
         rig.rx.deliver_rx(transfer);
     }
-    CHECK(transfers_kept(rig.pair, 131072) == 15);
+    CHECK(transfers_kept(rig.pair, 131072) == 23);
     rig.pair.deactivate(Direction::kRx);
 
     // The rate is set after the stream was opened, as GNU Radio does.
     rig.pair.set_sample_rate(Direction::kRx, 16e6);
     rig.pair.activate(Direction::kRx);
-    for (int k = 0; k < 80; ++k) {
+    for (int k = 0; k < 250; ++k) {
         rig.rx.deliver_rx(transfer);
     }
-    CHECK(transfers_kept(rig.pair, 131072) == 62);
-    CHECK(rig.pair.rx_slots() == 77);
+    CHECK(transfers_kept(rig.pair, 131072) == 184);
+    CHECK(rig.pair.rx_slots() == 229);
 }
 
 TEST_CASE("a receive stream given a depth keeps it at any rate", "[pair][ring]") {

@@ -67,9 +67,10 @@ struct TimedWrite {
 };
 
 // The receive ring's depth in transfers when the application leaves it to
-// the module: enough for half a second at `rate_hz` (0 when unset), so a
-// reader may stall that long, as GNU Radio's does while the second stream
-// starts and the calibration burst goes out, without an overflow. At least
+// the module: enough for 1.5 s at `rate_hz` (0 when unset), so a reader may
+// stall that long without an overflow. The longest stall measured is a
+// receive activation after the transmit stream's, up to 0.97 s at 8 Msps,
+// while the calibration burst waits behind the queued transmit data. At least
 // the 15 transfers every stream held before, at most 256 (tiny transfers,
 // as the fake boards' are).
 std::size_t rx_auto_slots(double rate_hz, std::size_t transfer_samples);

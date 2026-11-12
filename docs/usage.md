@@ -71,11 +71,12 @@ finds the burst in what it receives. So:
   both streams, and on `writeSetting("calibrate", "")`. Choose the
   transmit gain with that in mind. `time_origin=none` sends nothing and
   gives no shared time.
-- The second activation takes a moment longer: about 0.25 to 0.4 s.
-  Nothing reads the receive stream meanwhile unless the application has
-  a reader running. The receive ring holds half a second at the rate by
-  default, so it rides that out without an overflow; a ring the
-  application made smaller may overflow once, at the start.
+- The second activation takes a moment longer: about 0.25 s at 8 Msps
+  with receive started first, and 0.5 to 1 s with transmit started first,
+  because the burst waits behind what is queued. Nothing reads the
+  receive stream meanwhile unless the application has a reader running.
+  The receive ring holds 1.5 s at the rate by default, so it rides that out without an overflow; a ring
+  the application made smaller may overflow once, at the start.
 - Calibration needs both directions at one sample rate, the boards on
   one reference, and the burst to reach the receiver at the gains set.
   When it fails the module logs why, the streams run on, and

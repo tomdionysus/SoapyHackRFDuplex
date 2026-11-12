@@ -1206,11 +1206,11 @@ TEST_CASE("a receive stream without buffers is sized by the module for its rate"
     REQUIRE(info.size() == 1);
     CHECK(info[0].key == "buffers");
     CHECK(info[0].value.empty());
-    CHECK(info[0].description.find("0.5 s") != std::string::npos);
+    CHECK(info[0].description.find("1.5 s at") != std::string::npos);
     // Allocated for 20 Msps at setup; how much is used follows the rate at
     // each activation (pair_test).
     SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
-    CHECK(d.getNumDirectAccessBuffers(rx) == 77);
+    CHECK(d.getNumDirectAccessBuffers(rx) == 229);
     d.closeStream(rx);
     // The transmit stream keeps its fixed default.
     const auto tx_info = d.getStreamArgsInfo(SOAPY_SDR_TX, 0);

@@ -146,7 +146,7 @@ SoapySDRUtil --probe="driver=hackrfduplex,rx_serial=244b,tx_serial=7957"
 | `tx_serial` | the higher of two serials | suffix of the serial of the board that transmits; with only one of the two given, the other attached board takes the other role |
 | `bias_tx`, `clkout`, `time_origin`, `tx_underrun_limit` | as the settings | as the settings of the same names, applied when the device opens |
 | **Stream arguments** | | |
-| `buffers` | receive: 0.5 s at the rate, at least 15; transmit: 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller; unset on receive, the module sizes the ring at each activation from the sample rate then |
+| `buffers` | receive: 1.5 s at the rate, at least 15; transmit: 15 | USB transfers (256 KiB, 128 Ki samples each) the stream holds between the board and the caller; unset on receive, the module sizes the ring at each activation from the sample rate then |
 | **Settings** | | |
 | `bias_tx` | false | 3.3 V on the transmitting board's antenna port while it transmits |
 | `clkout` | off | `rx` or `tx`: that board drives 10 MHz from its CLKOUT for the other's CLKIN, so both run from one reference; off at every power-up, so set it each run; also the SoapySDR clock source, `internal` for off |
@@ -198,9 +198,10 @@ that clock and `getHardwareTime` reads it.
 Once both streams are running the module finds a common time origin
 for them, by default by sending a 4096-sample calibration burst at the
 transmit gain set and finding it in the receive stream, which takes a
-moment inside the second `activateStream` (about 0.4 s at 8 Msps; a
-receive reader not yet running sees one overflow at its start, with the
-gap in its timestamps). From then on
+moment inside the second `activateStream`: about 0.25 s at 8 Msps
+started receive first, as GNU Radio does, and 0.5 to 1 s started
+transmit first, since the burst waits behind what is queued. The receive
+ring holds 1.5 s at the rate, so a reader not yet running loses nothing. From then on
 `hasHardwareTime` is true and a write with `SOAPY_SDR_HAS_TIME` goes out
 at exactly that receive time: a burst stamped T is received at T. The
 calibration needs both directions at one sample rate, the boards on one

@@ -203,7 +203,7 @@ SoapySDR::ArgInfoList SoapyDevice::getStreamArgsInfo(const int direction,
     if (direction == SOAPY_SDR_RX) {
         // Left empty, the module sizes it at each activation (Pair::open_stream).
         buffers.description +=
-            " Unset: enough for 0.5 s at the sample rate when the stream starts, at least " +
+            " Unset: enough for 1.5 s at the sample rate when the stream starts, at least " +
             std::to_string(kDefaultBuffers) + ".";
     } else {
         buffers.value = std::to_string(kDefaultBuffers);
