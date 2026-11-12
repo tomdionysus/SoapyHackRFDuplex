@@ -158,7 +158,9 @@ Unknown keys are tolerated, since some applications pass their whole
 device argument string to every stream and write vendor settings
 blindly: opening the device, stream setup and writing a setting each log a warning for a key
 they do not know and otherwise ignore it, and reading one returns an
-empty string. Anything else the device cannot do is refused, never
+empty string. SoapyRemote's own keys (`remote`, `remote:...`,
+`soapy_remote_...`), which its server passes on with the client's, are
+ignored without a warning. Anything else the device cannot do is refused, never
 ignored: a stream flag it cannot honour returns
 `SOAPY_SDR_NOT_SUPPORTED`, and any other call throws, naming why
 ([docs/design.md](docs/design.md), The SoapySDR API against the module).
@@ -218,7 +220,10 @@ timestamps have then shifted by an unknown amount, or as
 `SOAPY_SDR_UNDERFLOW` from `readStreamStatus` on the transmitter. A board
 that stops, or is pulled from the bus, turns its stream's reads, writes
 and status into `SOAPY_SDR_STREAM_ERROR` within about 100 ms, until the
-stream is deactivated and activated again. A timed
+stream is deactivated and activated again. A read on a receive stream
+not started yet waits out its timeout, or until the stream starts, and
+returns `SOAPY_SDR_TIMEOUT`, as other drivers' reads do; SoapyRemote's
+server reads from the moment a stream is set up. A timed
 transmit needs a lead from the receive timestamp it is based on: allow
 5.5 USB transfers, 720 896 samples (360 ms at 2 Msps, 90 ms at 8 Msps,
 45 ms at 16 Msps), from a read the reader waited for, not one that

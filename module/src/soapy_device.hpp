@@ -199,6 +199,10 @@ private:
     static void check_channel(const size_t channel);
     // Both, throwing std::invalid_argument for either.
     static Direction check(const int direction, const size_t channel);
+    // 0 when the receive stream is running; else, after waiting up to the
+    // timeout for it to start, SOAPY_SDR_TIMEOUT, or SOAPY_SDR_STREAM_ERROR
+    // at once when its board stopped.
+    int await_rx(long timeoutUs) const;
     // A read's flags, time and return value, as readStream gives them.
     int report_read(const RxRead& read, int& flags, long long& timeNs) const;
 

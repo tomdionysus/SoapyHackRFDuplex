@@ -135,8 +135,13 @@ What the device cannot do it refuses: `SOAPY_SDR_NOT_SUPPORTED` from a
 stream call, or `std::invalid_argument` naming why from any other. The
 one exception is a setting or stream argument it does not know, which
 applications pass around blindly: that is logged as a warning and
-ignored. Every per-channel call checks its direction and channel (one
-channel, 0, each way).
+ignored; SoapyRemote's own keys (`remote`, `remote:...`,
+`soapy_remote_...`), which its server hands on with the client's, are
+ignored without the warning. Every per-channel call checks its direction
+and channel (one channel, 0, each way). The device opens at 10 Msps both
+ways, with the automatic 7 MHz filter: the rate every HackRF's firmware
+starts at (`hackrf_core.c`), set on the boards so that the rate and
+filter read back before an application chooses are the ones running.
 
 | Call | Module |
 |---|---|
@@ -617,8 +622,14 @@ A libhackrf error throws `BoardError` from the call that made it, which
 SoapySDR turns into an exception for the client. Stream activation
 catches it and returns `SOAPY_SDR_STREAM_ERROR` with the message logged,
 as the SoapySDR stream API expects. A read with nothing to deliver is a
-timeout, not an error; a read or write on a stream that is not active
-returns `SOAPY_SDR_STREAM_ERROR`.
+timeout, not an error. A read on a receive stream not yet active waits
+up to its timeout for it to start and then times out, as other drivers'
+reads do: SoapyRemote's server reads from `setupStream` on and passes its
+client every answer but a timeout, so an error there reached the client
+30 to 52 times a run and stopped `SoapySDRUtil --rate` through it
+(2026-11-12). A receive stream whose board failed still answers
+`SOAPY_SDR_STREAM_ERROR` until it is activated again; a write on a
+transmit stream that is not active is `SOAPY_SDR_STREAM_ERROR`.
 
 While a stream is active its board is watched: at most every 100 ms,
 from the reads, writes and status calls, the pair reads each running

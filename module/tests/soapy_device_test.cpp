@@ -93,6 +93,19 @@ TEST_CASE("an unknown setting written is logged and otherwise ignored", "[soapy]
     CHECK(rig.device->readSetting("bias_tx") == "false");
 }
 
+TEST_CASE("the device opens at the boards' own start-up rate, 10 Msps, both ways", "[soapy]") {
+    // The firmware starts every HackRF at 10 Msps; the device says so, and
+    // sets it, before an application chooses a rate.
+    SoapyRig rig;
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CAPTURE(direction);
+        CHECK(rig.device->getSampleRate(direction, 0) == 10e6);
+        CHECK(rig.device->getBandwidth(direction, 0) == 7e6);
+    }
+    CHECK(rig.rx->sample_rate_hz == 10e6);
+    CHECK(rig.tx->sample_rate_hz == 10e6);
+}
+
 TEST_CASE("an unknown setting reads as an empty string", "[soapy]") {
     SoapyRig rig;
     CHECK(rig.device->readSetting("no_such_setting").empty());
@@ -925,6 +938,28 @@ TEST_CASE("an unknown device argument is logged and otherwise ignored", "[soapy]
     }
 }
 
+TEST_CASE("SoapyRemote's own arguments pass through without a warning", "[soapy]") {
+    // SoapyRemote's server hands the device its own keys with the client's.
+    SoapyRig rig({{"driver", "hackrfduplex"},
+                  {"remote", "tcp://127.0.0.1:55132"},
+                  {"remote:driver", "hackrfduplex"},
+                  {"soapy_remote_no_deeper", "true"},
+                  {"biastee", "1"}});
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "biastee"));
+    SoapySDR::Device& d = *rig.device;
+    SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8, {},
+                                         {{"remote:mtu", "1500"},
+                                          {"remote:prot", "udp"},
+                                          {"remote:window", "44040192"},
+                                          {"bufflen", "1"}});
+    CHECK(rig.logged(SOAPY_SDR_WARNING, "bufflen"));
+    for (const auto& [level, message] : soapy_logs()) {
+        CAPTURE(message);
+        CHECK(message.find("remote") == std::string::npos);
+    }
+    d.closeStream(rx);
+}
+
 TEST_CASE("a transmitter that stops itself ends its stream with an error", "[soapy][safety]") {
     SoapyRig rig;
     SoapySDR::Device& d = *rig.device;
@@ -1521,15 +1556,15 @@ TEST_CASE("the filter widths are listed, and offered as single points", "[soapy]
     CHECK(ranges[3].maximum() == widths[3]);
 }
 
-TEST_CASE("the hardware time needs the receive rate", "[soapy]") {
+TEST_CASE("the hardware time counts at the start-up rate until another is set", "[soapy]") {
     SoapyRig rig;
     SoapySDR::Device& device = *rig.device;
-    // No rate, no time: it reads 0 and cannot be set.
     CHECK(device.getHardwareTime() == 0);
-    CHECK_THROWS_AS(device.setHardwareTime(1'000'000'000), std::logic_error);
-    device.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
     device.setHardwareTime(1'000'000'000);
     CHECK(device.getHardwareTime() == 1'000'000'000);
+    device.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
+    device.setHardwareTime(2'000'000'000);
+    CHECK(device.getHardwareTime() == 2'000'000'000);
 }
 
 TEST_CASE("each stream call refuses the other direction's stream", "[soapy]") {
@@ -1571,16 +1606,17 @@ TEST_CASE("a timed write without a receive rate or an origin is a time error", "
     device.closeStream(tx);
 }
 
-TEST_CASE("a timed receive start needs the receive rate", "[soapy]") {
+TEST_CASE("a timed receive start works at the start-up rate", "[soapy]") {
     SoapyRig rig;
     SoapySDR::Device& device = *rig.device;
     SoapySDR::Stream* rx = device.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
-    CHECK(device.activateStream(rx, SOAPY_SDR_HAS_TIME, 1'000'000) == SOAPY_SDR_TIME_ERROR);
-    CHECK(rig.logged(SOAPY_SDR_ERROR, "set the receive sample rate first"));
+    CHECK(device.activateStream(rx, SOAPY_SDR_HAS_TIME, 1'000'000) == 0);
+    CHECK_FALSE(rig.logged(SOAPY_SDR_ERROR, "set the receive sample rate first"));
+    device.deactivateStream(rx);
     device.closeStream(rx);
 }
 
-TEST_CASE("direct access on a stream not running is a stream error", "[soapy]") {
+TEST_CASE("direct access on a stream not running times out", "[soapy]") {
     SoapyRig rig;
     SoapySDR::Device& device = *rig.device;
     SoapySDR::Stream* rx = device.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
@@ -1588,8 +1624,45 @@ TEST_CASE("direct access on a stream not running is a stream error", "[soapy]") 
     const void* buffs[] = {nullptr};
     int flags = 0;
     long long time_ns = 0;
-    CHECK(device.acquireReadBuffer(rx, handle, buffs, flags, time_ns, 0) == SOAPY_SDR_STREAM_ERROR);
+    CHECK(device.acquireReadBuffer(rx, handle, buffs, flags, time_ns, 0) == SOAPY_SDR_TIMEOUT);
     device.closeStream(rx);
+}
+
+TEST_CASE(
+    "a read before the receive stream is activated waits out its timeout, as other drivers do",
+    "[soapy]") {
+    // SoapyRemote's server reads from setupStream on and passes on every
+    // answer but a timeout, so an error here reaches its client.
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    rig.rx->transfer_bytes_value = 2048;
+    d.setSampleRate(SOAPY_SDR_RX, 0, 8e6);
+    SoapySDR::Stream* rx = d.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS8);
+    std::vector<std::int8_t> buffer(2048);
+    void* buffs[] = {buffer.data()};
+    int flags = 0;
+    long long time_ns = 0;
+
+    auto start = std::chrono::steady_clock::now();
+    CHECK(d.readStream(rx, buffs, 1024, flags, time_ns, 50000) == SOAPY_SDR_TIMEOUT);
+    CHECK(since(start) >= std::chrono::milliseconds(45));
+    start = std::chrono::steady_clock::now();
+    CHECK(acquire(d, rx, 50000).result == SOAPY_SDR_TIMEOUT);
+    CHECK(since(start) >= std::chrono::milliseconds(45));
+
+    // A read waiting when the stream starts takes what arrives.
+    std::thread starter([&]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        REQUIRE(d.activateStream(rx) == 0);
+        rig.rx->deliver_rx(std::vector<std::uint8_t>(2048, 0));
+    });
+    start = std::chrono::steady_clock::now();
+    CHECK(d.readStream(rx, buffs, 1024, flags, time_ns, 2000000) == 1024);
+    CHECK(since(start) < std::chrono::milliseconds(1000));
+    starter.join();
+    CHECK_FALSE(rig.logged(SOAPY_SDR_ERROR, ""));
+    d.deactivateStream(rx);
+    d.closeStream(rx);
 }
 
 TEST_CASE("a board that fails to start is a stream error", "[soapy]") {

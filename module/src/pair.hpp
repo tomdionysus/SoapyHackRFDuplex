@@ -147,6 +147,8 @@ public:
     void activate(Direction direction);
     void deactivate(Direction direction);
     bool active(Direction direction) const;
+    // Waits up to `timeout` for the stream to be activated; whether it is.
+    bool wait_active(Direction direction, std::chrono::microseconds timeout) const;
     // Samples per transfer, the unit a stream moves in.
     std::size_t mtu(Direction direction) const;
 
@@ -248,6 +250,8 @@ private:
         // The receive ring's depth follows the rate (rx_auto_slots).
         bool auto_slots GUARDED_BY(mutex) = false;
         bool active GUARDED_BY(mutex) = false;
+        // Signalled when `active` becomes true, for reads waiting on it.
+        mutable std::condition_variable activated;
         // Trigger origin: activated, waiting for the other stream to start
         // both boards together.
         bool armed GUARDED_BY(mutex) = false;

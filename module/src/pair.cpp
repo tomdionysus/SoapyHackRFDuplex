@@ -563,6 +563,7 @@ void Pair::activate(Direction direction) {
                 // The first of the two: both start on one edge with the second.
                 s.active = true;
                 s.armed = true;
+                s.activated.notify_all();
                 set_origin(OriginState::kPending);
                 log(LogLevel::kDebug,
                     std::string(direction_name(direction)) + " armed for a trigger start");
@@ -580,6 +581,7 @@ void Pair::activate(Direction direction) {
         start_stream(s);
         s.lo_locked = true;
         s.active = true;
+        s.activated.notify_all();
         log(LogLevel::kDebug, std::string(direction_name(direction)) + " started");
     }
     if (!other_active) {
@@ -645,6 +647,8 @@ void Pair::start_triggered() {
     rx_.armed = false;
     tx_.active = true;
     tx_.armed = false;
+    rx_.activated.notify_all();
+    tx_.activated.notify_all();
     poll_boards(true);
     set_origin(OriginState::kValid, 0);
     log(LogLevel::kInfo, "both boards started on one trigger edge; common time origin set");
@@ -714,6 +718,12 @@ bool Pair::active(Direction direction) const {
     const Side& s = side(direction);
     const Lock lock(s.mutex);
     return s.active;
+}
+
+bool Pair::wait_active(Direction direction, std::chrono::microseconds timeout) const {
+    const Side& s = side(direction);
+    Lock lock(s.mutex);
+    return lock.wait_for(s.activated, timeout, [&]() REQUIRES(s.mutex) { return s.active; });
 }
 
 std::size_t Pair::mtu(Direction direction) const {

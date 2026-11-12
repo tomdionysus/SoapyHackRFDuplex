@@ -144,9 +144,9 @@ never as silently wrong samples or times.
 
 | Where | Status | Means | Do |
 |---|---|---|---|
-| `readStream` | `SOAPY_SDR_TIMEOUT` | nothing arrived within the timeout | read again |
+| `readStream` | `SOAPY_SDR_TIMEOUT` | nothing arrived within the timeout, or the stream has not been activated yet | read again |
 | `readStream` | `SOAPY_SDR_OVERFLOW` with `SOAPY_SDR_END_ABRUPT` | samples were lost before the next read: the reader fell behind and the ring was full (the timestamps stay true and show the gap), or the board dropped them itself (a shortfall: the timestamps have shifted by an unknown amount and the origin is lost) | read on; if `hasHardwareTime()` is now false, write `calibrate` |
-| `readStream` | `SOAPY_SDR_STREAM_ERROR` | the board stopped or left the bus | deactivate and activate the stream; reopen the device if it is gone |
+| `readStream` | `SOAPY_SDR_STREAM_ERROR` | the board stopped or left the bus (and so on until the stream is activated again) | deactivate and activate the stream; reopen the device if it is gone |
 | `writeStream` | `SOAPY_SDR_TIMEOUT` | the ring was full for the whole timeout, or a timed write found the origin still being measured | write again |
 | `writeStream` | `SOAPY_SDR_TIME_ERROR` | a timed write for a time already gone, or with no origin | write later, or calibrate |
 | `writeStream` | `SOAPY_SDR_STREAM_ERROR` | the stream is not active, or the board failed | as for reads |

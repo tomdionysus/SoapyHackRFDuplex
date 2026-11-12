@@ -69,8 +69,27 @@ std::uint32_t parse_samples(const std::string& key, const std::string& text) {
     return static_cast<std::uint32_t>(std::stoull(text));
 }
 
+// hackrf_core.c: "Set to 10 MHz, the common rate between Jawbreaker and
+// HackRF One."
+constexpr double kStartupSampleRate = 10e6;
+
 std::chrono::microseconds timeout_of(long timeout_us) {
     return std::chrono::microseconds(timeout_us < 0 ? 0 : timeout_us);
+}
+
+// SoapyRemote's server hands a device its own keys along with the
+// client's: remote, remote:<name> and soapy_remote_<name>. They are not
+// this device's to warn about.
+bool soapy_remote_key(const std::string& key) {
+    return key == "remote" || key.starts_with("remote:") || key.starts_with("soapy_remote");
+}
+
+// What is left of a call's timeout once part of it has been spent waiting.
+std::chrono::microseconds left_until(std::chrono::steady_clock::time_point deadline) {
+    const auto left = deadline - std::chrono::steady_clock::now();
+    return left > std::chrono::steady_clock::duration::zero()
+               ? std::chrono::duration_cast<std::chrono::microseconds>(left)
+               : std::chrono::microseconds(0);
 }
 
 std::unique_ptr<Pair> open_pair(const SoapySDR::Kwargs& args) {
@@ -88,6 +107,12 @@ SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& arg
     if (!pair_) {
         throw std::invalid_argument("a device needs a pair");
     }
+    // The rate every HackRF's firmware starts at, set so that the rate and
+    // filter read back are the ones the boards run until an application
+    // chooses its own.
+    for (const Direction direction : {Direction::kRx, Direction::kTx}) {
+        pair_->set_sample_rate(direction, kStartupSampleRate);
+    }
     // The settings are device arguments too, except calibrate, which acts;
     // the rest are what discovery hands back. Anything else is logged, as an
     // unknown setting is: applications pass argument strings around.
@@ -96,7 +121,7 @@ SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& arg
             key == "tx_underrun_limit") {
             writeSetting(key, value);
         } else if (key != "driver" && key != "label" && key != kRxSerialKey &&
-                   key != kTxSerialKey) {
+                   key != kTxSerialKey && !soapy_remote_key(key)) {
             soapy_log(LogLevel::kWarning, "device argument " + key + ": none such, ignored");
         }
     }
@@ -230,7 +255,7 @@ SoapySDR::Stream* SoapyDevice::setupStream(const int direction, const std::strin
         buffers = static_cast<std::size_t>(wanted);
     }
     for (const auto& [key, value] : args) {
-        if (key != "buffers") {
+        if (key != "buffers" && !soapy_remote_key(key)) {
             soapy_log(LogLevel::kWarning, "setupStream: no stream argument " + key + ", ignored");
         }
     }
@@ -317,8 +342,9 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
     if (direction_of(stream) != Direction::kRx) {
         return SOAPY_SDR_NOT_SUPPORTED;
     }
-    if (!pair_->active(Direction::kRx)) {
-        return SOAPY_SDR_STREAM_ERROR;
+    const auto deadline = std::chrono::steady_clock::now() + timeout_of(timeoutUs);
+    if (const int waited = await_rx(timeoutUs); waited != 0) {
+        return waited;
     }
     if (numElems == 0) {
         flags = 0;
@@ -326,12 +352,25 @@ int SoapyDevice::readStream(SoapySDR::Stream* stream, void* const* buffs, const 
     }
     RxRead read;
     try {
-        read = pair_->read(buffs[0], numElems, timeout_of(timeoutUs));
+        read = pair_->read(buffs[0], numElems, left_until(deadline));
     } catch (const std::logic_error& e) {
         soapy_log(LogLevel::kError, std::string("readStream: ") + e.what());
         return SOAPY_SDR_NOT_SUPPORTED;
     }
     return report_read(read, flags, timeNs);
+}
+
+int SoapyDevice::await_rx(const long timeoutUs) const {
+    if (pair_->active(Direction::kRx)) {
+        return 0;
+    }
+    // Not running: a stream whose board stopped says so; one not started
+    // yet waits for its start, as other drivers do, since SoapyRemote's
+    // server reads from setupStream on and passes on all but a timeout.
+    if (pair_->failed(Direction::kRx)) {
+        return SOAPY_SDR_STREAM_ERROR;
+    }
+    return pair_->wait_active(Direction::kRx, timeout_of(timeoutUs)) ? 0 : SOAPY_SDR_TIMEOUT;
 }
 
 int SoapyDevice::report_read(const RxRead& read, int& flags, long long& timeNs) const {
@@ -374,12 +413,13 @@ int SoapyDevice::acquireReadBuffer(SoapySDR::Stream* stream, size_t& handle, con
     if (getNumDirectAccessBuffers(stream) == 0) {
         return SOAPY_SDR_NOT_SUPPORTED;
     }
-    if (!pair_->active(Direction::kRx)) {
-        return SOAPY_SDR_STREAM_ERROR;
+    const auto deadline = std::chrono::steady_clock::now() + timeout_of(timeoutUs);
+    if (const int waited = await_rx(timeoutUs); waited != 0) {
+        return waited;
     }
     RxView view;
     try {
-        view = pair_->acquire_read(pair_->mtu(Direction::kRx), timeout_of(timeoutUs));
+        view = pair_->acquire_read(pair_->mtu(Direction::kRx), left_until(deadline));
     } catch (const std::logic_error& e) {
         soapy_log(LogLevel::kError, std::string("acquireReadBuffer: ") + e.what());
         return SOAPY_SDR_NOT_SUPPORTED;
