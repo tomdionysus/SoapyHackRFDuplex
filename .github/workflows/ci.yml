@@ -72,5 +72,7 @@ jobs:
         with:
           files: build-coverage/coverage/coverage.info
           disable_search: true
+          # The lcov report is the whole of it; no gcov pass of the uploader's own.
+          plugins: noop
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
