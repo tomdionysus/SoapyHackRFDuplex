@@ -3,6 +3,28 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-12: the acceptance battery
+
+The battery half of item 15, accepted on the target:
+`hackrfduplex-check --clkout rx --acceptance --transmit` passed 16 of 16
+(power 0x50000 before and after; six brief kernel under-voltage events
+during it, none touching a line):
+
+- receive at 2, 8 and 16 Msps, 100.0% of nominal, 0 overflows; at 0.2
+  Msps 98.0% over 10 s (a transfer is 655 ms there, so one transfer of
+  slack is allowed); 20 Msps reported, not judged (99.9%, 95 overflows,
+  the target's limit);
+- the reference switch to the boards' own clocks and back, ref_locked
+  following, 0 overflows, the TX board's switch handled, tx lo_locked;
+- a tone at 2 Msps in CS8, CS16, CF32 and CF64, every second judged at
+  +0.0 Hz, levels within 0.10 dB (-43.4 to -43.5 dBFS);
+- the origin repeatable over 6 findings, spread 0 samples;
+- time_locked, ref_locked and lo_locked with both streams running;
+- timed bursts, 3662 at 8 Msps and 3662 at 16 Msps, every one at +0;
+- transmit and receive at 1.2 Msps, tone offset spread 0.0 Hz.
+
+The soak's figures are under item 15 in ACTIVE.md until it is accepted.
+
 ## 2026-11-10: quality gates
 
 Item 13, accepted on the target: `tools/ci-pi.sh` passes with all of it.

@@ -225,6 +225,28 @@ first, by Tom's choice; 1.0.0 after it has been used):
   after the first minutes. Acceptance: the battery passing on this pair,
   and its report and the soak's figures in COMPLETED.md.
 
+  The battery passed 16 of 16 on 2026-11-12 (COMPLETED.md). The soak,
+  2026-11-11/12, on the target's unchanged supply (Tom, 2026-11-11: "Rpi5
+  is yours and should do the soak"):
+  - 8 Msps, 21:11 to 23:11 UTC: passed. 439,454 bursts written, 439,449
+    found (the last 5 in flight at the end), every one at +0, no late
+    write, overflow or underflow, origin held, memory flat at 61.7 MB.
+  - 16 Msps, first run, 23:11 UTC: clean for 1,020 s, then the TX board
+    stopped streaming; `--recover` recalibrated for 50 minutes and found
+    nothing, one sample read under-voltage (0x50005), and the Pi reset
+    itself at about 00:03. The journal did not survive the reset, so
+    `tools/soak.sh` now keeps the kernel's messages in the tree.
+  - 16 Msps, repeat, 00:10 to 02:10 UTC: 878,906 written, 878,901 found,
+    every one at +0, 0 overflows, 0 underflows, origin held, memory flat
+    at 62.9 MB; but 1 late write (and its time error) at 192.7 s, the
+    same two seconds as a kernel under-voltage event (00:13:29 to :31),
+    from a read that was fresh. Two more under-voltage events in the run
+    left no mark.
+  Open: whether the repeat counts (its one fault coincides with the
+  supply), or a third run is needed; and `--recover` cannot bring back a
+  board that stopped, since the module needs the stream deactivated and
+  activated again and the check only recalibrates.
+
 ### 16. Documentation and the release
 
 - [ ] `docs/usage.md`, a guide for an application writer: setting up the
