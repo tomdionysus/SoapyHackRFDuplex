@@ -1,3 +1,15 @@
+hackrfduplex (0.2.1) unstable; urgency=medium
+
+  * The calibration burst is queued eight transfers ahead of the
+    transmitter rather than one, so a host that stalls for longer than a
+    transfer while the streams start no longer loses the time origin.
+  * Build-depend on libusb-1.0-0-dev: libhackrf-dev's pkg-config file
+    names libusb's header directory without pulling the package in, so a
+    build on a clean system stopped at configuration.
+  * Packages for amd64 as well as arm64.
+
+ -- Tom Cully <mail@tomcully.com>  Thu, 12 Nov 2026 16:00:00 +0000
+
 hackrfduplex (0.2.0) unstable; urgency=medium
 
   * One shared time for both streams, from a calibration burst or a

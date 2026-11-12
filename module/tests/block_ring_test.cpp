@@ -107,10 +107,18 @@ TEST_CASE("waits report what the other side did", "[ring]") {
 TEST_CASE("wake releases a waiter, which reports false", "[ring]") {
     BlockRing ring(1, 8);
     bool result = true;
-    std::thread waiter([&] { result = ring.wait_front(5s); });
-    std::this_thread::sleep_for(5ms);
+    std::atomic<bool> done{false};
     const auto before = std::chrono::steady_clock::now();
-    ring.wake();
+    std::thread waiter([&] {
+        result = ring.wait_front(5s);
+        done = true;
+    });
+    // A wake releases whoever waits at the time, so it is repeated until the
+    // waiter, which a busy host may start late, has been released.
+    while (!done) {
+        ring.wake();
+        std::this_thread::sleep_for(1ms);
+    }
     waiter.join();
     CHECK_FALSE(result);
     CHECK(std::chrono::steady_clock::now() - before < 1s);

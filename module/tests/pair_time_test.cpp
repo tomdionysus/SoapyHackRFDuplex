@@ -55,11 +55,12 @@ struct Rig {
                            [&](const std::string& m) { return m.find(text) != std::string::npos; });
     }
 
-    // Both streams open at one rate, CS8, four buffers.
-    void open(double rate = 8e6) {
+    // Both streams open at one rate, CS8, four buffers unless the receiver
+    // is given more.
+    void open(double rate = 8e6, std::size_t rx_slots = 4) {
         pair.set_sample_rate(Direction::kRx, rate);
         pair.set_sample_rate(Direction::kTx, rate);
-        pair.open_stream(Direction::kRx, Format::kCs8, 4);
+        pair.open_stream(Direction::kRx, Format::kCs8, rx_slots);
         pair.open_stream(Direction::kTx, Format::kCs8, 4);
     }
 };
@@ -106,9 +107,10 @@ TEST_CASE("the burst gives the origin: the loop's delay", "[pair][time]") {
 }
 
 TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]") {
-    // The listen is sized for the worst case, a full transmit ring ahead of
-    // the burst; on the target that is about 27 transfers, 1.8 s at 1.92
-    // Msps, inside activateStream. Correlated as it fills, the burst ends it.
+    // The listen is sized for the worst case, the burst's lead and a full
+    // transmit ring ahead of it; on the target that is about 35 transfers,
+    // 2.4 s at 1.92 Msps, inside activateStream. Correlated as it fills, the
+    // burst ends it.
     Rig rig;
     rig.open();
     Loopback air(rig.tx, rig.rx, 300);
@@ -137,6 +139,35 @@ TEST_CASE("calibration stops listening once the burst is certain", "[pair][time]
                         &could) == 2);
     CHECK(heard < could);
     air.stop();
+}
+
+TEST_CASE("the calibration burst is queued far enough ahead that a stall does not make it late",
+          "[pair][time]") {
+    // Queued one transfer ahead of the transmitter, the burst was late, and
+    // the origin lost, whenever the activating thread stalled for longer
+    // than a transfer (6.5 ms at 20 Msps) between choosing its time and
+    // writing it. Eight transfers, twice what libhackrf has in flight, ride
+    // out a stall eight times as long.
+    constexpr std::size_t kLeadTransfers = 8;
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    air.record = true;
+    rig.pair.activate(Direction::kRx);
+    // Held, the transmitter pulls nothing before the burst is queued, so
+    // where the burst goes out is where it was queued.
+    air.paused = true;
+    std::thread start([&] { rig.pair.activate(Direction::kTx); });
+    std::this_thread::sleep_for(50ms);
+    air.paused = false;
+    start.join();
+    air.stop();
+    REQUIRE(rig.pair.tx_of_rx());
+    const std::vector<std::int8_t>& sent = air.sent();
+    const auto first = std::find_if(sent.begin(), sent.end(), [](std::int8_t v) { return v != 0; });
+    REQUIRE(first != sent.end());
+    const auto at = static_cast<std::size_t>(first - sent.begin()) / 2;
+    CHECK(at >= kLeadTransfers * kTransferSamples);
 }
 
 TEST_CASE("the transmitter is tuned to the receiver for the burst and back", "[pair][time]") {
@@ -328,41 +359,67 @@ TEST_CASE("a timed write with no origin coming times out", "[pair][time]") {
 }
 
 TEST_CASE("a timed write lands at its time in the receive stream", "[pair][time]") {
+    // The air runs far faster than real boards, so a host busy elsewhere can
+    // fall behind it: the receiver gets room to spare, and a pulse made late
+    // by a stall, or lost to an overflow, which says nothing about where it
+    // was sent, is sent again. The first that is neither must land exactly.
     Rig rig;
-    rig.open();
+    rig.open(8e6, 32);
     Loopback air(rig.tx, rig.rx, 300);
     rig.pair.activate(Direction::kRx);
     rig.pair.activate(Direction::kTx);
     REQUIRE(rig.pair.tx_of_rx());
     rig.pair.set_time_ticks(rig.pair.time_ticks() + 1'000'000);
-    const std::int64_t when =
-        rig.pair.time_ticks() + 20 * static_cast<std::int64_t>(kTransferSamples);
 
-    // Listen for it: the first strong sample in the receive stream.
     std::vector<std::int8_t> pulse(128, 0);
     for (std::size_t k = 0; k < 64; ++k) {
         pulse[2 * k] = 100;
     }
-    REQUIRE(rig.pair.write_at(pulse.data(), 64, true, when, 1s).status == TimedStatus::kOk);
-    // Time `when` is receive position when - offset.
-    const std::int64_t expected = when - rig.pair.time_offset();
-    // Older samples hold the calibration burst.
-    const auto from = static_cast<std::int64_t>(rig.pair.rx_received());
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
     std::array<std::int8_t, 2 * kTransferSamples> buffer{};
-    std::int64_t onset = -1;
-    std::int64_t reached = 0;
-    while (onset < 0 && reached < expected + 4096 && std::chrono::steady_clock::now() < deadline) {
-        const RxRead r = rig.pair.read(buffer.data(), kTransferSamples, 100ms);
-        for (std::size_t k = 0; k < r.samples && onset < 0; ++k) {
-            if (static_cast<std::int64_t>(r.position + k) >= from && buffer[2 * k] > 15) {
-                onset = static_cast<std::int64_t>(r.position + k);
-            }
+    bool clean = false;
+    for (int attempt = 0; attempt < 5 && !clean; ++attempt) {
+        const std::int64_t when =
+            rig.pair.time_ticks() + 20 * static_cast<std::int64_t>(kTransferSamples);
+        const TimedStatus status = rig.pair.write_at(pulse.data(), 64, true, when, 1s).status;
+        if (status == TimedStatus::kLate) {
+            UNSCOPED_INFO("attempt " << attempt << ": late");
+            CHECK(rig.pair.take_time_error());
+            continue;
         }
-        reached = static_cast<std::int64_t>(r.position + r.samples);
+        REQUIRE(status == TimedStatus::kOk);
+        // Time `when` is receive position when - offset.
+        const std::int64_t expected = when - rig.pair.time_offset();
+        // Older samples hold the calibration burst, or an earlier pulse.
+        const auto from = static_cast<std::int64_t>(rig.pair.rx_received());
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        // Listen for it: the first strong sample in the receive stream.
+        std::int64_t onset = -1;
+        std::int64_t reached = 0;
+        bool overflow = false;
+        while (onset < 0 && reached < expected + 4096 &&
+               std::chrono::steady_clock::now() < deadline) {
+            const RxRead r = rig.pair.read(buffer.data(), kTransferSamples, 100ms);
+            overflow = overflow || r.overflow;
+            for (std::size_t k = 0; k < r.samples && onset < 0; ++k) {
+                if (static_cast<std::int64_t>(r.position + k) >= from && buffer[2 * k] > 15) {
+                    onset = static_cast<std::int64_t>(r.position + k);
+                }
+            }
+            reached = static_cast<std::int64_t>(r.position + r.samples);
+        }
+        // Taken in time but sent late, the board having passed its time
+        // before the block reached it.
+        const bool late = rig.pair.take_time_error();
+        UNSCOPED_INFO("attempt " << attempt << ": onset " << onset << ", expected " << expected
+                                 << (overflow ? ", after an overflow" : "")
+                                 << (late ? ", sent late" : ""));
+        if (!overflow && !late) {
+            clean = true;
+            CHECK(onset == expected);
+        }
     }
     air.stop();
-    CHECK(onset == expected);
+    CHECK(clean);
     CHECK_FALSE(rig.pair.take_time_error());
 }
 

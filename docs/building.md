@@ -5,8 +5,12 @@
 Debian or Ubuntu:
 
 ```
-sudo apt install build-essential cmake pkgconf libhackrf-dev libsoapysdr-dev catch2
+sudo apt install build-essential cmake pkgconf libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2
 ```
+
+`libusb-1.0-0-dev` is needed although nothing here calls libusb:
+Debian's `libhackrf-dev` names libusb's header directory in its
+pkg-config file without depending on the package that provides it.
 
 macOS with Homebrew:
 
@@ -36,7 +40,7 @@ On Debian trixie, `debian/` builds two packages: the module,
 `hackrfduplex-tools`.
 
 ```
-sudo apt install build-essential debhelper cmake pkgconf libhackrf-dev libsoapysdr-dev catch2
+sudo apt install build-essential debhelper cmake pkgconf libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2
 dpkg-buildpackage -us -uc -b
 sudo apt install ../soapysdr0.8-module-hackrfduplex_*.deb ../hackrfduplex-tools_*.deb
 ```
