@@ -66,7 +66,7 @@ for rate in $rates; do
         # USB and supply faults during the run, so a shortfall can be laid at
         # the host's door rather than the module's.
         echo "kernel USB and power events:"
-        grep -iE 'over-current|disconnect|under-voltage|xhci' "$out/$rate.kernel" || echo "  none"
+        grep -iE 'over-current|disconnect|under-?voltage|voltage normalised|xhci' "$out/$rate.kernel" || echo "  none"
     } >>"$log"
     [ "$code" -eq 0 ] || status=1
 done
