@@ -32,9 +32,9 @@ than the second activation takes to calibrate); and `--timed-bursts 81920 --seco
 run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
-Work the items in order. Items 1 to 15 are done; item 16 takes the module to
-the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
-on hardware Tom does not have yet.
+Items 1 to 16 are done: 0.2.0 is released (tag `0.2.0` on `main`,
+2026-11-12). Item 17 waits on hardware Tom does not have yet; 1.0.0
+follows once the module has been used.
 
 ## Where things stand
 
@@ -213,25 +213,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   the README and design.
 
 ## Items
-
-### 16. Documentation and the release
-
-- [ ] `docs/usage.md`, a guide for an application writer: setting up the
-  pair (clock cable, USB topology, power), what the time origin is and
-  where the calibration burst transmits (the receive frequency, at the
-  transmit gain set), the transmit lead to allow, the stream statuses
-  and what each means, and troubleshooting (no origin found, reference
-  switches, shortfalls, low rates). A man page for `hackrfduplex-check`
-  installed by CMake and the package (lintian's one warning on the
-  `.deb`). README brought to its final form, the status table all ticks
-  or named exceptions, the untested hardware paths named. Then: version
-  0.2.0 in `CMakeLists.txt` and `debian/changelog`, `tools/ci-pi.sh`
-  passing, the `.deb` rebuilt and installed on the target, `develop`
-  merged to `main`, an annotated tag `0.2.0` on `main`, and `main`,
-  `develop` and the tag pushed to `origin`. Acceptance: a newcomer's path
-  from the README to a timed loopback works as written from a clean
-  clone on the target; `module_version` reads 0.2.0 in `SoapySDRUtil
-  --probe` on the installed package.
 
 ### 17. Trigger origin on the bench
 
