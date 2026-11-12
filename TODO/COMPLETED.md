@@ -3,6 +3,26 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-12: documentation and the 0.2.0 release
+
+Item 16, accepted on the target. `docs/usage.md` and the
+`hackrfduplex-check` man page (installed by CMake and the tools
+package); the README cut to a front page in corvus-radioberry's form,
+its reference material moved to `docs/reference.md`, `building.md`,
+`status.md` and a `quickstart.md`, all listed in `docs/index.md`.
+Version 0.2.0 in CMake and `debian/changelog`; `tools/ci-pi.sh` passing
+(189 test cases, 199 with the receive corrections, clang-tidy clean,
+97.1% of lines). The quickstart followed from a fresh anonymous clone on
+the target: the packages built with their tests, lintian clean, the
+pair found, receive at 99.9% with 0 overflows, the tone at +0.0 Hz,
+3658 timed bursts all on time, the man page installed. `develop` merged
+to `main` with `--no-ff` (two 2023 commits on `main` changed files the
+rewrite removed; the merge keeps the removal, and the tree equals
+`develop`'s), annotated tag `0.2.0`, `main`, `develop` and the tag
+pushed. Then a fresh clone of the release, built and installed:
+`module_version` reads 0.2.0 in `SoapySDRUtil --probe`, timed bursts all
+on time. Packages removed afterwards; power `0x50000` throughout.
+
 ## 2026-11-12: interoperability
 
 Item 14, accepted on the target: every application in the matrix
