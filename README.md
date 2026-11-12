@@ -33,7 +33,7 @@ It works with stock HackRF firmware and stock libhackrf.
 
 ## Install
 
-On Debian trixie for arm64, a Raspberry Pi 5 for one, from the
+On Debian trixie, amd64 or arm64 (a Raspberry Pi 5 for one), from the
 tomcully.com apt repository:
 
 ```
@@ -45,7 +45,7 @@ sudo apt install soapysdr0.8-module-hackrfduplex hackrfduplex-tools
 Elsewhere, build the packages from source:
 
 ```
-sudo apt install build-essential debhelper cmake pkgconf libhackrf-dev libsoapysdr-dev catch2
+sudo apt install build-essential debhelper cmake pkgconf libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2
 git clone https://github.com/tomdionysus/SoapyHackRFDuplex.git
 cd SoapyHackRFDuplex
 dpkg-buildpackage -us -uc -b
