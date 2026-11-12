@@ -32,9 +32,13 @@ than the second activation takes to calibrate); and `--timed-bursts 81920 --seco
 run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
-Items 1 to 16 are done: 0.2.0 is released (tag `0.2.0` on `main`,
-2026-11-12). Item 17 waits on hardware Tom does not have yet; 1.0.0
-follows once the module has been used.
+Items 1 to 16 are done: 0.2.1 is released (tag `0.2.1` on `main`,
+2026-11-12), with packages for amd64 and arm64 in the tomcully.com apt
+repository. A release follows the steps in CONTRIBUTING.md, "Releases";
+`tools/deb-amd64.sh` builds the amd64 packages in Docker, and CI builds
+and install-checks both architectures on every push. Item 17 waits on
+hardware Tom does not have yet; 1.0.0 follows once the module has been
+used.
 
 ## Where things stand
 
@@ -54,7 +58,8 @@ follows once the module has been used.
   with each board on its own root port. There: `tools/ci.sh` passes; the
   `.deb` builds, installs and is found by `SoapySDRUtil --find`; receive
   at 8 Msps is clean; 20 Msps through the check tool is CPU-bound (81%),
-  while USB alone carries the full rate. Item 1 then brought the pair up
+  while USB alone carries the full rate (the check tool's analysis, made
+  cheap on 2026-11-10; the limit since is the USB). Item 1 then brought the pair up
   there: receive, reference switches each way, the tone and 3658 timed
   bursts at +0, all clean (COMPLETED.md).
 - 2026-11-10: items 4 to 7 accepted on the target (COMPLETED.md): a
@@ -67,6 +72,9 @@ follows once the module has been used.
   test cases. The target's USB carries neither direction cleanly at 20
   Msps, with the stock tools as with the module; full duplex is clean
   through 16 Msps, ten minutes of it at 25% of a core (item 11).
+- 2026-11-12: 0.2.0 released, then 0.2.1: the calibration burst queued
+  eight transfers ahead, the libusb build dependency, amd64 packages
+  (COMPLETED.md). 190 test cases in the default build.
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
@@ -146,6 +154,10 @@ untested against hardware, and item 17 waits for them.
   features; the build without it stays the default.
 - The next release is 0.2.0 (Tom, 2026-11-09); 1.0.0, with the SoapySDR
   surface and settings held stable, comes after 0.2.0 has been used.
+  0.2.0 and 0.2.1 are out (2026-11-12); fixes before 1.0.0 are 0.2.x.
+- Packages for amd64 and arm64, in the tomcully.com apt repository,
+  which keeps every version published (Tom, 2026-11-12, "publish both
+  architectures at 0.2.1").
 - Transmit tests: Tom's go-ahead for this work on the shielded bench
   ("you may test autonomously until completion"), which the target's
   bench is ("yes, shielded"), both 2026-11-09. Ask before switching the
@@ -180,10 +192,10 @@ untested against hardware, and item 17 waits for them.
   start-up rate ("If the boards start at 10Msps, it makes sense to use
   their defaults").
 
-## Release 0.2.0
+## The release gate
 
-What "elite" means for this module, and the gate for the tag (0.2.0
-first, by Tom's choice; 1.0.0 after it has been used):
+What "elite" means for this module, set for 0.2.0 and the gate for every
+tag since (1.0.0 after the module has been used):
 
 - **The contract, all of it.** Every SoapySDR call behaves as the
   contract says, per direction. What the device cannot do it refuses
@@ -206,8 +218,8 @@ first, by Tom's choice; 1.0.0 after it has been used):
 - **Gated.** `tools/ci.sh` on every push through GitHub Actions, in the
   target's distribution, coverage reported (Tom, 2026-11-10: "You need
   code coverage, github actions").
-- **Shipped.** A `.deb` that installs on trixie, docs a newcomer can
-  follow, and tag `0.2.0` on `main`.
+- **Shipped.** Packages that install on trixie, amd64 and arm64, from
+  the apt repository; docs a newcomer can follow; the tag on `main`.
 - **Named limits.** What could not be tried on hardware (the trigger
   origin, the `HACKRF1_R9` reference-switch path) is named as such in
   the README and design.
