@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 # One number for the repository: this, the tag and the module's reported version.
-project(hackrfduplex VERSION 0.2.0 LANGUAGES CXX)
+project(hackrfduplex VERSION 0.2.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

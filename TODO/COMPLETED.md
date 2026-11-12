@@ -3,6 +3,32 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-12: amd64 packages and the 0.2.1 release
+
+The first clean build, in a `debian:trixie` container for amd64
+(`tools/deb-amd64.sh`), stopped at configuration: Debian's
+`libhackrf-dev` names `/usr/include/libusb-1.0` in its pkg-config file
+without depending on `libusb-1.0-0-dev`, which the Pi and the CI image
+already had. `libusb-1.0-0-dev` added to `Build-Depends` and to the
+build instructions.
+
+The container's build then failed two time tests, now and then. Both
+were the fake air (a transfer every 20 us) outrunning a busy host: a
+receive overflow swallowed a timed pulse, and a stall lost the
+calibration burst, which was queued only one transfer ahead of the
+transmitter. A 200 us stall injected there failed 19 of the 46 time
+tests, so the module now queues the burst eight transfers ahead (52 ms at
+20 Msps; a new test pins it), the air moves a transfer a millisecond, the
+timed-write test resends a pulse lost to a stall or an overflow, and the
+wake test no longer assumes its waiter starts within 5 ms. In the amd64
+container, 30 runs of the suite at six at once without a failure; one
+failure in 10 with six busy loops alongside (an 8 ms stall). On the
+pair, 3657 of 3657 timed bursts at +0 samples, power `0x50000`
+throughout.
+
+Version 0.2.1; `tools/ci-pi.sh` passing (190 test cases). The
+tomcully.com apt repository takes amd64 as well as arm64.
+
 ## 2026-11-12: documentation and the 0.2.0 release
 
 Item 16, accepted on the target. `docs/usage.md` and the
