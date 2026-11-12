@@ -1,0 +1,194 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH HACKRFDUPLEX-CHECK 1 "2026-11-12" "hackrfduplex 0.2.0" "User Commands"
+.SH NAME
+hackrfduplex-check \- check a HackRF One pair through the
+hackrfduplex SoapySDR module
+.SH SYNOPSIS
+.B hackrfduplex-check
+.RI [ options ]
+.SH DESCRIPTION
+.B hackrfduplex-check
+opens two HackRF One boards as one full-duplex SoapySDR device through
+the
+.B hackrfduplex
+module, as any SoapySDR application would, receives for a while, and
+reports the rate achieved, any samples lost, the CPU used, the board and
+module versions, the sensors, and what the receiver heard.
+.PP
+It transmits nothing unless
+.BR \-\-tx\-tone ,
+.B \-\-timed\-bursts
+or
+.B \-\-timed\-window
+is given. Transmit only where that is allowed, with antennas or an
+attenuated cable between the boards.
+.PP
+With
+.B \-\-tx\-tone
+it transmits a tone and reports its level and offset at the receiver,
+which checks both boards in one run. With
+.B \-\-timed\-bursts
+it transmits a burst at each receive timestamp plus a delay and reports
+where each one arrived against the time asked; every burst on time is
+the module's timed-transmit guarantee. With
+.B \-\-timed\-window
+it opens a timed receive window around each burst instead.
+.PP
+The exit status is 1 when the pair cannot be opened or a stream ends in
+an error, and, in the timed modes, unless every burst was found at the
+sample asked for; otherwise 0. Overflows and underflows in a plain run
+are reported, not counted against it.
+.SH OPTIONS
+.TP
+.BI \-\-rx\-serial " S"
+The board that receives, by the end of its serial. Default: the lower
+serial of two attached boards.
+.TP
+.BI \-\-tx\-serial " S"
+The board that transmits.
+.TP
+.BI \-\-rate " HZ"
+Sample rate of both directions (default 8e6).
+.TP
+.BI \-\-tx\-rate " HZ"
+Transmit sample rate, if not the same as
+.BR \-\-rate .
+.TP
+.BI \-\-rx\-freq " HZ"
+Receive centre frequency (default 868.3e6).
+.TP
+.BI \-\-tx\-freq " HZ"
+Transmit centre frequency (default 868.3e6).
+.TP
+.BI \-\-rx\-gain " DB"
+Overall receive gain (default 32).
+.TP
+.BI \-\-tx\-gain " DB"
+Overall transmit gain (default 0).
+.TP
+.BI \-\-tx\-tone " HZ"
+Transmit a tone this far from the transmit centre (default off).
+.TP
+.BI \-\-seconds " S"
+How long to run (default 5).
+.TP
+.BI \-\-clkout " WHICH"
+.BR off ,
+.B rx
+or
+.BR tx :
+which board drives 10 MHz from its CLKOUT into the other's CLKIN.
+Default: leave the boards as they are. CLKOUT is off after every
+power-up.
+.TP
+.BI \-\-tx\-format " F"
+CS8, CS16, CF32 or CF64 for the transmit stream (default CF32).
+.TP
+.BI \-\-buffers " N"
+The streams' ring depth in USB transfers (default: the module's, 1.5 s
+at the rate on receive and 15 on transmit).
+.TP
+.BI \-\-time\-origin " O"
+.BR burst ,
+.B trigger
+or
+.BR none :
+how the streams get a common time (default: the module's,
+.BR burst ,
+a short calibration burst on the receive frequency).
+.TP
+.BI \-\-calibrations " N"
+Once both streams run, calibrate N more times and report the origin each
+time found, and their spread.
+.TP
+.BI \-\-timed\-bursts " US"
+Transmit a 4096-sample burst at each receive timestamp plus US
+microseconds and report where each arrived. Allow 5.5 USB transfers
+(720896 samples: 90112 at 8 Msps). Transmits.
+.TP
+.B \-\-recover
+With
+.BR \-\-timed\-bursts :
+when the time origin is lost, calibrate again; when a board stops
+streaming, deactivate and activate both streams, which calibrates; then
+go on. The run passes if every loss was recovered.
+.TP
+.BI \-\-progress " S"
+With
+.BR \-\-timed\-bursts :
+print running totals every S seconds.
+.TP
+.BI \-\-timed\-window " US"
+Transmit a burst US microseconds after the time now and open a timed
+receive window just around it, again and again, and report where in each
+window it arrived. Transmits.
+.TP
+.B \-\-acceptance
+Run the hardware acceptance battery: one run of this tool per line,
+each printed as PASS or FAIL against the figures in
+.IR docs/design.md ,
+and a final count. Receives only, unless
+.B \-\-transmit
+is given too. Exits 0 when every line passed.
+.TP
+.B \-\-transmit
+With
+.BR \-\-acceptance :
+run the lines that transmit too (TX gain 0): the reference switches, the
+tone in each format, the origin, the timed bursts and the low transmit
+rate.
+.TP
+.B \-\-no\-analysis
+Count the received samples and nothing more, so the CPU reported is the
+module's.
+.TP
+.BI \-\-rx\-format " F"
+CS8, CS16, CF32 or CF64 for the receive stream (default CF32); any but
+CF32 implies
+.BR \-\-no\-analysis .
+.TP
+.B \-\-direct
+Receive through SoapySDR's direct buffer access (CS8 only).
+.TP
+.B \-\-dc\-removal
+Remove the receiver's DC offset automatically (a module built with the
+receive corrections).
+.TP
+.B \-\-iq\-balance
+Correct the receiver's I/Q balance automatically (likewise).
+.TP
+.BR \-\-help ", " \-h
+Print the options and exit.
+.SH ENVIRONMENT
+.TP
+.B SOAPY_SDR_PLUGIN_PATH
+Where SoapySDR looks for modules first; point it at a build tree's
+.I module
+directory to check that build rather than the installed module.
+.SH EXAMPLES
+Receive for five seconds with the receiving board driving the reference:
+.PP
+.RS
+hackrfduplex\-check \-\-clkout rx \-\-seconds 5
+.RE
+.PP
+Both boards in one run, a tone at TX gain 0:
+.PP
+.RS
+hackrfduplex\-check \-\-clkout rx \-\-tx\-tone 100e3 \-\-tx\-gain 0
+.RE
+.PP
+Timed transmit for a minute at 8 Msps:
+.PP
+.RS
+hackrfduplex\-check \-\-clkout rx \-\-timed\-bursts 90112 \-\-seconds 60
+.RE
+.SH SEE ALSO
+.BR SoapySDRUtil (1),
+.BR hackrf_info (1)
+.PP
+The usage guide and design notes:
+.I docs/usage.md
+and
+.I docs/design.md
+in the source.

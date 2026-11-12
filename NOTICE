@@ -1,0 +1,13 @@
+hackrfduplex
+Copyright (C) 2023-2026 Tom Cully <mail@tomcully.com>
+
+Licensed under the GNU General Public License, version 3 or (at your
+option) any later version; see LICENSE.
+
+This is its own work: a SoapySDR module written for two HackRF boards.
+It follows the conventions SoapySDR users of a HackRF already know (the
+gain element names, the buffers stream argument) so that applications
+written for a single board work with the pair, and takes no code from
+any other module.
+
+Third-party works this project uses are listed in docs/licensing.md.

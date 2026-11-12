@@ -1,17 +1,14 @@
 #!/usr/bin/make -f
-# -*- makefile -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 
-DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
-export DEB_HOST_MULTIARCH
+include /usr/share/dpkg/architecture.mk
 
-# Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 %:
-	dh $@ --buildsystem=cmake --parallel
+	dh $@ --buildsystem=cmake
 
+# SoapySDR modules live in the multiarch library directory, under
+# SoapySDR/modules<ABI>; the module helper takes the suffix from LIB_SUFFIX.
 override_dh_auto_configure:
 	dh_auto_configure -- -DLIB_SUFFIX="/$(DEB_HOST_MULTIARCH)"
-
-override_dh_installchangelogs:
-	dh_installchangelogs Changelog.txt

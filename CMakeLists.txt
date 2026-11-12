@@ -1,78 +1,66 @@
-######################################################################## 
- # Build Soapy SDR support module for HackRF
- ######################################################################## 
+# SPDX-License-Identifier: GPL-3.0-or-later
+cmake_minimum_required(VERSION 3.24)
 
-cmake_minimum_required(VERSION 2.8.7)
-project(SoapyHackRFDuplex CXX)
+# One number for the repository: this, the tag and the module's reported version.
+project(hackrfduplex VERSION 0.2.0 LANGUAGES CXX)
 
-find_package(SoapySDR "0.4.0" NO_MODULE)
- if (NOT SoapySDR_FOUND) 
-    message(FATAL_ERROR "Soapy SDR development files not found...") 
- endif () 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-find_package(LIBHACKRF)
-
-if (NOT LIBHACKRF_FOUND) 
-     message(FATAL_ERROR "HackRF development files not found...") 
-endif () 
-message(STATUS "LIBHACKRF_INCLUDE_DIRS - ${LIBHACKRF_INCLUDE_DIRS}")
-message(STATUS "LIBHACKRF_LIBRARIES - ${LIBHACKRF_LIBRARIES}")
-
-#version check for recent hackrf with device list API
-message(STATUS "Checking for hackrf_device_list API...")
-message(STATUS "  Reading ${LIBHACKRF_INCLUDE_DIRS}/hackrf.h...")
-file(READ ${LIBHACKRF_INCLUDE_DIRS}/hackrf.h hackrf_h)
-string(FIND "${hackrf_h}" "hackrf_device_list" has_hackrf_device_list)
-if ("${has_hackrf_device_list}" STREQUAL "-1")
-    message(FATAL_ERROR "  libhackrf too old, missing hackrf_device_list API")
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${LIBHACKRF_INCLUDE_DIRS})
+option(HACKRFDUPLEX_BUILD_MODULE "Build the SoapySDR module (needs SoapySDR)" ON)
+option(HACKRFDUPLEX_BUILD_TESTS "Build the unit tests (needs Catch2 3)" ON)
+option(HACKRFDUPLEX_BUILD_TOOLS "Build hackrfduplex-check (needs SoapySDR)" ON)
+option(HACKRFDUPLEX_DSP "Receive DC removal and I/Q balance correction (needs liquid-dsp)" OFF)
+option(HACKRFDUPLEX_BUILD_EXAMPLES "Build the FT8 example client (needs liquid-dsp)" OFF)
 
-#enable c++11 features
-if(CMAKE_COMPILER_IS_GNUCXX)
+add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror)
+# Clang proves the locking annotations (module/src/mutex.hpp); GCC has no
+# such analysis and ignores them.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Wthread-safety -Wthread-safety-beta)
+endif()
 
-    #C++11 is a required language feature for this project
-    include(CheckCXXCompilerFlag)
-    CHECK_CXX_COMPILER_FLAG("-std=c++11" HAS_STD_CXX11)
-    if(HAS_STD_CXX11)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-    else(HAS_STD_CXX11)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-    endif()
+include(GNUInstallDirs)
+include(cmake/Version.cmake)
+include(cmake/Instrumentation.cmake)
+include(cmake/LibHackRF.cmake)
 
-    #disable warnings for unused parameters
-    add_definitions(-Wno-unused-parameter)
+find_package(Threads REQUIRED)
 
-endif(CMAKE_COMPILER_IS_GNUCXX)
+if(HACKRFDUPLEX_DSP OR HACKRFDUPLEX_BUILD_EXAMPLES)
+    find_path(LIQUID_INCLUDE_DIR liquid/liquid.h REQUIRED)
+    find_library(LIQUID_LIBRARY liquid REQUIRED)
+    add_library(liquid::liquid UNKNOWN IMPORTED)
+    set_target_properties(liquid::liquid PROPERTIES
+        IMPORTED_LOCATION ${LIQUID_LIBRARY}
+        INTERFACE_INCLUDE_DIRECTORIES ${LIQUID_INCLUDE_DIR})
+endif()
 
-if (APPLE)
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wc++11-extensions")
-endif(APPLE)
+if(HACKRFDUPLEX_BUILD_MODULE OR HACKRFDUPLEX_BUILD_TOOLS)
+    find_package(SoapySDR 0.8 CONFIG REQUIRED)
+endif()
 
-SOAPY_SDR_MODULE_UTIL(
-    TARGET HackRFDuplexSupport
-    SOURCES
-	HackRF_Registration.cpp
-	HackRF_Settings.cpp
-	HackRF_Streaming.cpp
-	HackRF_Session.cpp
-    LIBRARIES ${LIBHACKRF_LIBRARIES}
-)
+if(HACKRFDUPLEX_BUILD_TESTS)
+    find_package(Catch2 3 REQUIRED)
+    include(CTest)
+    include(Catch)
+endif()
 
-add_definitions(
-    -w
-)
+add_subdirectory(module)
+if(HACKRFDUPLEX_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
+if(HACKRFDUPLEX_BUILD_EXAMPLES)
+    add_subdirectory(examples/ft8)
+endif()
 
-########################################################################
-# uninstall target
-########################################################################
-add_custom_target(uninstall
-    "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake")
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
-    IMMEDIATE @ONLY)
-
+message(STATUS "hackrfduplex ${HACKRFDUPLEX_VERSION}: module ${HACKRFDUPLEX_BUILD_MODULE}, "
+               "tests ${HACKRFDUPLEX_BUILD_TESTS}, tools ${HACKRFDUPLEX_BUILD_TOOLS}, "
+               "DSP ${HACKRFDUPLEX_DSP}, examples ${HACKRFDUPLEX_BUILD_EXAMPLES}")

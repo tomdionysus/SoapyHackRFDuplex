@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The duplex pair, its libhackrf binding, the SoapySDR module and the tests.
+
+# Everything that does not touch hardware or SoapySDR: formats, rings, the
+# gain and filter models, the two stream paths and the pair itself. Tested
+# against fake boards.
+add_library(hackrfduplex_core STATIC
+    src/format.cpp
+    src/convert.cpp
+    src/block_ring.cpp
+    src/gain.cpp
+    src/bandwidth.cpp
+    src/rx_path.cpp
+    src/tx_path.cpp
+    src/pair.cpp
+    src/selection.cpp
+    src/fft.cpp
+    src/burst.cpp
+    src/m0.cpp)
+target_include_directories(hackrfduplex_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(hackrfduplex_core PUBLIC Threads::Threads)
+# Optional receive corrections (docs/design.md, Receive corrections): only
+# with HACKRFDUPLEX_DSP, and only then is liquid-dsp linked.
+if(HACKRFDUPLEX_DSP)
+    target_sources(hackrfduplex_core PRIVATE src/rx_correction.cpp)
+    target_compile_definitions(hackrfduplex_core PUBLIC HACKRFDUPLEX_DSP=1)
+    target_link_libraries(hackrfduplex_core PUBLIC liquid::liquid)
+endif()
+# The format conversions run on every sample. GCC vectorises their loops
+# only from -O3 (at -O2 its cheapest cost model declines them): on the
+# target, float to native went from 5.1 to 1.4 ns a sample, CS16 from 2.0
+# to 0.5. Set on the file, so it holds after any build type's or packager's
+# -O2.
+set_source_files_properties(src/convert.cpp PROPERTIES
+    COMPILE_OPTIONS "$<$<NOT:$<CONFIG:Debug>>:-O3>")
+
+# The Board over libhackrf, and the device listing.
+add_library(hackrfduplex_hackrf STATIC src/hackrf_board.cpp)
+target_link_libraries(hackrfduplex_hackrf PUBLIC hackrfduplex_core libhackrf::libhackrf)
+
+if(HACKRFDUPLEX_BUILD_MODULE)
+    # The SoapySDR translation, apart from the registry entry so the tests
+    # can drive it over fake boards.
+    add_library(hackrfduplex_soapy STATIC src/soapy_device.cpp)
+    # SoapySDR's headers are not held to this tree's warning flags.
+    target_include_directories(hackrfduplex_soapy SYSTEM PUBLIC ${SoapySDR_INCLUDE_DIRS})
+    target_link_libraries(hackrfduplex_soapy PUBLIC hackrfduplex_hackrf ${SoapySDR_LIBRARIES})
+
+    # SoapySDR's helper makes the MODULE library and installs it into the
+    # SoapySDR modules directory under the install prefix.
+    SOAPY_SDR_MODULE_UTIL(
+        TARGET HackRFDuplexSupport
+        SOURCES src/registration.cpp
+        LIBRARIES hackrfduplex_soapy)
+    target_include_directories(HackRFDuplexSupport SYSTEM PRIVATE ${SoapySDR_INCLUDE_DIRS})
+endif()
+
+if(HACKRFDUPLEX_BUILD_TESTS)
+    add_executable(hackrfduplex_tests
+        tests/fake_board.cpp
+        tests/convert_test.cpp
+        tests/block_ring_test.cpp
+        tests/gain_test.cpp
+        tests/bandwidth_test.cpp
+        tests/rx_path_test.cpp
+        tests/tx_path_test.cpp
+        tests/pair_test.cpp
+        tests/selection_test.cpp
+        tests/burst_test.cpp
+        tests/pair_time_test.cpp
+        tests/m0_test.cpp)
+    if(HACKRFDUPLEX_DSP)
+        target_sources(hackrfduplex_tests PRIVATE tests/rx_correction_test.cpp)
+    endif()
+    target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_core Catch2::Catch2WithMain)
+    if(HACKRFDUPLEX_BUILD_MODULE)
+        target_sources(hackrfduplex_tests PRIVATE tests/soapy_device_test.cpp)
+        target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_soapy)
+    endif()
+    catch_discover_tests(hackrfduplex_tests)
+endif()

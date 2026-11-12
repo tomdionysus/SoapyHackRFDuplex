@@ -1,0 +1,245 @@
+# Active work
+
+Open work only, ordered by dependency: take the first unchecked item whose
+dependencies are done. Each item names its acceptance test. A finished
+item is removed from here and recorded at the top of
+[TODO/COMPLETED.md](COMPLETED.md) with its date and the figures its
+acceptance test produced.
+
+## Resume here
+
+Read `CLAUDE.md`, then this file, then `CLAUDE.local.md` (the build host,
+the boards, the bench). The code is described in
+[docs/design.md](../docs/design.md); read "Components", "Threads", "Time"
+and "Reference switches" before touching `pair.cpp` or `tx_path.cpp`.
+
+Everything builds and runs on the target, the Debian trixie host with
+both boards attached, over ssh. Edit here; build and test there:
+
+```
+export HACKRFDUPLEX_TARGET=<from CLAUDE.local.md>
+tools/ci-pi.sh                              # format, licences, release and sanitizer builds and tests
+tools/ci-pi.sh -- tools/ci.sh --quick       # release build and tests only
+tools/ci-pi.sh -- bash -c 'SOAPY_SDR_PLUGIN_PATH=$PWD/build/module ./build/tools/hackrfduplex-check --clkout rx --seconds 5'
+```
+
+The last line is the receive smoke test: 99.9% of nominal, 0 overflows,
+both boards `clock: external`. With transmit allowed, add `--tx-tone
+100e3 --tx-gain 0`: the origin found at start, the tone at +0.0 Hz every
+second, 0 underflows, 0 overflows (the receive ring holds 1.5 s, more
+than the second activation takes to calibrate); and `--timed-bursts 81920 --seconds
+60`: every burst at +0 samples. Leave `clkout=rx` set at the end of a
+run. The workstation can still build and run the unit tests for a quick
+test-first loop; the target's result is the one that counts.
+
+Work the items in order. Items 1 to 15 are done; item 16 takes the module to
+the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
+on hardware Tom does not have yet.
+
+## Where things stand
+
+- 2026-11-09: the module does what it set out to do. Discovery, the
+  pair, both streams in four formats, tuning, filters, gains, bias tee,
+  the shared reference (`clkout`) with reference switches handled, the
+  `lo_locked` sensor, unknown settings tolerated, rates from 0.2 Msps
+  (receive) and 1.2 Msps (transmit), and the hardware time: a common
+  origin from a calibration burst (or a trigger edge), the hardware time
+  API, timed transmit placed to the sample. 96 test cases pass, in the
+  release and sanitizer builds, on the workstation and on the target.
+- Verified on the workstation's bench (docs/design.md, Measured):
+  receive at 2, 8 and 20 Msps; a tone in every format at its sent offset;
+  reference switches both ways; low rates; the origin found at 20 starts
+  of 20 and repeatable to 0 samples; 3658 timed bursts at +0 samples.
+- The same day the work moved to the target, a Raspberry Pi 5 on trixie
+  with each board on its own root port. There: `tools/ci.sh` passes; the
+  `.deb` builds, installs and is found by `SoapySDRUtil --find`; receive
+  at 8 Msps is clean; 20 Msps through the check tool is CPU-bound (81%),
+  while USB alone carries the full rate. Item 1 then brought the pair up
+  there: receive, reference switches each way, the tone and 3658 timed
+  bursts at +0, all clean (COMPLETED.md).
+- 2026-11-10: items 4 to 7 accepted on the target (COMPLETED.md): a
+  board unplugged mid-stream is a stream error within 0.1 s, a killed
+  transmitter stops itself within its underrun limit, the probe lists
+  everything as designed, and timed receive windows catch timed bursts
+  to the sample. 128 test cases.
+- 2026-11-10, later: items 9 and 10 accepted on the target, and a start
+  that read the previous stream's M0 state fixed (COMPLETED.md). 146
+  test cases. The target's USB carries neither direction cleanly at 20
+  Msps, with the stock tools as with the module; full duplex is clean
+  through 16 Msps, ten minutes of it at 25% of a core (item 11).
+- The upstream report on the firmware's reference switch is drafted in
+  `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
+
+## The target's power
+
+- The target rebooted three times on 2026-11-09 and 10: once two
+  minutes into a 600 s full-duplex run, once with nothing of this work
+  running, and once during the CI's sanitizer tests with the boards
+  idle. The journal keeps only the current boot, so no cause is
+  recorded. Tom, 2026-11-10, asked whether and how hard to use it: "Yes,
+  go for it." So long runs are back; the power is still read before and
+  after every run, and another reboot stops hardware work until Tom has
+  seen it.
+- ThreadSanitizer cannot run on the target: on arm64 it needs a 39, 42
+  or 48-bit address space and the Pi 5's 16K-page kernel gives 47, with
+  GCC 14 and clang 19 alike. `tools/ci.sh` skips the step there, saying
+  so; the workstation still runs it.
+
+Nothing blocks the work. Decided 2026-11-09 and recorded under standing
+decisions: the target's bench, its power, the transmit underrun limit,
+clock and time sources, optional DSP with liquid-dsp, release 0.2.0
+first. Still open: the trigger jumper and a `HACKRF1_R9` board, neither
+available for now (Tom, 2026-11-09); the release names both paths as
+untested against hardware, and item 17 waits for them.
+
+## Standing decisions
+
+- Scope (Tom, 2026-11-09): this project is a pair of HackRF Ones as one
+  full-duplex SoapySDR device, and nothing else. Applications built on
+  it, and changes to the HackRF firmware, CPLD or libhackrf, belong
+  elsewhere. The module works with stock firmware and stock libhackrf,
+  so the transmit lead stays about five USB transfers.
+- The build of record is on the target over ssh (`tools/ci-pi.sh`),
+  Debian trixie with the distribution's libhackrf, SoapySDR and Catch2
+  (Tom, 2026-11-09).
+- C++20 throughout, Catch2 v3, the hardware dialect of
+  `/Users/tom/devroot/CLAUDE-STYLE-2026.md`. Tests come from the SoapySDR
+  contract and this plan, written before the code; a test is never
+  deleted.
+- GPL-3.0-or-later. Tom's own project, not a fork; no code from other
+  modules; only the SoapySDR conventions a HackRF user expects are kept.
+- One board receives and one transmits, fixed for the life of the device.
+  No role swapping, no single-board fallback.
+- The RF amplifier is presented as 14 dB, as every SoapySDR HackRF driver
+  has, although libhackrf documents about 11 dB.
+- Sample rates: the module passes what it is given through without
+  clamping, and advertises what was measured: 0.2 to 20 Msps for
+  receive, 1.2 to 20 Msps for transmit (docs/design.md, Low sample
+  rates).
+- A requested bandwidth rounds down to a filter width, never up.
+- Discovery never opens a board.
+- Stream positions are sample counts from each stream's activation and
+  include samples dropped at the USB level (RxPath counts a dropped
+  transfer, TxPath counts the silence it sends). Receive timestamps are
+  those positions, plus the offset `setHardwareTime` sets, at the
+  receive rate.
+- The common time origin is chosen by the `time_origin` setting, also a
+  device argument: `burst` (default), `trigger`, `none` (Tom,
+  2026-11-09). The default transmits a short calibration burst on the
+  receive frequency when the second stream starts. The pair never
+  recalibrates on its own.
+- Dependencies: SoapySDR, libhackrf, Catch2; and liquid-dsp, only in a
+  build that asks for the optional DSP (below). Nothing else without a
+  decision recorded here.
+- The transmit underrun limit is on by default at one transfer's worth,
+  with a `tx_underrun_limit` setting; the receive overrun limit stays off
+  (Tom, 2026-11-09).
+- Clock and time sources map onto the existing settings: clock sources
+  `internal`, `rx`, `tx` (as `clkout`), time sources `burst`, `trigger`,
+  `none` (as `time_origin`); the settings stay as aliases (Tom,
+  2026-11-09).
+- Optional DSP (Tom, 2026-11-09: "use liquid-dsp. These features MUST be
+  optional at compile time"): software DC removal and I/Q balance
+  correction on receive, built only with `-DHACKRFDUPLEX_DSP=ON` and
+  liquid-dsp found, off at run time until an application asks. Without
+  the option the module neither links liquid-dsp nor claims the
+  features; the build without it stays the default.
+- The next release is 0.2.0 (Tom, 2026-11-09); 1.0.0, with the SoapySDR
+  surface and settings held stable, comes after 0.2.0 has been used.
+- Transmit tests: Tom's go-ahead for this work on the shielded bench
+  ("you may test autonomously until completion"), which the target's
+  bench is ("yes, shielded"), both 2026-11-09. Ask before switching the
+  amplifier on. The Radioberry on the target may be used for receive
+  tests only.
+- The target's power supply may sag under two HackRFs and cannot be
+  changed (Tom, 2026-11-09: "Watch that power"). Every hardware run
+  reads `vcgencmd get_throttled` before and after and records it; a run
+  that saw under-voltage is repeated before any shortfall, overflow or
+  lost origin in it is put down to the module.
+- Commits with no Claude text, and pushes to `origin develop`, at any
+  time (Tom, 2026-11-09). One logical change per commit.
+- The soak is two hours each at 8 and 16 Msps, overnight, not 24 hours;
+  code coverage and GitHub Actions gate every push, with the quality
+  setup corvus-radioberry publishes (Tom, 2026-11-10). LTE and anything needing a changed
+  libhackrf or firmware stays out of scope (Tom, 2026-11-10, again).
+- Tom, 2026-11-12, for 0.2.0: the 16 Msps soak repeat is accepted with
+  its one late write put down to the coinciding under-voltage, and the
+  README says the soak ran on an under-powered host; the receive ring
+  holds 1.5 s at the rate (Tom chose 1.5 over 1 after 1 s left 5% margin) (at least 15 transfers), so a transmit-first
+  start does not overflow; `--recover` deactivates and reactivates both
+  streams when a board stops, then recalibrates; the receive-only
+  application is rtl_433; SoapyRemote is measured and documented with no
+  system setting changed; the failed-reopen defect in `HackrfBoard` is
+  fixed before the tag.
+- Tom, 2026-11-12, from the interoperability runs: a read on a receive
+  stream not yet active waits out its timeout and returns
+  `SOAPY_SDR_TIMEOUT`, as other drivers do (SoapyRemote's server reads
+  from `setupStream` on), while one whose board failed still returns
+  `SOAPY_SDR_STREAM_ERROR`; SoapyRemote's own keys pass without a
+  warning; the device opens at 10 Msps both ways, the boards' own
+  start-up rate ("If the boards start at 10Msps, it makes sense to use
+  their defaults").
+
+## Release 0.2.0
+
+What "elite" means for this module, and the gate for the tag (0.2.0
+first, by Tom's choice; 1.0.0 after it has been used):
+
+- **The contract, all of it.** Every SoapySDR call behaves as the
+  contract says, per direction. What the device cannot do it refuses
+  explicitly (`SOAPY_SDR_NOT_SUPPORTED`, or a throw naming why), and
+  never silently ignores. A flag, argument or setting it accepts it
+  honours.
+- **Proven.** Every behaviour has a test against the fakes, written
+  before its code. Every hardware claim in the docs is a figure from
+  `hackrfduplex-check` on the target, and one command certifies a pair.
+- **Safe.** The transmitter cannot outlive its host. It transmits only
+  what was written, plus the documented calibration burst, which
+  `time_origin=none` turns off.
+- **Honest under fault.** Lost samples, a lost board, a lost reference or
+  a lost origin each reach the application as a stream status within a
+  bounded time, never as silently wrong data or timestamps.
+- **Fast and steady.** Full duplex at the host's limit (16 Msps on the
+  target, whose USB carries neither direction cleanly at 20), measured
+  CPU use, and two hours each at 8 and 16 Msps with the origin held
+  throughout.
+- **Gated.** `tools/ci.sh` on every push through GitHub Actions, in the
+  target's distribution, coverage reported (Tom, 2026-11-10: "You need
+  code coverage, github actions").
+- **Shipped.** A `.deb` that installs on trixie, docs a newcomer can
+  follow, and tag `0.2.0` on `main`.
+- **Named limits.** What could not be tried on hardware (the trigger
+  origin, the `HACKRF1_R9` reference-switch path) is named as such in
+  the README and design.
+
+## Items
+
+### 16. Documentation and the release
+
+- [ ] `docs/usage.md`, a guide for an application writer: setting up the
+  pair (clock cable, USB topology, power), what the time origin is and
+  where the calibration burst transmits (the receive frequency, at the
+  transmit gain set), the transmit lead to allow, the stream statuses
+  and what each means, and troubleshooting (no origin found, reference
+  switches, shortfalls, low rates). A man page for `hackrfduplex-check`
+  installed by CMake and the package (lintian's one warning on the
+  `.deb`). README brought to its final form, the status table all ticks
+  or named exceptions, the untested hardware paths named. Then: version
+  0.2.0 in `CMakeLists.txt` and `debian/changelog`, `tools/ci-pi.sh`
+  passing, the `.deb` rebuilt and installed on the target, `develop`
+  merged to `main`, an annotated tag `0.2.0` on `main`, and `main`,
+  `develop` and the tag pushed to `origin`. Acceptance: a newcomer's path
+  from the README to a timed loopback works as written from a clean
+  clone on the target; `module_version` reads 0.2.0 in `SoapySDRUtil
+  --probe` on the installed package.
+
+### 17. Trigger origin on the bench
+
+- [ ] Waits on hardware Tom does not have yet (2026-11-09): a jumper from the RX board's P28 pin 15
+  (trigger out) to the TX board's P28 pin 16 (trigger in), the boards
+  grounded together through the clock cable. Built, unit-tested against
+  the fake, and on 2026-11-09 the start without a jumper failed on the
+  real pair as designed, naming the jumper. Acceptance: with
+  `--time-origin trigger`, `hackrfduplex-check --timed-bursts` lands
+  every burst at one constant offset from the time asked (the origin is
+  0 by construction, so the offset is the boards' pipeline difference).

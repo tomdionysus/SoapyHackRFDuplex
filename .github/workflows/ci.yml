@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# tools/ci.sh on GitHub's runners, in a Debian trixie container, the
+# distribution the target runs: formatting, licence lines, the release,
+# sanitizer and receive-correction builds and their tests, Clang's
+# thread-safety analysis, clang-tidy, the coverage report (its summary in
+# the job's page, the HTML kept as an artifact, the report sent to
+# Codecov) and ThreadSanitizer, which
+# the Raspberry Pi target cannot run. Everything runs against the fake
+# boards; the hardware is checked on the target with hackrfduplex-check,
+# and the run there (tools/ci-pi.sh) stays the merge gate.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+      # LeakSanitizer needs ptrace to stop the process's threads.
+      options: --cap-add SYS_PTRACE --security-opt seccomp=unconfined
+    steps:
+      - name: Install packages
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential cmake pkgconf git ca-certificates \
+            libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2 libliquid-dev \
+            clang-19 clang-tidy-19 clang-format lcov \
+            curl gnupg  # Codecov's uploader verifies its own signature
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, for the version string
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build and test
+        run: tools/ci.sh
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f build-coverage/coverage.log ]; then
+            {
+              echo '### Coverage'
+              echo '```'
+              grep -A3 'Summary coverage' build-coverage/coverage.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: build-coverage/coverage/html
+          if-no-files-found: ignore
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: build-coverage/coverage/coverage.info
+          disable_search: true
+          # The lcov report is the whole of it; no gcov pass of the uploader's own.
+          plugins: noop
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
