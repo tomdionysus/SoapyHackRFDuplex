@@ -441,6 +441,43 @@ TEST_CASE("a timed write to a transmitter that has stopped is refused", "[pair][
     CHECK(rig.pair.failed(Direction::kTx));
 }
 
+TEST_CASE("a transmitter that stopped streams again, with a new origin, once both streams restart",
+          "[pair][time][fault]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kRx);
+    rig.pair.activate(Direction::kTx);
+    REQUIRE(rig.pair.tx_of_rx());
+    air.stop();
+    rig.tx.tx_streaming = false;
+    // Past one poll interval, so the write looks at the boards first.
+    std::this_thread::sleep_for(150ms);
+    const std::array<std::int8_t, 8> samples{};
+    CHECK(rig.pair.write_at(samples.data(), 4, true, rig.pair.time_ticks() + 1'000'000, 100ms)
+              .status == TimedStatus::kTimeout);
+    CHECK(rig.pair.failed(Direction::kTx));
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("TX board stopped streaming"));
+    // Calibrating alone cannot bring it back: the burst has no transmitter
+    // to go out through (it is not written, or written and never heard),
+    // and the log says why.
+    rig.pair.calibrate();
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("no common time origin"));
+
+    // What hackrfduplex-check --recover does: both down, then both up.
+    rig.pair.deactivate(Direction::kRx);
+    rig.pair.deactivate(Direction::kTx);
+    Loopback again(rig.tx, rig.rx, 500);
+    rig.pair.activate(Direction::kTx);
+    rig.pair.activate(Direction::kRx);
+    CHECK_FALSE(rig.pair.failed(Direction::kTx));
+    CHECK_FALSE(rig.pair.failed(Direction::kRx));
+    REQUIRE(rig.pair.tx_of_rx());
+    again.stop();
+}
+
 TEST_CASE("a board's shortfall loses the origin, reported once", "[pair][time]") {
     Rig rig;
     rig.open();

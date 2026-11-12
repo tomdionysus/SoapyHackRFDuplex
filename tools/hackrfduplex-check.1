@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
-.TH HACKRFDUPLEX-CHECK 1 "2026-11-10" "hackrfduplex 0.2.0" "User Commands"
+.TH HACKRFDUPLEX-CHECK 1 "2026-11-12" "hackrfduplex 0.2.0" "User Commands"
 .SH NAME
 hackrfduplex-check \- check a HackRF One pair through the
 hackrfduplex SoapySDR module
@@ -85,8 +85,8 @@ power-up.
 CS8, CS16, CF32 or CF64 for the transmit stream (default CF32).
 .TP
 .BI \-\-buffers " N"
-The streams' ring depth in USB transfers (default: the module's, half a
-second at the rate on receive and 15 on transmit).
+The streams' ring depth in USB transfers (default: the module's, 1.5 s
+at the rate on receive and 15 on transmit).
 .TP
 .BI \-\-time\-origin " O"
 .BR burst ,
@@ -109,8 +109,9 @@ microseconds and report where each arrived. Allow 5.5 USB transfers
 .B \-\-recover
 With
 .BR \-\-timed\-bursts :
-when the time origin is lost, calibrate again and go on; the run passes
-if every loss was recovered.
+when the time origin is lost, calibrate again; when a board stops
+streaming, deactivate and activate both streams, which calibrates; then
+go on. The run passes if every loss was recovered.
 .TP
 .BI \-\-progress " S"
 With
@@ -121,6 +122,21 @@ print running totals every S seconds.
 Transmit a burst US microseconds after the time now and open a timed
 receive window just around it, again and again, and report where in each
 window it arrived. Transmits.
+.TP
+.B \-\-acceptance
+Run the hardware acceptance battery: one run of this tool per line,
+each printed as PASS or FAIL against the figures in
+.IR docs/design.md ,
+and a final count. Receives only, unless
+.B \-\-transmit
+is given too. Exits 0 when every line passed.
+.TP
+.B \-\-transmit
+With
+.BR \-\-acceptance :
+run the lines that transmit too (TX gain 0): the reference switches, the
+tone in each format, the origin, the timed bursts and the low transmit
+rate.
 .TP
 .B \-\-no\-analysis
 Count the received samples and nothing more, so the CPU reported is the

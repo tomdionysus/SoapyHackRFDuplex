@@ -30,7 +30,6 @@
 #include <numbers>
 #include <optional>
 #include <regex>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -196,7 +195,9 @@ const char* const kUsage =
     "                    US microseconds, and report where each arrived (transmits;\n"
     "                    excludes --tx-tone)\n"
     "  --recover         with --timed-bursts: when the origin is lost, calibrate\n"
-    "                    again and go on; the run passes if every loss was recovered\n"
+    "                    again; when a board stops, deactivate and activate both\n"
+    "                    streams; then go on; the run passes if every loss was\n"
+    "                    recovered\n"
     "  --progress S      with --timed-bursts: print running totals every S seconds\n"
     "  --acceptance      run the hardware acceptance battery, one run of this tool\n"
     "                    per line, and print PASS or FAIL for each against the\n"
@@ -620,9 +621,11 @@ struct TimedResult {
     // getHardwareTime between two reads, against their timestamps.
     unsigned clock_checks = 0;
     unsigned clock_outside = 0;
-    // --recover: origins lost, and calibrations that found one again.
+    // --recover: origins lost, and how many were found again, by
+    // calibrating or by restarting both streams after a board stopped.
     unsigned origins_lost = 0;
     unsigned recovered = 0;
+    unsigned restarts = 0;
     // A read or write ended the run early.
     bool stream_error = false;
     std::map<long long, unsigned> errors;
@@ -668,32 +671,76 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
                                       std::chrono::duration<double>(options.seconds));
     std::optional<long long> previous_read_ns;
     bool was_caught_up = false;
-    // Calibrates again when the origin has gone; true when it is back.
+    // An origin lost and not yet found again, so it is counted once however
+    // many calibrations it takes.
+    bool origin_down = false;
+    const auto seconds_in = [&]() {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    };
+    // Bursts already scheduled were timed on the old origin, and after a
+    // restart the receive stream counts from 0 again.
+    const auto forget = [&]() {
+        result.lost += static_cast<unsigned>(pending.size());
+        pending.clear();
+        last_scheduled = -(1LL << 62);
+        history.clear();
+        previous_read_ns.reset();
+        was_caught_up = false;
+    };
+    // Counts whether the origin is back after a calibration or a restart.
+    const auto settle = [&](const char* how) {
+        const auto value = take_tx_of_rx();
+        if (device->hasHardwareTime()) {
+            ++result.recovered;
+            origin_down = false;
+            std::printf("timed: %.0f s: %s: transmit position = receive position %+lld\n",
+                        seconds_in(), how, value.value_or(0));
+        } else {
+            origin_down = true;
+            std::printf("timed: %.0f s: %s found no origin\n", seconds_in(), how);
+        }
+        std::fflush(stdout);
+    };
+    // Calibrates again when the origin has gone.
     const auto recover = [&]() {
         if (!options.recover || device->hasHardwareTime()) {
             return;
         }
-        ++result.origins_lost;
-        device->writeSetting("calibrate", "");
-        const auto value = take_tx_of_rx();
-        if (device->hasHardwareTime()) {
-            ++result.recovered;
-            std::printf(
-                "timed: origin lost after %.0f s; calibrated again: transmit position = "
-                "receive position %+lld\n",
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(),
-                value.value_or(0));
-        } else {
-            std::printf(
-                "timed: origin lost after %.0f s; calibration found none\n",
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+        if (!origin_down) {
+            ++result.origins_lost;
         }
-        std::fflush(stdout);
-        // Bursts already scheduled were timed on the old origin.
-        result.lost += static_cast<unsigned>(pending.size());
-        pending.clear();
-        history.clear();
-        previous_read_ns.reset();
+        device->writeSetting("calibrate", "");
+        settle("calibrated again");
+        forget();
+    };
+    // A board stopped: its stream stays ended until deactivated and
+    // activated again (docs/usage.md, Stream statuses), so --recover does
+    // that to both, in the order they first started, which recalibrates.
+    // False when they would not start again.
+    const auto restart = [&]() {
+        if (!origin_down) {
+            ++result.origins_lost;
+        }
+        ++result.restarts;
+        std::printf("timed: %.0f s: a board stopped; restarting both streams\n", seconds_in());
+        device->deactivateStream(rx);
+        device->deactivateStream(tx);
+        forget();
+        if (device->activateStream(tx) != 0 || device->activateStream(rx) != 0) {
+            std::printf("timed: the streams did not activate again\n");
+            return false;
+        }
+        settle("restarted");
+        return true;
+    };
+    // A stream error ends the run, or with --recover restarts the streams.
+    const auto stream_failed = [&](const char* where, int code) {
+        if (options.recover && code == SOAPY_SDR_STREAM_ERROR && restart()) {
+            return false;
+        }
+        std::printf("timed: %s error %s\n", where, SoapySDR::errToStr(code));
+        result.stream_error = true;
+        return true;
     };
     auto next_progress = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                                      std::chrono::duration<double>(options.progress_seconds));
@@ -703,11 +750,11 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
                 std::chrono::duration<double>(options.progress_seconds));
             std::printf(
                 "timed: %.0f s: %u written, %u found, %u not found, %u lost, %u late writes, %u "
-                "overflows, %u time errors, %u underflows, %u origins lost, %u recovered\n",
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(),
-                result.written, result.found, result.missing, result.lost, result.late_writes,
-                result.overflows, result.time_errors, result.underflows, result.origins_lost,
-                result.recovered);
+                "overflows, %u time errors, %u underflows, %u origins lost, %u recovered, %u "
+                "restarts\n",
+                seconds_in(), result.written, result.found, result.missing, result.lost,
+                result.late_writes, result.overflows, result.time_errors, result.underflows,
+                result.origins_lost, result.recovered, result.restarts);
             std::fflush(stdout);
         }
         int flags = 0;
@@ -727,9 +774,10 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
             continue;
         }
         if (n < 0) {
-            std::printf("timed: read error %s\n", SoapySDR::errToStr(n));
-            result.stream_error = true;
-            break;
+            if (stream_failed("read", n)) {
+                break;
+            }
+            continue;
         }
         const long long tick = SoapySDR::timeNsToTicks(time_ns, rate);
         const auto held = static_cast<long long>(history.size() / 2);
@@ -786,9 +834,10 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
             } else if (w == SOAPY_SDR_TIMEOUT) {
                 ++result.write_timeouts;
             } else if (w < 0) {
-                std::printf("timed: write error %s\n", SoapySDR::errToStr(w));
-                result.stream_error = true;
-                break;
+                if (stream_failed("write", w)) {
+                    break;
+                }
+                continue;
             } else {
                 long long done = w;
                 while (done < chips) {
@@ -807,18 +856,25 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
             }
         }
 
+        int status = 0;
         while (true) {
             std::size_t mask = 0;
             int status_flags = 0;
             long long status_time = 0;
-            const int r = device->readStreamStatus(tx, mask, status_flags, status_time, 0);
-            if (r == SOAPY_SDR_UNDERFLOW) {
+            status = device->readStreamStatus(tx, mask, status_flags, status_time, 0);
+            if (status == SOAPY_SDR_UNDERFLOW) {
                 ++result.underflows;
-            } else if (r == SOAPY_SDR_TIME_ERROR) {
+            } else if (status == SOAPY_SDR_TIME_ERROR) {
                 ++result.time_errors;
             } else {
                 break;
             }
+        }
+        if (status == SOAPY_SDR_STREAM_ERROR) {
+            if (stream_failed("transmit status", status)) {
+                break;
+            }
+            continue;
         }
         recover();
 
@@ -862,8 +918,10 @@ int run_timed(SoapySDR::Device* device, const Options& options) {
     std::printf("timed: hardware time between two reads' timestamps: %u of %u\n",
                 result.clock_checks - result.clock_outside, result.clock_checks);
     if (options.recover) {
-        std::printf("timed: %u origins lost, %u found again by calibrating\n", result.origins_lost,
-                    result.recovered);
+        std::printf(
+            "timed: %u origins lost, %u found again, %u restarts of both streams after a board "
+            "stopped\n",
+            result.origins_lost, result.recovered, result.restarts);
     }
     std::printf("timed: arrival against the time asked, in samples:");
     for (const auto& [error, count] : result.errors) {
@@ -1135,15 +1193,12 @@ int run_acceptance(const std::string& self, const Options& options) {
         }
         off_args.insert(off_args.end(), args.begin(), args.end());
         const auto judge = [&](const Child& c, bool shared) {
-            // Overflows, not the rate. With an origin to find, one overflow
-            // at the start is the activation backlog: this tool activates
-            // transmit first, its writer fills the transmit ring, and the
-            // calibration burst waits behind it for 0.8 s or so at 8 Msps,
-            // longer than the receive ring holds (docs/design.md).
+            // Overflows, not the rate. This tool activates transmit first,
+            // so the calibration burst waits behind a full transmit ring;
+            // the receive ring holds 1.5 s for that (docs/design.md), and
+            // an overflow at the start is a failure.
             const auto over = number(c.output, kOverflows);
-            const double allowed = shared && options.transmit ? 1 : 0;
-            bool ok = c.status == 0 && over && *over <= allowed &&
-                      has(c.output, "rx lo_locked true") &&
+            bool ok = c.status == 0 && over && *over == 0 && has(c.output, "rx lo_locked true") &&
                       has(c.output, shared ? "sensors running: ref_locked true"
                                            : "sensors running: ref_locked false");
             std::string detail = shared ? "ref_locked true" : "ref_locked false";
