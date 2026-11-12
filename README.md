@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
 
-Version 0.2.1
+Version 0.2.1 ([changes](CHANGELOG.md))
 
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
 makes two [HackRF One](https://greatscottgadgets.com/hackrf/one/) boards

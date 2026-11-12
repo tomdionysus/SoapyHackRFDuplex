@@ -127,7 +127,8 @@ it should report is the acceptance test of each hardware item in
 ## Documentation
 
 - Docs state current facts: what exists, how to install and use it, what
-  was measured. No history, no plans; those belong in `TODO/`.
+  was measured. No history, no plans; those belong in `TODO/`, apart
+  from [CHANGELOG.md](CHANGELOG.md), one short entry per release.
 - No serials, hostnames or other identifiers of the development hardware;
   those live in the gitignored `CLAUDE.local.md`.
 - [README.md](README.md) is the front page: what the project is, how to
