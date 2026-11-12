@@ -69,6 +69,9 @@ private:
     static int tx_trampoline(hackrf_transfer* transfer);
     void open() REQUIRES(mutex_);
     void close() REQUIRES(mutex_);
+    // The libhackrf handle, or BoardError naming the board when a reopen
+    // failed and left none, so a call never hands libhackrf a null device.
+    hackrf_device* handle() REQUIRES(mutex_);
     // Starts with `begin`, and once more after a close and reopen if the
     // board did not stream: libhackrf has refused a restart that way.
     void start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, void*),

@@ -104,6 +104,15 @@ void HackrfBoard::open() {
     check(hackrf_open_by_serial(serial_.c_str(), &device_), what.c_str());
 }
 
+hackrf_device* HackrfBoard::handle() {
+    if (device_ == nullptr) {
+        throw BoardError(serial_ +
+                         ": no handle: the board could not be opened again after a failed "
+                         "start; stop the stream and start it again");
+    }
+    return device_;
+}
+
 void HackrfBoard::close() {
     if (device_ != nullptr) {
         hackrf_close(device_);
@@ -117,15 +126,15 @@ BoardInfo HackrfBoard::info() {
     info.serial = serial_;
 
     std::uint8_t board_id = BOARD_ID_UNDETECTED;
-    check(hackrf_board_id_read(device_, &board_id), "board id");
+    check(hackrf_board_id_read(handle(), &board_id), "board id");
     info.board = hackrf_board_id_name(static_cast<hackrf_board_id>(board_id));
 
     char version[64] = {};
-    check(hackrf_version_string_read(device_, version, sizeof(version) - 1), "version");
+    check(hackrf_version_string_read(handle(), version, sizeof(version) - 1), "version");
     info.firmware = version;
 
     std::uint16_t api = 0;
-    check(hackrf_usb_api_version_read(device_, &api), "usb api version");
+    check(hackrf_usb_api_version_read(handle(), &api), "usb api version");
     char api_text[16];
     std::snprintf(api_text, sizeof(api_text), "%x.%02x", (api >> 8) & 0xff, api & 0xff);
     info.usb_api = api_text;
@@ -133,17 +142,17 @@ BoardInfo HackrfBoard::info() {
     info.revision = "unknown";
     if (api >= 0x0106) {
         std::uint8_t revision = BOARD_REV_UNDETECTED;
-        if (hackrf_board_rev_read(device_, &revision) == HACKRF_SUCCESS) {
+        if (hackrf_board_rev_read(handle(), &revision) == HACKRF_SUCCESS) {
             info.revision = hackrf_board_rev_name(static_cast<hackrf_board_rev>(revision));
         }
         std::uint8_t clkin = 0;
-        if (hackrf_get_clkin_status(device_, &clkin) == HACKRF_SUCCESS) {
+        if (hackrf_get_clkin_status(handle(), &clkin) == HACKRF_SUCCESS) {
             info.external_clock = clkin != 0;
         }
     }
 
     std::uint16_t clk3 = kSi5351PowerDown;
-    if (hackrf_si5351c_read(device_, kSi5351Clk3Control, &clk3) == HACKRF_SUCCESS) {
+    if (hackrf_si5351c_read(handle(), kSi5351Clk3Control, &clk3) == HACKRF_SUCCESS) {
         info.clock_out = (clk3 & kSi5351PowerDown) == 0;
     }
     return info;
@@ -151,47 +160,47 @@ BoardInfo HackrfBoard::info() {
 
 void HackrfBoard::set_frequency(std::uint64_t hz) {
     const Lock lock(mutex_);
-    check(hackrf_set_freq(device_, hz), "set frequency");
+    check(hackrf_set_freq(handle(), hz), "set frequency");
 }
 
 void HackrfBoard::set_sample_rate(double hz) {
     const Lock lock(mutex_);
-    check(hackrf_set_sample_rate(device_, hz), "set sample rate");
+    check(hackrf_set_sample_rate(handle(), hz), "set sample rate");
 }
 
 void HackrfBoard::set_bandwidth(std::uint32_t hz) {
     const Lock lock(mutex_);
-    check(hackrf_set_baseband_filter_bandwidth(device_, hz), "set bandwidth");
+    check(hackrf_set_baseband_filter_bandwidth(handle(), hz), "set bandwidth");
 }
 
 void HackrfBoard::set_amp(bool on) {
     const Lock lock(mutex_);
-    check(hackrf_set_amp_enable(device_, on ? 1 : 0), "set amp");
+    check(hackrf_set_amp_enable(handle(), on ? 1 : 0), "set amp");
 }
 
 void HackrfBoard::set_lna_gain(unsigned db) {
     const Lock lock(mutex_);
-    check(hackrf_set_lna_gain(device_, db), "set lna gain");
+    check(hackrf_set_lna_gain(handle(), db), "set lna gain");
 }
 
 void HackrfBoard::set_vga_gain(unsigned db) {
     const Lock lock(mutex_);
-    check(hackrf_set_vga_gain(device_, db), "set vga gain");
+    check(hackrf_set_vga_gain(handle(), db), "set vga gain");
 }
 
 void HackrfBoard::set_tx_vga_gain(unsigned db) {
     const Lock lock(mutex_);
-    check(hackrf_set_txvga_gain(device_, db), "set tx vga gain");
+    check(hackrf_set_txvga_gain(handle(), db), "set tx vga gain");
 }
 
 void HackrfBoard::set_bias_tee(bool on) {
     const Lock lock(mutex_);
-    check(hackrf_set_antenna_enable(device_, on ? 1 : 0), "set bias tee");
+    check(hackrf_set_antenna_enable(handle(), on ? 1 : 0), "set bias tee");
 }
 
 void HackrfBoard::set_clock_out(bool on) {
     const Lock lock(mutex_);
-    check(hackrf_set_clkout_enable(device_, on ? 1 : 0), "set clock out");
+    check(hackrf_set_clkout_enable(handle(), on ? 1 : 0), "set clock out");
 }
 
 bool HackrfBoard::start_switches_reference() {
@@ -200,7 +209,7 @@ bool HackrfBoard::start_switches_reference() {
         return false;
     }
     std::uint8_t clkin = 0;
-    check(hackrf_get_clkin_status(device_, &clkin), "clkin status");
+    check(hackrf_get_clkin_status(handle(), &clkin), "clkin status");
     // What the board runs on now. Before r9 the firmware moves the outputs
     // between PLL A (crystal) and PLL B (CLKIN), which shows in CLK0's
     // control byte. From r9 it keeps PLL A and sets its multiplier for a
@@ -208,12 +217,12 @@ bool HackrfBoard::start_switches_reference() {
     bool on_clkin = false;
     if (r9_clocking_) {
         std::uint16_t multiplier = 0;
-        check(hackrf_si5351c_read(device_, kSi5351PllAMultiplier, &multiplier),
+        check(hackrf_si5351c_read(handle(), kSi5351PllAMultiplier, &multiplier),
               "read pll multiplier");
         on_clkin = multiplier == kSi5351PllAMultiplierClkin;
     } else {
         std::uint16_t clk0 = 0;
-        check(hackrf_si5351c_read(device_, kSi5351Clk0Control, &clk0), "read clock control");
+        check(hackrf_si5351c_read(handle(), kSi5351Clk0Control, &clk0), "read clock control");
         on_clkin = (clk0 & kSi5351PllSourceB) != 0;
     }
     return on_clkin != (clkin != 0);
@@ -221,12 +230,12 @@ bool HackrfBoard::start_switches_reference() {
 
 void HackrfBoard::set_hardware_sync(bool on) {
     const Lock lock(mutex_);
-    check(hackrf_set_hw_sync_mode(device_, on ? 1 : 0), "set hardware sync");
+    check(hackrf_set_hw_sync_mode(handle(), on ? 1 : 0), "set hardware sync");
 }
 
 M0Reading HackrfBoard::read_m0() {
     hackrf_m0_state state{};
-    check(hackrf_get_m0_state(device_, &state), "read m0 state");
+    check(hackrf_get_m0_state(handle(), &state), "read m0 state");
     return M0Reading{state.active_mode, state.m0_count, state.num_shortfalls, state.error};
 }
 
@@ -263,7 +272,7 @@ bool HackrfBoard::set_tx_underrun_limit(std::uint32_t samples) {
     }
     // libhackrf counts bytes, two to a sample.
     const std::uint64_t bytes = std::min<std::uint64_t>(2ULL * samples, UINT32_MAX);
-    check(hackrf_set_tx_underrun_limit(device_, static_cast<std::uint32_t>(bytes)),
+    check(hackrf_set_tx_underrun_limit(handle(), static_cast<std::uint32_t>(bytes)),
           "set tx underrun limit");
     return true;
 }
@@ -287,6 +296,10 @@ int HackrfBoard::tx_trampoline(hackrf_transfer* transfer) {
 
 void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, void*),
                         hackrf_sample_block_cb_fn callback, const char* what) {
+    // A reopen that failed left no handle; a start is where to try again.
+    if (device_ == nullptr) {
+        open();
+    }
     // Until the M0 takes up the start it reads as the stream before did,
     // shortfalls and error included (m0.hpp), so the start is not done
     // until it has.
@@ -300,26 +313,26 @@ void HackrfBoard::start(int (*begin)(hackrf_device*, hackrf_sample_block_cb_fn, 
             await_m0([&](const M0Reading& now) { return m0_took_up_start(*before, now); },
                      std::string(what) + ": the board's streaming engine did not start");
         } catch (const BoardError&) {
-            hackrf_stop_rx(device_);
-            hackrf_stop_tx(device_);
+            hackrf_stop_rx(handle());
+            hackrf_stop_tx(handle());
             streaming_ = false;
             throw;
         }
     };
-    check(begin(device_, callback, this), what);
-    if (hackrf_is_streaming(device_) == HACKRF_TRUE) {
+    check(begin(handle(), callback, this), what);
+    if (hackrf_is_streaming(handle()) == HACKRF_TRUE) {
         streaming_ = true;
         took_up();
         return;
     }
     // The board accepted the command but its transfer thread is not
     // running. A fresh handle has always cured this.
-    hackrf_stop_rx(device_);
-    hackrf_stop_tx(device_);
+    hackrf_stop_rx(handle());
+    hackrf_stop_tx(handle());
     close();
     open();
-    check(begin(device_, callback, this), what);
-    const int state = hackrf_is_streaming(device_);
+    check(begin(handle(), callback, this), what);
+    const int state = hackrf_is_streaming(handle());
     if (state != HACKRF_TRUE) {
         throw BoardError(std::string(what) + ": board did not start streaming (" +
                          hackrf_error_name(static_cast<hackrf_error>(state)) + ")");
@@ -371,7 +384,7 @@ void HackrfBoard::stop() {
 
 bool HackrfBoard::streaming() {
     const Lock lock(mutex_);
-    return streaming_ && hackrf_is_streaming(device_) == HACKRF_TRUE;
+    return streaming_ && device_ != nullptr && hackrf_is_streaming(device_) == HACKRF_TRUE;
 }
 
 }  // namespace hackrfduplex
