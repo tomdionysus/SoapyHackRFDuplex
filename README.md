@@ -26,7 +26,8 @@ It works with stock HackRF firmware and stock libhackrf.
   over a million timed bursts were each received at the sample asked.
 - Unit tests against simulated boards on every push, with address,
   undefined-behaviour and thread sanitizers, Clang's thread-safety
-  analysis, clang-tidy and CodeQL.
+  analysis, clang-tidy and CodeQL; the Debian packages built and
+  installed for amd64 and arm64.
 - A hardware acceptance battery certifies a pair in one command.
 - Runs with GNU Radio, SoapyRemote, rtl_433 and SoapySDR's Python
   bindings.

@@ -6,7 +6,8 @@
 # thread-safety analysis, clang-tidy, the coverage report (its summary in
 # the job's page, the HTML kept as an artifact, the report sent to
 # Codecov) and ThreadSanitizer, which
-# the Raspberry Pi target cannot run. Everything runs against the fake
+# the Raspberry Pi target cannot run; and the Debian packages, built and
+# installed on amd64 and arm64. Everything runs against the fake
 # boards; the hardware is checked on the target with hackrfduplex-check,
 # and the run there (tools/ci-pi.sh) stays the merge gate.
 name: CI
@@ -76,3 +77,55 @@ jobs:
           plugins: noop
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  # The Debian packages for both architectures the apt repository serves,
+  # built from the tree without .git as a release archive is, with lintian
+  # failing on any error or warning; then installed into a clean container,
+  # where SoapySDR must load the module.
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: debian:trixie
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the packages
+        run: tools/deb-build.sh build-deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ matrix.arch }}
+          path: build-deb/*.deb
+          retention-days: 14
+
+  package-install:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: debian:trixie
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: debs-${{ matrix.arch }}
+          path: build-deb
+
+      - name: Install the packages and load the module
+        run: tools/deb-install-check.sh build-deb

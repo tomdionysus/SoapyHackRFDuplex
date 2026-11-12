@@ -11,7 +11,8 @@ before starting. Do not reopen a standing decision in
 docs/      design, compatibility, examples, licensing
 module/    the SoapySDR module: src/ and its Catch2 tests in tests/
 tools/     hackrfduplex-check; ci.sh, the checks a change must pass; ci-pi.sh,
-           which runs them on a Debian host with the boards attached
+           which runs them on a Debian host with the boards attached;
+           deb-*.sh, which build and check the Debian packages
 examples/  ft8: hackrfduplex-ft8, an FT8 client (optional build, liquid-dsp)
 cmake/     version header, sanitizer and coverage builds, libhackrf lookup
 debian/    Debian packaging: the module and the check tool
@@ -83,7 +84,10 @@ ctest --test-dir build
 Run it before a commit that touches code. GitHub Actions runs the whole
 of it on every push to `develop` and `main` in a Debian trixie container,
 keeps the coverage report as an artifact and sends it to Codecov
-(`CODECOV_TOKEN`, a repository secret), and runs CodeQL; the run on
+(`CODECOV_TOKEN`, a repository secret), and runs CodeQL. It also builds
+the Debian packages for amd64 and arm64 (`tools/deb-build.sh`, lintian
+failing on any warning) and installs each into a clean container, where
+SoapySDR must load the module (`tools/deb-install-check.sh`). The run on
 the target, with the boards attached, stays the gate for a change.
 
 The build of record runs on the target, a Debian trixie host with both
