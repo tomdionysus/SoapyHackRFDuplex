@@ -32,7 +32,7 @@ than the second activation takes to calibrate); and `--timed-bursts 81920 --seco
 run. The workstation can still build and run the unit tests for a quick
 test-first loop; the target's result is the one that counts.
 
-Work the items in order. Items 1 to 13 are done; items 14 to 16 take the module to
+Work the items in order. Items 1 to 15 are done; item 16 takes the module to
 the 0.2.0 release ("Release 0.2.0" says what that means). Item 17 waits
 on hardware Tom does not have yet.
 
@@ -213,56 +213,6 @@ first, by Tom's choice; 1.0.0 after it has been used):
   the README and design.
 
 ## Items
-
-### 14. Interoperability
-
-- [ ] Run the pair from the applications people use, on the target
-  (installing them there with apt), and record what works in
-  `docs/compatibility.md`: `SoapySDRUtil --probe` and `--rate`; the
-  SoapySDR Python bindings (installed) with a timed loopback script
-  under `tools/`; GNU Radio's Soapy source and sink in one full-duplex
-  flowgraph; SoapyRemote serving the pair to another process; one
-  receive-only application. Each with the version used, what was
-  checked, and any quirk. Acceptance: the matrix filled, every failure
-  fixed in the module or explained as the application's.
-
-### 15. Certification and soak
-
-- [ ] `hackrfduplex-check --acceptance` runs the hardware battery and
-  prints pass or fail per line against the figures in `docs/design.md`:
-  receive at 2, 8 and 20 Msps; a tone in each format; a reference switch
-  each way; the origin repeatable; timed bursts at +0; low rates;
-  `lo_locked`, `ref_locked`, `time_locked`. It transmits only with
-  `--transmit`. Then a soak on the target, run unattended overnight:
-  two hours of full duplex with timed bursts throughout at 8 Msps, then
-  two hours at 16 Msps (Tom, 2026-11-10: "cover both speeds at 2h each, 4h
-  in total"), the process's memory sampled every minute and the power
-  read before and after. Passes when every burst is on time, no shortfall
-  (or each reported and recovered with `calibrate`), and memory is flat
-  after the first minutes. Acceptance: the battery passing on this pair,
-  and its report and the soak's figures in COMPLETED.md.
-
-  The battery passed 16 of 16 on 2026-11-12 (COMPLETED.md). The soak,
-  2026-11-11/12, on the target's unchanged supply (Tom, 2026-11-11: "Rpi5
-  is yours and should do the soak"):
-  - 8 Msps, 21:11 to 23:11 UTC: passed. 439,454 bursts written, 439,449
-    found (the last 5 in flight at the end), every one at +0, no late
-    write, overflow or underflow, origin held, memory flat at 61.7 MB.
-  - 16 Msps, first run, 23:11 UTC: clean for 1,020 s, then the TX board
-    stopped streaming; `--recover` recalibrated for 50 minutes and found
-    nothing, one sample read under-voltage (0x50005), and the Pi reset
-    itself at about 00:03. The journal did not survive the reset, so
-    `tools/soak.sh` now keeps the kernel's messages in the tree.
-  - 16 Msps, repeat, 00:10 to 02:10 UTC: 878,906 written, 878,901 found,
-    every one at +0, 0 overflows, 0 underflows, origin held, memory flat
-    at 62.9 MB; but 1 late write (and its time error) at 192.7 s, the
-    same two seconds as a kernel under-voltage event (00:13:29 to :31),
-    from a read that was fresh. Two more under-voltage events in the run
-    left no mark.
-  Open: whether the repeat counts (its one fault coincides with the
-  supply), or a third run is needed; and `--recover` cannot bring back a
-  board that stopped, since the module needs the stream deactivated and
-  activated again and the check only recalibrates.
 
 ### 16. Documentation and the release
 

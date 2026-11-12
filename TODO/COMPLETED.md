@@ -3,6 +3,56 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-12: interoperability
+
+Item 14, accepted on the target: every application in the matrix
+(`docs/compatibility.md`) run against the pair, each failure fixed in
+the module or put down to the application.
+
+- `SoapySDRUtil --find`, `--probe`, `--rate`: as designed.
+- Python bindings, `tools/timed_loopback.py`, 30 bursts at each of 2, 8
+  and 16 Msps: every burst found; +0 at 2 and 8 Msps, at 16 Msps 16 at +0
+  and 14 one sample early, the script's own finder rounding a delay near
+  half a sample the other way from the module's. `Device(dict)` finds no
+  device for any driver: the bindings' quirk.
+- GNU Radio 3.10.12, the duplex flowgraph: the tone where it was sent at
+  2, 8 and 16 Msps, no overflow with default arguments now the receive
+  ring holds 1.5 s (it needed `buffers=40` at 16 Msps before).
+- SoapyRemote 0.5.2: fixed in the module. Its server reads from
+  `setupStream` on and passed every `STREAM_ERROR` the module gave for a
+  stream not yet started to its client (30 to 52 a run; `SoapySDRUtil
+  --rate` quit at the first); such a read now times out, as other
+  drivers' do, and SoapyRemote's own keys pass without warnings. Then
+  99.3 to 99.8% received over UDP and TCP with no error, `--rate` each
+  way, the duplex flowgraph's tone in place, all with the host's 208 KiB
+  socket limit; over UDP a few transmit packets are marked lost, none
+  with `remote:prot=tcp`.
+- rtl_433 25.02 from Debian, the receive-only application: opens, tunes,
+  streams and exits cleanly; it read a 0 Hz filter before the device
+  opened at 10 Msps (now 7 MHz); its 0 to 116 dB per-element gain listing
+  is its own (it asks for the overall range per element).
+
+## 2026-11-12: certification and soak
+
+Item 15, accepted on the target. The battery, `hackrfduplex-check
+--clkout rx --acceptance --transmit`, passed 16 of 16 again with the
+receive ring at 1.5 s and no start-up overflow allowed (entry below for
+its lines). The soak, `tools/soak.sh`, on the target's unchanged supply:
+
+- 8 Msps, 2026-11-11 21:11 to 23:11 UTC: 439,454 bursts written,
+  439,449 found (the last 5 in flight), every one at +0; no late write,
+  overflow or underflow; origin held; memory flat at 61.7 MB.
+- 16 Msps, first run: clean for 1,020 s, then the TX board stopped
+  streaming, a power sample read under-voltage (0x50005), and the host
+  reset itself about 50 minutes later. `--recover` could not bring the
+  board back, since only deactivating and activating the streams does;
+  it now does that.
+- 16 Msps, repeat, 2026-11-12 00:10 to 02:10 UTC: 878,906 written,
+  878,901 found, every one at +0; 0 overflows, 0 underflows, origin held,
+  memory flat at 62.9 MB; 1 late write, in the same two seconds as a
+  kernel under-voltage event, from a fresh read. Accepted with the late
+  write put down to the supply (Tom, 2026-11-12).
+
 ## 2026-11-12: the acceptance battery
 
 The battery half of item 15, accepted on the target:
