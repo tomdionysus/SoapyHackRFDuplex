@@ -151,6 +151,9 @@ fi
 if command -v lcov >/dev/null && command -v genhtml >/dev/null; then
     step "coverage"
     cmake --preset coverage >/dev/null
+    # Counters from the last run belong to the objects before this build;
+    # gcov refuses to merge them into rebuilt ones, and says so.
+    find build-coverage -name '*.gcda' -delete
     cmake --build build-coverage -j "$jobs"
     cmake --build build-coverage --target coverage >build-coverage/coverage.log 2>&1 || {
         tail -n 20 build-coverage/coverage.log
