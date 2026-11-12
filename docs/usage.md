@@ -3,8 +3,9 @@
 A guide for writing an application against the pair: setting it up,
 what the shared time is and what it costs, how far ahead to transmit,
 what each stream status means, and what to do when something goes
-wrong. The README lists every argument and setting; docs/design.md says
-how the module is built and holds the measurements quoted here.
+wrong. [reference.md](reference.md) lists every argument and setting;
+[design.md](design.md) says how the module is built and holds the
+measurements quoted here.
 
 ## Setting up
 

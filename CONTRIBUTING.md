@@ -130,9 +130,10 @@ it should report is the acceptance test of each hardware item in
   was measured. No history, no plans; those belong in `TODO/`.
 - No serials, hostnames or other identifiers of the development hardware;
   those live in the gitignored `CLAUDE.local.md`.
-- [README.md](README.md) holds the overview, status, hardware, build,
-  use, roadmap, AI statement and licence; everything else goes in
-  `docs/`.
+- [README.md](README.md) is the front page: what the project is, how to
+  install it, where to start, the roadmap, the AI statement and the
+  licence, kept short. Everything else goes in `docs/`, listed in
+  [docs/index.md](docs/index.md).
 - [TODO/ACTIVE.md](TODO/ACTIVE.md) is the single list of open work, each
   item with an acceptance test. [TODO/COMPLETED.md](TODO/COMPLETED.md) is
   append-only at the top.
