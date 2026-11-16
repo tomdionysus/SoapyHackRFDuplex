@@ -295,12 +295,15 @@ Then the release, each step on Tom's word (CONTRIBUTING.md, "Releases"):
   of the provenance, whose source is the tag at `2e5d766`. CodeQL's
   alert on `main` closed with the merge. The signature on the provenance
   is not yet checked with `slsa-verifier`, which is not installed here.
-- [ ] The arm64 packages on the target: power read before and after,
-  SoapySDR reporting 0.2.2, the receive smoke test, then
-  `--timed-bursts 81920 --tx-gain 0 --seconds 60`; packages and copies
-  removed, `clkout=rx` left set. Acceptance: 99.9% of nominal with 0
-  overflows, and every burst at +0 samples. The target did not answer
-  on 2026-11-16 at 18:05Z.
+- [x] The arm64 packages on the target, 2026-11-16 at 19:24Z on Tom's
+  word, the two files matching the provenance by sha256 there. SoapySDR
+  reported the module at 0.2.2. Receive, 8 Msps for 5 s: 99.9% of
+  nominal, 0 overflows, both boards `clock: external`. Timed bursts,
+  `--timed-bursts 81920 --tx-gain 0 --seconds 60`, amplifier off: 3658
+  of 3658 found at +0 samples, 0 late writes, 0 underflows, 0 overflows,
+  the origin at +31842. Power `0x50000` before and after each run.
+  Packages purged and copies removed; `clkout=rx` left set (the TX board
+  sees its CLKIN).
 - [ ] Tom signs the packages into the apt repository; an install from a
   copy of the signed tree in clean `debian:trixie` containers, amd64 and
   arm64; Tom uploads; an install from the live repository, both.
