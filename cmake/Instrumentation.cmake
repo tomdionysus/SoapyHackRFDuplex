@@ -18,9 +18,11 @@ if(_instrumented GREATER 1)
 endif()
 
 if(HACKRFDUPLEX_SANITIZE)
-    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
+    # float-cast-overflow is not in GCC's `undefined`: a NaN or an
+    # out-of-range float cast to an integer is caught only when named.
+    add_compile_options(-fsanitize=address,undefined,float-cast-overflow -fno-omit-frame-pointer
                         -fno-sanitize-recover=all)
-    add_link_options(-fsanitize=address,undefined)
+    add_link_options(-fsanitize=address,undefined,float-cast-overflow)
 endif()
 
 if(HACKRFDUPLEX_TSAN)

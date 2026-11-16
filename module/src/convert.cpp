@@ -9,9 +9,14 @@ namespace hackrfduplex {
 
 namespace {
 
+// A NaN has no int8 value, and casting one is undefined: it goes out as
+// zero, silence. Infinities clamp to full scale like any large value. A
+// select rather than a branch, so the loop still vectorises.
 template <typename Float>
 std::int8_t quantise(Float value) {
-    const Float scaled = std::nearbyint(value * static_cast<Float>(kFullScale));
+    // NOLINTNEXTLINE(misc-redundant-expression): false only for a NaN.
+    const Float number = value == value ? value : static_cast<Float>(0);
+    const Float scaled = std::nearbyint(number * static_cast<Float>(kFullScale));
     const Float clamped = std::clamp(scaled, static_cast<Float>(-128), static_cast<Float>(127));
     return static_cast<std::int8_t>(clamped);
 }
@@ -34,6 +39,11 @@ void native_to_floats(const std::int8_t* src, Float* dst, std::size_t samples) {
 }  // namespace
 
 void to_native(const void* src, Format format, std::int8_t* dst, std::size_t samples) {
+    // Nothing to convert, and perhaps no buffers: memcpy may not be handed
+    // a null pointer even for no bytes.
+    if (samples == 0) {
+        return;
+    }
     switch (format) {
         case Format::kCs8:
             std::memcpy(dst, src, samples * kNativeSampleBytes);
@@ -55,6 +65,9 @@ void to_native(const void* src, Format format, std::int8_t* dst, std::size_t sam
 }
 
 void from_native(const std::int8_t* src, Format format, void* dst, std::size_t samples) {
+    if (samples == 0) {
+        return;
+    }
     switch (format) {
         case Format::kCs8:
             std::memcpy(dst, src, samples * kNativeSampleBytes);

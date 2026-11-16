@@ -110,6 +110,30 @@ TEST_CASE("float formats round half to even and saturate, everywhere", "[convert
     check_against_rule<double>(Format::kCf64);
 }
 
+TEST_CASE("a NaN from the application goes to the board as zero", "[convert]") {
+    // NaN has no int8 value; casting it is undefined, so it is sent as
+    // silence, wherever it falls among good samples.
+    const std::array<float, 4> floats = {std::numeric_limits<float>::quiet_NaN(), 0.5F, -0.5F,
+                                         -std::numeric_limits<float>::quiet_NaN()};
+    std::array<std::int8_t, 4> native{1, 1, 1, 1};
+    to_native(floats.data(), Format::kCf32, native.data(), 2);
+    CHECK(native == std::array<std::int8_t, 4>{0, 64, -64, 0});
+
+    const std::array<double, 2> doubles = {0.25, std::numeric_limits<double>::quiet_NaN()};
+    std::array<std::int8_t, 2> narrow{1, 1};
+    to_native(doubles.data(), Format::kCf64, narrow.data(), 1);
+    CHECK(narrow == std::array<std::int8_t, 2>{32, 0});
+}
+
+TEST_CASE("no samples is nothing to convert, buffers or none", "[convert]") {
+    // An application may read or write nothing with no buffer at all.
+    for (const Format format : {Format::kCs8, Format::kCs16, Format::kCf32, Format::kCf64}) {
+        CAPTURE(format_name(format));
+        CHECK_NOTHROW(to_native(nullptr, format, nullptr, 0));
+        CHECK_NOTHROW(from_native(nullptr, format, nullptr, 0));
+    }
+}
+
 TEST_CASE("format names round trip and sizes are per complex sample", "[convert]") {
     for (const Format format : {Format::kCs8, Format::kCs16, Format::kCf32, Format::kCf64}) {
         CHECK(parse_format(format_name(format)) == format);
