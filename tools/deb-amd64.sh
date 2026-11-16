@@ -43,7 +43,7 @@ docker run --rm --platform linux/amd64 -v "$root/$out:/out" "$image" bash -euc '
     tail -n 30 "$out/build.log"
     exit 1
 }
-echo "built: $(cd "$out" && ls ./*.deb | tr '\n' ' ')"
+echo "built: $(cd "$out" && printf '%s ' ./*.deb)"
 echo "lintian: no errors or warnings ($out/lintian.log)"
 
 echo "== install into a clean $image"

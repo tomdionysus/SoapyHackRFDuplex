@@ -29,4 +29,4 @@ cp "$parent"/*.deb "$parent"/*.changes "$parent"/*.buildinfo "$out"/
 # Lintian warns on stderr that it runs as root, as it must in a container;
 # that line is not a finding about the packages.
 lintian --fail-on error,warning "$out"/*.changes 2>&1 | tee "$out/lintian.log"
-echo "built: $(cd "$out" && ls ./*.deb | tr '\n' ' ')"
+echo "built: $(cd "$out" && printf '%s ' ./*.deb)"

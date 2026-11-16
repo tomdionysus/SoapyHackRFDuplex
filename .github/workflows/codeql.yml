@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# CodeQL security analysis of the module, the check tool and the FT8
-# example, built as in CI (with the receive corrections, so every source is compiled); weekly
-# as well as on every push.
+# CodeQL analysis of the module, the check tool and the FT8 example, built
+# as in CI (with the receive corrections, so every source is compiled),
+# with the security-and-quality queries; weekly as well as on every push.
 name: CodeQL
 
 on:
@@ -15,9 +15,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   analyze:
+    name: analyze
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
@@ -31,15 +37,18 @@ jobs:
             build-essential cmake pkgconf git ca-certificates \
             libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2 libliquid-dev
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066  # v4.39.3
         with:
           languages: c-cpp
           build-mode: manual
+          queries: security-and-quality
 
       - name: Build
         run: |
@@ -47,6 +56,6 @@ jobs:
             -DHACKRFDUPLEX_BUILD_EXAMPLES=ON
           cmake --build build -j "$(nproc)"
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066  # v4.39.3
         with:
           category: "/language:c-cpp"

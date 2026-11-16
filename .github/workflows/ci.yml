@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # tools/ci.sh on GitHub's runners, in a Debian trixie container, the
-# distribution the target runs: formatting, licence lines, the release,
-# sanitizer and receive-correction builds and their tests, Clang's
-# thread-safety analysis, clang-tidy, the coverage report (its summary in
-# the job's page, the HTML kept as an artifact, the report sent to
-# Codecov) and ThreadSanitizer, which
-# the Raspberry Pi target cannot run; and the Debian packages, built and
-# installed on amd64 and arm64. Everything runs against the fake
-# boards; the hardware is checked on the target with hackrfduplex-check,
-# and the run there (tools/ci-pi.sh) stays the merge gate.
+# distribution the target runs: formatting, licence lines, ShellCheck, the
+# release, sanitizer and receive-correction builds and their tests,
+# Clang's thread-safety analysis, clang-tidy, the coverage report and its
+# floor (its summary in the job's page, the HTML kept as an artifact, the
+# report sent to Codecov) and ThreadSanitizer, which the Raspberry Pi
+# target cannot run; the workflows themselves, through actionlint; and the
+# Debian packages, built and installed on amd64 and arm64. Everything runs
+# against the fake boards; the hardware is checked on the target with
+# hackrfduplex-check, and the run there (tools/ci-pi.sh) stays the merge
+# gate. Actions are pinned to a commit, the release they are named by in
+# a comment; Dependabot keeps them current.
 name: CI
 
 on:
@@ -21,9 +23,17 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request supersedes a run still
+# going; main and tags always run to the end.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build-and-test:
+    name: build and test
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     container:
       image: debian:trixie
       # LeakSanitizer needs ptrace to stop the process's threads.
@@ -35,12 +45,13 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential cmake pkgconf git ca-certificates \
             libhackrf-dev libusb-1.0-0-dev libsoapysdr-dev catch2 libliquid-dev \
-            clang-19 clang-tidy-19 clang-format lcov \
+            clang-19 clang-tidy-19 clang-format lcov shellcheck \
             curl gnupg  # Codecov's uploader verifies its own signature
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0  # tags, for the version string
+          persist-credentials: false
 
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -62,27 +73,44 @@ jobs:
 
       - name: Coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-html
           path: build-coverage/coverage/html
           if-no-files-found: ignore
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           files: build-coverage/coverage/coverage.info
           disable_search: true
           # The lcov report is the whole of it; no gcov pass of the uploader's own.
           plugins: noop
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          # A pull request from a fork has no token to upload with; every
+          # push does, and a failed upload fails it.
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
+
+  lint:
+    name: workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
 
   # The Debian packages for both architectures the apt repository serves,
   # built from the tree without .git as a release archive is, with lintian
   # failing on any error or warning; then installed into a clean container,
   # where SoapySDR must load the module.
   package:
+    name: package ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
@@ -92,21 +120,25 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     container:
       image: debian:trixie
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Build the packages
         run: tools/deb-build.sh build-deb
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: debs-${{ matrix.arch }}
           path: build-deb/*.deb
           retention-days: 14
 
   package-install:
+    name: install ${{ matrix.arch }}
     needs: package
     strategy:
       fail-fast: false
@@ -117,12 +149,15 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     container:
       image: debian:trixie
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: debs-${{ matrix.arch }}
           path: build-deb
