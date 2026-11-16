@@ -1,8 +1,12 @@
 hackrfduplex (0.2.2) unstable; urgency=medium
 
-  * No change in behaviour: the libhackrf binding is now tested, code no
-    input could reach is removed, and the build and release checks are
-    tightened.
+  * A NaN sample written in CF32 or CF64 goes to the board as zero rather
+    than being undefined behaviour.
+  * Boards that report the same serial are refused rather than paired
+    with themselves, and left out of discovery.
+  * Converting zero samples no longer hands memcpy a null pointer.
+  * The libhackrf binding is tested, the parsers, conversions and burst
+    search are fuzzed, and code no input could reach is removed.
 
  -- Tom Cully <mail@tomcully.com>  Mon, 16 Nov 2026 14:00:00 +0000
 

@@ -2,14 +2,22 @@
 
 ## 0.2.2 - 2026-11-16
 
-- No change in behaviour.
+- Fixed, found by fuzzing: a NaN sample written in CF32 or CF64 was
+  undefined behaviour; it now goes to the board as zero.
+- Fixed, found by fuzzing: two boards reporting the same serial were
+  paired with themselves; they are now refused, and left out of
+  discovery.
+- Fixed, found by fuzzing: converting zero samples passed a null pointer
+  to memcpy.
+- Fuzz targets for the names, board selection, sample conversions and
+  burst search, run by ClusterFuzzLite.
 - The libhackrf binding is tested against a fake libhackrf; coverage is
   100% of lines, with a floor CI enforces.
 - Code no input could reach is removed.
-- CI: actions pinned, actionlint, ShellCheck, CodeQL's
-  security-and-quality queries, OpenSSF Scorecard.
+- CI: actions and images pinned, actionlint, ShellCheck, CodeQL's
+  security-and-quality queries, OpenSSF Scorecard; a security policy.
 - Each version tag publishes a GitHub Release with the amd64 and arm64
-  packages.
+  packages and their SLSA provenance.
 
 ## 0.2.1 - 2026-11-12
 

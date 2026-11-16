@@ -14,10 +14,12 @@ tools/     hackrfduplex-check; ci.sh, the checks a change must pass; ci-pi.sh,
            which runs them on a Debian host with the boards attached;
            deb-*.sh, which build and check the Debian packages
 examples/  ft8: hackrfduplex-ft8, an FT8 client (optional build, liquid-dsp)
+fuzz/      libFuzzer targets; .clusterfuzzlite/ builds them for CI
 cmake/     version header, sanitizer and coverage builds, libhackrf lookup
 debian/    Debian packaging: the module and the check tool
 TODO/      ACTIVE.md (open work) and COMPLETED.md (done work)
-.github/   GitHub Actions: CI (tools/ci.sh in Debian trixie) and CodeQL
+.github/   GitHub Actions: CI (tools/ci.sh in Debian trixie), CodeQL, Fuzz,
+           Scorecard and Release; Dependabot
 ```
 
 Inside `module/src`, everything that does not touch libhackrf or
@@ -80,7 +82,9 @@ ctest --test-dir build
 6. clang-tidy with [.clang-tidy](.clang-tidy), where the host has it;
 7. the coverage report and its floors, where lcov is installed
    (`build-coverage/coverage/html`);
-8. the thread sanitizer build and its tests, where the host can run it
+8. the fuzz targets, built by `tools/fuzz-build.sh` and each run for
+   `FUZZ_SECONDS` (default 30), where Clang has libFuzzer;
+9. the thread sanitizer build and its tests, where the host can run it
    (not on a Raspberry Pi 5 kernel: its 47-bit address space is one
    ThreadSanitizer cannot use).
 
@@ -97,6 +101,16 @@ commit, its release named beside it, and Dependabot proposes updates.
 OpenSSF Scorecard rates the repository weekly. `main` takes only a pull
 request that has passed CI and CodeQL. The run on the target, with the boards
 attached, stays the gate for a change.
+
+The fuzz targets in `fuzz/` take arbitrary input into what an
+application or the bus hands the module: the format, clock and time
+names, the device arguments and the boards listed, samples in every
+format, and captures for the burst search. ClusterFuzzLite
+(`.clusterfuzzlite/`, the Fuzz workflow) runs them ten minutes on each
+push and pull request and an hour weekly; for longer, build them with
+`tools/fuzz-build.sh` on a build machine and run them there. A crash a
+fuzzer finds becomes a unit test before it is fixed. The sanitizer build
+names `float-cast-overflow`, which GCC's `undefined` leaves out.
 
 Coverage counts the module, the libhackrf binding (tested against a fake
 libhackrf, `module/tests/fake_libhackrf.*`) and the FT8 example's own
