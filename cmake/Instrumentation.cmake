@@ -38,10 +38,11 @@ if(HACKRFDUPLEX_COVERAGE)
     find_program(GENHTML_EXECUTABLE genhtml REQUIRED)
 
     set(_cov_dir ${CMAKE_BINARY_DIR}/coverage)
-    # Unit-tested sources only: the tests, generated files, the libhackrf
-    # binding and the SoapySDR registration, which only hardware and
-    # SoapySDR's loader exercise, are excluded. The SoapySDR translation is
-    # tested through the fake boards and counted.
+    # Everything but what only hardware, SoapySDR's loader or a person runs:
+    # the tests themselves, generated files, the SoapySDR registration, the
+    # check tool, the FT8 client's main loop and ft8_lib's C, kept as its
+    # authors wrote it. The SoapySDR translation is tested through the fake
+    # boards and counted.
     set(HACKRFDUPLEX_COVERAGE_EXCLUDE
         "*/tests/*"
         "*/generated/*"
@@ -49,25 +50,30 @@ if(HACKRFDUPLEX_COVERAGE)
         "*/hackrf_board.hpp"
         "*/registration.cpp"
         "*/tools/*"
-        "*/examples/*")
+        "*/examples/ft8/src/main.cpp"
+        "*/examples/ft8/src/ft8_lib/*")
+    # Branches as the source has them: the compiler's exception-unwinding
+    # edges, which no test can choose to take, are left out.
+    set(_lcov_rc --rc branch_coverage=1 --rc no_exception_branch=1)
 
     add_custom_target(coverage
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${_cov_dir}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${_cov_dir}
         COMMAND find ${CMAKE_BINARY_DIR} -name *.gcda -delete
         COMMAND ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_BINARY_DIR} --output-on-failure
-        COMMAND ${LCOV_EXECUTABLE} --quiet --capture --directory ${CMAKE_BINARY_DIR}
-                --ignore-errors mismatch,inconsistent
+        COMMAND ${LCOV_EXECUTABLE} --quiet ${_lcov_rc} --capture --directory ${CMAKE_BINARY_DIR}
+                --ignore-errors mismatch,mismatch,inconsistent
                 --output-file ${_cov_dir}/all.info
-        COMMAND ${LCOV_EXECUTABLE} --quiet --extract ${_cov_dir}/all.info
+        COMMAND ${LCOV_EXECUTABLE} --quiet ${_lcov_rc} --extract ${_cov_dir}/all.info
                 "${CMAKE_SOURCE_DIR}/*" --ignore-errors inconsistent
                 --output-file ${_cov_dir}/project.info
-        COMMAND ${LCOV_EXECUTABLE} --quiet --remove ${_cov_dir}/project.info
+        COMMAND ${LCOV_EXECUTABLE} --quiet ${_lcov_rc} --remove ${_cov_dir}/project.info
                 ${HACKRFDUPLEX_COVERAGE_EXCLUDE} --ignore-errors unused,unused,inconsistent
                 --output-file ${_cov_dir}/coverage.info
-        COMMAND ${GENHTML_EXECUTABLE} --quiet --output-directory ${_cov_dir}/html
+        COMMAND ${GENHTML_EXECUTABLE} --quiet ${_lcov_rc} --output-directory ${_cov_dir}/html
                 ${_cov_dir}/coverage.info
-        COMMAND ${LCOV_EXECUTABLE} --summary ${_cov_dir}/coverage.info
+        COMMAND ${LCOV_EXECUTABLE} ${_lcov_rc} --list ${_cov_dir}/coverage.info
+        COMMAND ${LCOV_EXECUTABLE} ${_lcov_rc} --summary ${_cov_dir}/coverage.info
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running tests and writing the coverage report to ${_cov_dir}/html"
         VERBATIM)

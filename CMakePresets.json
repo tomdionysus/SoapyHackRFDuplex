@@ -43,7 +43,9 @@
       "binaryDir": "${sourceDir}/build-coverage",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "HACKRFDUPLEX_COVERAGE": "ON"
+        "HACKRFDUPLEX_COVERAGE": "ON",
+        "HACKRFDUPLEX_DSP": "ON",
+        "HACKRFDUPLEX_BUILD_EXAMPLES": "ON"
       }
     }
   ],

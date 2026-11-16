@@ -159,7 +159,7 @@ if command -v lcov >/dev/null && command -v genhtml >/dev/null; then
         tail -n 20 build-coverage/coverage.log
         exit 1
     }
-    grep -A3 "Summary coverage" build-coverage/coverage.log
+    grep -A4 "Summary coverage" build-coverage/coverage.log
 else
     step "coverage: lcov not on this host, skipped"
 fi
