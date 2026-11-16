@@ -28,7 +28,7 @@ jobs:
       contents: read
       security-events: write
     container:
-      image: debian:trixie
+      image: debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
     steps:
       - name: Install packages
         run: |
