@@ -94,9 +94,10 @@ packaged.
 ### 5. A release is what its tag built
 
 - Releases are built by GitHub Actions from the tag, in a pinned Debian
-  image, with every action pinned to a commit; the packages carry SLSA
-  build provenance, signed through Sigstore, which `slsa-verifier`
-  checks (SECURITY.md).
+  image, with every action pinned to a commit but the SLSA generator,
+  which its own verification requires be called by its release tag; the
+  packages carry SLSA build provenance, signed through Sigstore, which
+  `slsa-verifier` checks (SECURITY.md).
 - The apt repository is signed with its own archive key, which
   `tomcully.sources` carries; apt refuses anything it did not sign.
 - `main` is protected: it changes only through a pull request that CI,
