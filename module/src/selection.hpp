@@ -25,12 +25,13 @@ inline constexpr const char* kTxSerialKey = "tx_serial";
 // The pair `args` asks for, from the boards on the bus: both serials
 // named; one named and exactly one other board to take the other role;
 // or neither named and exactly two boards, the lower serial receiving.
-// Throws std::invalid_argument saying what is missing or ambiguous.
+// Throws std::invalid_argument saying what is missing or ambiguous,
+// including boards that share a serial, which cannot be told apart.
 Selection select_pair(const Args& args, const std::vector<ListedBoard>& boards);
 
 // What discovery offers: the one pair `args` names (nothing if it names
 // one that cannot be made), or with no serial named, every ordered pair
-// of distinct boards.
+// of distinct boards whose serials no other board shares.
 std::vector<Selection> enumerate_pairs(const Args& args, const std::vector<ListedBoard>& boards);
 
 // A label for a pair, with the serials' zero padding trimmed.
