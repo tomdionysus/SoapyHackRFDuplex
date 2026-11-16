@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # The checks a change must pass, in order: formatting, the licence line on
-# every source file, the release build and its tests, the address and
+# every source file, ShellCheck over the scripts where the host has it, the
+# release build and its tests, the address and
 # undefined-behaviour sanitizer build and its tests, the build with the
 # receive corrections (HACKRFDUPLEX_DSP) and its tests, a Clang build for
 # the thread-safety analysis where Clang is not the default compiler,
-# clang-tidy where the host has it, the coverage summary where lcov is,
+# clang-tidy where the host has it, the coverage summary and its floors
+# where lcov is,
 # and the thread sanitizer build and its tests where the host can run it. Run
 # from anywhere; it works in the repository's own build trees. Exits
 # non-zero at the first failure.
@@ -64,11 +66,21 @@ if [[ $missing -ne 0 || $checked -eq 0 ]]; then
 fi
 echo "all $checked source files carry their licence line"
 
+if command -v shellcheck >/dev/null; then
+    step "shellcheck"
+    mapfile -t scripts < <(git ls-files '*.sh')
+    shellcheck "${scripts[@]}"
+    echo "${#scripts[@]} scripts clean"
+else
+    step "shellcheck: not on this host, skipped"
+fi
+
 step "release build"
 cmake --preset default >/dev/null
 cmake --build build -j "$jobs"
 step "release tests"
 ./build/module/hackrfduplex_tests
+./build/module/hackrf_board_tests
 
 if [[ $quick -eq 1 ]]; then
     step "passed (quick)"
@@ -84,9 +96,11 @@ leaks=1
 if [[ "$(uname -s)" == "Darwin" ]]; then
     leaks=0
 fi
-ASAN_OPTIONS="detect_leaks=$leaks:abort_on_error=1" \
-    UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1" \
-    ./build-asan/module/hackrfduplex_tests
+for tests in hackrfduplex_tests hackrf_board_tests; do
+    ASAN_OPTIONS="detect_leaks=$leaks:abort_on_error=1" \
+        UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1" \
+        "./build-asan/module/$tests"
+done
 
 # The receive corrections are built only on request (HACKRFDUPLEX_DSP,
 # with liquid-dsp); both builds must pass.
@@ -95,6 +109,7 @@ cmake --preset dsp >/dev/null
 cmake --build build-dsp -j "$jobs"
 step "DSP tests"
 ./build-dsp/module/hackrfduplex_tests
+./build-dsp/module/hackrf_board_tests
 ./build-dsp/examples/ft8/ft8_tests
 
 # Clang's thread-safety analysis proves the locking annotations
@@ -160,6 +175,24 @@ if command -v lcov >/dev/null && command -v genhtml >/dev/null; then
         exit 1
     }
     grep -A4 "Summary coverage" build-coverage/coverage.log
+    # The floor: what everything but registration.cpp, the check tool and
+    # the FT8 client's main loop reaches, less a hair. A change that leaves
+    # code untested fails here, and Codecov says where.
+    below=0
+    for floor in lines:99.5 functions:99.0 branches:93.0; do
+        kind="${floor%%:*}"
+        least="${floor#*:}"
+        rate="$(awk -v kind="$kind" '$1 ~ "^"kind"\\." { sub("%", "", $2); print $2; exit }' \
+            build-coverage/coverage.log)"
+        if [[ -z "$rate" ]] || awk -v r="$rate" -v l="$least" 'BEGIN { exit !(r < l) }'; then
+            echo "coverage: $kind ${rate:-unreported}% is under the floor of $least%"
+            below=1
+        fi
+    done
+    if [[ $below -ne 0 ]]; then
+        exit 1
+    fi
+    echo "coverage at or above its floors (lines 99.5%, functions 99%, branches 93%)"
 else
     step "coverage: lcov not on this host, skipped"
 fi
@@ -182,6 +215,8 @@ step "thread sanitizer build"
 cmake --preset tsan >/dev/null
 cmake --build build-tsan -j "$jobs"
 step "thread sanitizer tests"
-TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1" ./build-tsan/module/hackrfduplex_tests
+for tests in hackrfduplex_tests hackrf_board_tests; do
+    TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1" "./build-tsan/module/$tests"
+done
 
 step "passed"

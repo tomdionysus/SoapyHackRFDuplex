@@ -42,19 +42,24 @@ if(HACKRFDUPLEX_COVERAGE)
     # the tests themselves, generated files, the SoapySDR registration, the
     # check tool, the FT8 client's main loop and ft8_lib's C, kept as its
     # authors wrote it. The SoapySDR translation is tested through the fake
-    # boards and counted.
+    # boards and the libhackrf binding through a fake libhackrf, and both
+    # are counted.
     set(HACKRFDUPLEX_COVERAGE_EXCLUDE
         "*/tests/*"
         "*/generated/*"
-        "*/hackrf_board.cpp"
-        "*/hackrf_board.hpp"
         "*/registration.cpp"
         "*/tools/*"
         "*/examples/ft8/src/main.cpp"
         "*/examples/ft8/src/ft8_lib/*")
     # Branches as the source has them: the compiler's exception-unwinding
-    # edges, which no test can choose to take, are left out.
-    set(_lcov_rc --rc branch_coverage=1 --rc no_exception_branch=1)
+    # edges, which no test can choose to take, are left out, as are the
+    # branches it adds on a line with no condition (the clean-up loop of an
+    # initialiser list, say) and a line holding only a closing brace, where
+    # gcov counts the unwinding code too. LCOV_EXCL_LINE marks a line no
+    # input can reach, such as the return after a switch that returns for
+    # every value.
+    set(_lcov_rc --rc branch_coverage=1 --rc no_exception_branch=1
+                 --filter branch,brace,blank,region)
 
     add_custom_target(coverage
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${_cov_dir}
