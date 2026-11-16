@@ -30,7 +30,9 @@ translate.
 
 ## Branches
 
-- Work happens on `develop`. `main` receives `develop` at version tags.
+- Work happens on `develop`. `main` receives `develop` at version tags,
+  through a pull request whose CI and CodeQL checks have passed: `main`
+  is protected, with no direct push, force push or deletion.
 - Isolated work is a branch off `develop`, `feature/<short-name>`,
   merged back and deleted.
 - Tags are exactly `x.y.z`, annotated, no `v`, cut from `main`. The tag,
@@ -92,8 +94,8 @@ amd64 and arm64 (`tools/deb-build.sh`, lintian failing on any warning)
 and installs each into a clean container, where SoapySDR must load the
 module (`tools/deb-install-check.sh`). Every action is pinned to a
 commit, its release named beside it, and Dependabot proposes updates.
-OpenSSF Scorecard rates the repository weekly. `main` takes no push that
-has not passed CI and CodeQL. The run on the target, with the boards
+OpenSSF Scorecard rates the repository weekly. `main` takes only a pull
+request that has passed CI and CodeQL. The run on the target, with the boards
 attached, stays the gate for a change.
 
 Coverage counts the module, the libhackrf binding (tested against a fake
@@ -149,8 +151,9 @@ CHANGELOG.md entry as its notes. In order:
    the README. One commit, `Version x.y.z`.
 2. `tools/ci-pi.sh` passes on the target, and GitHub Actions passes on
    `develop`, the package jobs included.
-3. Merge `develop` into `main` (`--no-ff`), tag `x.y.z` on `main`
-   (annotated, no `v`), and push `main`, the tag and `develop`.
+3. Open a pull request from `develop` to `main` and merge it with a merge
+   commit once its CI and CodeQL checks pass; `main` takes nothing else.
+   Tag `x.y.z` on that merge commit (annotated, no `v`) and push the tag.
 4. Build the release packages from the tag, never from a working tree:
    arm64 on the target from `git archive x.y.z` (`dpkg-buildpackage -us
    -uc -b`, then lintian), amd64 with `tools/deb-amd64.sh x.y.z` (Docker).

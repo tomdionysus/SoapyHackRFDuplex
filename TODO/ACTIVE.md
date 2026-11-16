@@ -155,6 +155,16 @@ untested against hardware, and item 17 waits for them.
 - The next release is 0.2.0 (Tom, 2026-11-09); 1.0.0, with the SoapySDR
   surface and settings held stable, comes after 0.2.0 has been used.
   0.2.0 and 0.2.1 are out (2026-11-12); fixes before 1.0.0 are 0.2.x.
+- Coverage (Tom, 2026-11-16, "near 100% coverage"): everything but the
+  tests, the SoapySDR registration, the check tool (not split, Tom's
+  choice) and the FT8 main loop is counted; `tools/ci.sh` fails under
+  99.5% of lines, 99% of functions, 93% of branches. `LCOV_EXCL_LINE`
+  only on a line no input can reach, with the reason.
+- `main` is protected (Tom, 2026-11-16): CI and CodeQL required, no
+  direct, force push or deletion; a release merges `develop` through a
+  pull request, and its tag publishes a GitHub Release.
+- Heavy builds and test runs go to the build cluster (Tom, 2026-11-16);
+  the target is for the boards.
 - Packages for amd64 and arm64, in the tomcully.com apt repository,
   which keeps every version published (Tom, 2026-11-12, "publish both
   architectures at 0.2.1").
