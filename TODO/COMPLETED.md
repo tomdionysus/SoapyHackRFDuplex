@@ -12,7 +12,7 @@ libhackrf binding, the DSP build and the FT8 example. Now:
 
 - Measured: the coverage build compiles the receive corrections and the
   FT8 example; the libhackrf binding is tested against a fake libhackrf
-  (`hackrf_board_tests`, 18 cases) and counted. Left out: the tests, the
+  (`hackrf_board_tests`, 17 cases) and counted. Left out: the tests, the
   SoapySDR registration, the check tool (Tom: not split), the FT8 main
   loop and ft8_lib's C. Branches without the compiler's exception and
   clean-up edges.
