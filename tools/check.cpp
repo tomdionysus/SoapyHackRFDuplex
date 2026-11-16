@@ -7,8 +7,10 @@
 // receive timestamps plus a delay and reports where each one arrived.
 
 #include <SoapySDR/Constants.h>
+#include <spawn.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Errors.hpp>
@@ -18,9 +20,11 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -36,6 +40,9 @@
 #include <vector>
 
 #include "burst.hpp"
+
+// The environment a child of this tool inherits (POSIX).
+extern char** environ;  // NOLINT(readability-redundant-declaration)
 
 namespace {
 
@@ -1077,22 +1084,50 @@ struct Child {
     std::string output;
 };
 
+// No shell stands between this tool and its child: the arguments reach it
+// as given, whatever a serial or a path contains.
 Child run_child(const std::string& self, const std::vector<std::string>& args) {
-    std::string command = self;
-    for (const std::string& a : args) {
-        command += " " + a;
-    }
-    command += " 2>&1";
     Child child;
-    FILE* pipe = popen(command.c_str(), "r");
-    if (pipe == nullptr) {
+    std::vector<std::string> words{self};
+    words.insert(words.end(), args.begin(), args.end());
+    std::vector<char*> argv;
+    argv.reserve(words.size() + 1);
+    for (std::string& word : words) {
+        argv.push_back(word.data());
+    }
+    argv.push_back(nullptr);
+
+    std::array<int, 2> ends{};
+    if (pipe(ends.data()) != 0) {
+        return child;
+    }
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addclose(&actions, ends[0]);
+    posix_spawn_file_actions_adddup2(&actions, ends[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, ends[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, ends[1]);
+    pid_t pid = -1;
+    const int spawned = posix_spawnp(&pid, self.c_str(), &actions, nullptr, argv.data(), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    close(ends[1]);
+    if (spawned != 0) {
+        close(ends[0]);
         return child;
     }
     std::array<char, 4096> chunk{};
-    while (std::fgets(chunk.data(), static_cast<int>(chunk.size()), pipe) != nullptr) {
-        child.output += chunk.data();
+    for (;;) {
+        const ssize_t got = read(ends[0], chunk.data(), chunk.size());
+        if (got > 0) {
+            child.output.append(chunk.data(), static_cast<std::size_t>(got));
+        } else if (got == 0 || errno != EINTR) {
+            break;
+        }
     }
-    const int status = pclose(pipe);
+    close(ends[0]);
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
     child.status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     return child;
 }
