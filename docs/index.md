@@ -24,3 +24,7 @@
 - [Contributing](../CONTRIBUTING.md): building, testing, CI and the
   rules for a change
 - [Licensing](licensing.md): the licence and third-party works
+- [Assurance case](assurance-case.md): the trust boundaries, threats and
+  why the module holds against them
+- [Security policy](../SECURITY.md), [governance](../GOVERNANCE.md) and
+  [code of conduct](../CODE_OF_CONDUCT.md)

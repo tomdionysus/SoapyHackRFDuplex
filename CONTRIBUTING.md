@@ -189,7 +189,10 @@ CHANGELOG.md entry as its notes. In order:
    Those files are the release's packages: download them
    (`gh release download x.y.z`) for the steps below, never build from a
    working tree. `tools/deb-amd64.sh x.y.z` builds the amd64 ones the
-   same way locally, should GitHub be unavailable.
+   same way locally, should GitHub be unavailable. Built from the tag's
+   source archive (`git archive`) in `debian:trixie`, the packages are
+   bit-for-bit the same each time (checked for 0.2.1); a build inside a
+   git checkout differs, as it embeds the commit hash.
 5. On the target, install the arm64 packages and run the receive smoke
    test and, with transmit allowed, the timed bursts (TODO/ACTIVE.md,
    "Resume here"); then remove the packages, which would otherwise
