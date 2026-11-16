@@ -32,6 +32,25 @@ std::optional<std::string> match(const Args& args, const char* key,
     return found.front();
 }
 
+// How many boards on the bus report `serial`. Clones can share one, and
+// such boards cannot be told apart: opening by serial takes the first.
+std::size_t reporting(const std::string& serial, const std::vector<ListedBoard>& boards) {
+    return static_cast<std::size_t>(std::count_if(
+        boards.begin(), boards.end(), [&](const ListedBoard& b) { return b.serial == serial; }));
+}
+
+// `chosen`, unless a board in it shares its serial with another.
+Selection distinct(const Selection& chosen, const std::vector<ListedBoard>& boards) {
+    for (const std::string& serial : {chosen.rx, chosen.tx}) {
+        const std::size_t count = reporting(serial, boards);
+        if (count > 1) {
+            throw std::invalid_argument(std::to_string(count) + " boards report the same serial " +
+                                        serial + ", so they cannot be told apart");
+        }
+    }
+    return chosen;
+}
+
 std::string the_other(const std::string& chosen, const char* chosen_key,
                       const std::vector<ListedBoard>& boards) {
     std::vector<std::string> others;
@@ -69,13 +88,13 @@ Selection select_pair(const Args& args, const std::vector<ListedBoard>& boards) 
         if (*rx == *tx) {
             throw std::invalid_argument("rx_serial and tx_serial name the same board " + *rx);
         }
-        return Selection{*rx, *tx};
+        return distinct(Selection{*rx, *tx}, boards);
     }
     if (rx) {
-        return Selection{*rx, the_other(*rx, kRxSerialKey, boards)};
+        return distinct(Selection{*rx, the_other(*rx, kRxSerialKey, boards)}, boards);
     }
     if (tx) {
-        return Selection{the_other(*tx, kTxSerialKey, boards), *tx};
+        return distinct(Selection{the_other(*tx, kTxSerialKey, boards), *tx}, boards);
     }
     if (boards.size() != 2) {
         throw std::invalid_argument(
@@ -84,7 +103,7 @@ Selection select_pair(const Args& args, const std::vector<ListedBoard>& boards) 
     }
     std::vector<std::string> serials = {boards[0].serial, boards[1].serial};
     std::sort(serials.begin(), serials.end());
-    return Selection{serials[0], serials[1]};
+    return distinct(Selection{serials[0], serials[1]}, boards);
 }
 
 std::vector<Selection> enumerate_pairs(const Args& args, const std::vector<ListedBoard>& boards) {
@@ -100,7 +119,8 @@ std::vector<Selection> enumerate_pairs(const Args& args, const std::vector<Liste
     }
     for (const ListedBoard& rx : boards) {
         for (const ListedBoard& tx : boards) {
-            if (rx.serial != tx.serial) {
+            if (rx.serial != tx.serial && reporting(rx.serial, boards) == 1 &&
+                reporting(tx.serial, boards) == 1) {
                 pairs.push_back(Selection{rx.serial, tx.serial});
             }
         }

@@ -13,7 +13,8 @@ inline constexpr float kFullScale = 128.0f;
 
 // Converts `samples` complex samples at `src`, in `format`, into the
 // board's int8 pairs at `dst`. Floats are scaled by kFullScale, rounded
-// to nearest and clamped; int16 keeps its top byte.
+// to nearest and clamped, a NaN made zero; int16 keeps its top byte. With
+// no samples the buffers are not touched and may be null.
 void to_native(const void* src, Format format, std::int8_t* dst, std::size_t samples);
 
 // The reverse: `samples` int8 pairs at `src` into `format` at `dst`.

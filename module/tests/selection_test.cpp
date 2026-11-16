@@ -3,6 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <stdexcept>
+#include <string>
 
 using namespace hackrfduplex;
 
@@ -65,6 +66,26 @@ TEST_CASE("discovery offers every ordered pair, or the one asked for", "[selecti
 
     CHECK(enumerate_pairs({{"rx_serial", "nope"}}, kTwo).empty());
     CHECK(enumerate_pairs({}, {kTwo[0]}).empty());
+}
+
+TEST_CASE("boards that report one serial cannot be told apart, so are not paired", "[selection]") {
+    // Clones can share a serial; opening by serial would take the same
+    // board for both roles.
+    const std::vector<ListedBoard> same = {{"0000000000000000000000000000c10e", "HackRF One"},
+                                           {"0000000000000000000000000000c10e", "HackRF One"}};
+    try {
+        (void)select_pair({}, same);
+        FAIL("paired");
+    } catch (const std::invalid_argument& e) {
+        CHECK(std::string(e.what()).find("same serial") != std::string::npos);
+    }
+    CHECK_THROWS_AS(select_pair({{"rx_serial", "c10e"}}, same), std::invalid_argument);
+    CHECK(enumerate_pairs({}, same).empty());
+
+    // Beside a third board, neither of the two is offered with it.
+    const std::vector<ListedBoard> three = {same[0], same[1], kTwo[0]};
+    CHECK(enumerate_pairs({}, three).empty());
+    CHECK_THROWS_AS(select_pair({{"rx_serial", "244b"}}, three), std::invalid_argument);
 }
 
 TEST_CASE("labels trim the zero padding", "[selection]") {

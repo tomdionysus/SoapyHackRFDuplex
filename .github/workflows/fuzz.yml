@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ClusterFuzzLite: builds the fuzz targets in fuzz/ (.clusterfuzzlite/)
+# with AddressSanitizer and UndefinedBehaviorSanitizer and runs them, ten
+# minutes on a pull request against the code it changes and on a push in
+# batch, and an hour weekly. A crash fails the run and is reported in the
+# repository's code scanning.
+name: Fuzz
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  fuzz:
+    name: fuzz ${{ matrix.sanitizer }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined]
+    steps:
+      - name: Build the fuzz targets
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          language: c++
+          sanitizer: ${{ matrix.sanitizer }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the fuzz targets
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: ${{ github.event_name == 'pull_request' && 'code-change' || 'batch' }}
+          fuzz-seconds: ${{ github.event_name == 'schedule' && 3600 || 600 }}
+          sanitizer: ${{ matrix.sanitizer }}
+          output-sarif: true

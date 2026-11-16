@@ -85,6 +85,16 @@ is untested: [docs/status.md](docs/status.md).
 Applications built on the pair, and changes to the HackRF firmware or
 libhackrf, are out of scope.
 
+## Feedback and contributing
+
+Report bugs and ask for features in the
+[issue tracker](https://github.com/tomdionysus/SoapyHackRFDuplex/issues);
+report a vulnerability privately, as [SECURITY.md](SECURITY.md) says.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build, test and send
+a change. Released packages are on the
+[Releases](https://github.com/tomdionysus/SoapyHackRFDuplex/releases)
+page and in the apt repository above.
+
 ## AI
 
 This project was developed with the use of agentic engineering,
