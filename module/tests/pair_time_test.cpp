@@ -289,6 +289,79 @@ TEST_CASE("a burst that cannot be written leaves no origin", "[pair][time]") {
     air.stop();
 }
 
+TEST_CASE("a burst only part of which fits the transmit ring leaves no origin", "[pair][time]") {
+    Rig rig;
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kTx);
+    // Two of the four slots taken and nothing pulled: the burst's first two
+    // transfers go in, the rest finds no room within its two seconds.
+    air.paused = true;
+    const std::vector<std::int8_t> samples(4 * kTransferSamples, 0);
+    std::size_t written = 0;
+    while (written < 2 * kTransferSamples) {
+        const std::size_t n = rig.pair.write(samples.data() + 2 * written,
+                                             2 * kTransferSamples - written, false, 100ms);
+        REQUIRE(n > 0);
+        written += n;
+    }
+    rig.pair.activate(Direction::kRx);
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("the calibration burst could not be written"));
+    air.paused = false;
+    air.stop();
+}
+
+TEST_CASE("a retune for the burst that cannot be undone still leaves the streams running",
+          "[pair][time]") {
+    Rig rig;
+    rig.pair.set_frequency(Direction::kRx, 892'300'000);
+    rig.pair.set_frequency(Direction::kTx, 847'300'000);
+    rig.open();
+    Loopback air(rig.tx, rig.rx, 300);
+    rig.pair.activate(Direction::kTx);
+    // Every tune of the transmitter fails, the one back included.
+    rig.tx.on_call = [](const std::string& call) {
+        if (call.starts_with("set_frequency")) {
+            throw BoardError("set_frequency: HACKRF_ERROR_LIBUSB");
+        }
+    };
+    CHECK_NOTHROW(rig.pair.activate(Direction::kRx));
+    rig.tx.on_call = nullptr;
+    CHECK(rig.pair.active(Direction::kRx));
+    CHECK(rig.pair.active(Direction::kTx));
+    CHECK_FALSE(rig.pair.tx_of_rx());
+    CHECK(rig.logged("a board failed while the burst was out"));
+    // What the application asked for stands.
+    CHECK(rig.pair.frequency(Direction::kTx) == 847'300'000);
+    air.stop();
+}
+
+TEST_CASE("a trigger start that fails is undone however the boards answer", "[pair][time]") {
+    Rig rig;
+    rig.pair.set_time_origin(TimeOrigin::kTrigger);
+    rig.open();
+    rig.pair.activate(Direction::kRx);
+    // No jumper, so the transmitter never moves; and as the pair gives up,
+    // the receiver will not stop and the transmitter will not leave sync.
+    rig.rx.on_call = [](const std::string& call) {
+        if (call.starts_with("stop")) {
+            throw BoardError("stop: HACKRF_ERROR_LIBUSB");
+        }
+    };
+    rig.tx.on_call = [](const std::string& call) {
+        if (call == "set_hardware_sync off") {
+            throw BoardError("set_hardware_sync: HACKRF_ERROR_LIBUSB");
+        }
+    };
+    CHECK_THROWS_AS(rig.pair.activate(Direction::kTx), BoardError);
+    rig.rx.on_call = nullptr;
+    rig.tx.on_call = nullptr;
+    CHECK_FALSE(rig.pair.active(Direction::kRx));
+    CHECK_FALSE(rig.pair.active(Direction::kTx));
+    CHECK_FALSE(rig.pair.tx_of_rx());
+}
+
 TEST_CASE("a receiver that delivers nothing while the burst is out leaves no origin",
           "[pair][time]") {
     Rig rig;

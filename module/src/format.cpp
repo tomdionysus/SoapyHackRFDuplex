@@ -16,7 +16,7 @@ std::size_t sample_bytes(Format format) {
         case Format::kCf64:
             return 16;
     }
-    return 0;
+    return 0;  // LCOV_EXCL_LINE: every value returns above
 }
 
 Format parse_format(const std::string& name) {
@@ -46,7 +46,7 @@ const char* format_name(Format format) {
         case Format::kCf64:
             return "CF64";
     }
-    return "?";
+    return "?";  // LCOV_EXCL_LINE: every value returns above
 }
 
 }  // namespace hackrfduplex

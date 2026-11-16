@@ -101,12 +101,14 @@ void RxCorrection::apply(void* samples, Format format, std::size_t count) {
     if (count == 0 || !active_locked()) {
         return;
     }
-    if (format == Format::kCf32) {
-        correct(static_cast<Sample*>(samples), count);
-        return;
+    // CF32 is corrected where it lies; the others by way of a CF32 copy.
+    if (format != Format::kCf32) {
+        scratch_.resize(count);
     }
-    scratch_.resize(count);
     switch (format) {
+        case Format::kCf32:
+            correct(static_cast<Sample*>(samples), count);
+            return;
         case Format::kCs8: {
             auto* raw = static_cast<std::int8_t*>(samples);
             for (std::size_t i = 0; i < count; ++i) {
@@ -142,8 +144,6 @@ void RxCorrection::apply(void* samples, Format format, std::size_t count) {
             }
             return;
         }
-        case Format::kCf32:
-            return;
     }
 }
 
