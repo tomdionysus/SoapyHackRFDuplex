@@ -176,8 +176,8 @@ CHANGELOG.md entry as its notes. In order:
 
 1. On `develop`: the version in `project(... VERSION ...)` in
    `CMakeLists.txt`, an entry at the top of [CHANGELOG.md](CHANGELOG.md),
-   a matching entry at the top of `debian/changelog`, and the version in
-   the README. One commit, `Version x.y.z`.
+   and a matching entry at the top of `debian/changelog`. One commit,
+   `Version x.y.z`.
 2. `tools/ci.sh` passes on a Debian trixie arm64 host (a build machine,
    or the target through `tools/ci-pi.sh`), and GitHub Actions passes on
    `develop`, the package jobs included.

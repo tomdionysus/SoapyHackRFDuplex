@@ -1,13 +1,11 @@
 # hackrfduplex
 
+[![Release](https://img.shields.io/github/v/release/tomdionysus/SoapyHackRFDuplex?sort=semver)](https://github.com/tomdionysus/SoapyHackRFDuplex/releases/latest)
 [![CI](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomdionysus/SoapyHackRFDuplex/badge)](https://scorecard.dev/viewer/?uri=github.com/tomdionysus/SoapyHackRFDuplex)
-[![Release](https://img.shields.io/github/v/release/tomdionysus/SoapyHackRFDuplex?sort=semver)](https://github.com/tomdionysus/SoapyHackRFDuplex/releases/latest)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
-
-Version 0.2.2 ([changes](CHANGELOG.md))
 
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
 makes two [HackRF One](https://greatscottgadgets.com/hackrf/one/) boards
