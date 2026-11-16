@@ -286,10 +286,15 @@ To fix, as found in the 2026-11-16 check:
 
 Then the release, each step on Tom's word (CONTRIBUTING.md, "Releases"):
 
-- [ ] `tools/ci.sh` passes on a build machine and GitHub Actions passes
-  on `develop`.
-- [ ] The tag and the Release workflow's packages, their digests matching
-  the provenance.
+- [x] `tools/ci.sh` passed on corvus-uranus and GitHub Actions on
+  `develop` at `dbaf7ba`; pull request 4 merged to `main` as `2e5d766`
+  on Tom's word, its tree identical to `develop`.
+- [x] Tag `0.2.2` on `2e5d766`, pushed 2026-11-16 at 19:08Z on Tom's
+  word. The Release workflow published eight packages and
+  `hackrfduplex-0.2.2.intoto.jsonl`; each package's sha256 is a subject
+  of the provenance, whose source is the tag at `2e5d766`. CodeQL's
+  alert on `main` closed with the merge. The signature on the provenance
+  is not yet checked with `slsa-verifier`, which is not installed here.
 - [ ] The arm64 packages on the target: power read before and after,
   SoapySDR reporting 0.2.2, the receive smoke test, then
   `--timed-bursts 81920 --tx-gain 0 --seconds 60`; packages and copies
