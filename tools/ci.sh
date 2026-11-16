@@ -197,6 +197,42 @@ else
     step "coverage: lcov not on this host, skipped"
 fi
 
+# The fuzz targets (fuzz/), each for FUZZ_SECONDS (default 30) under
+# AddressSanitizer and UndefinedBehaviorSanitizer, where Clang has
+# libFuzzer. ClusterFuzzLite fuzzes longer on every push; this catches a
+# target that no longer builds or falls at once.
+fuzz_cxx=""
+mkdir -p build-tsan-probe build-fuzz
+for candidate in clang++-19 clang++; do
+    if command -v "$candidate" >/dev/null &&
+        printf 'extern "C" int LLVMFuzzerTestOneInput(const char*, unsigned long) { return 0; }\n' |
+        "$candidate" -x c++ -fsanitize=fuzzer - -o build-tsan-probe/fuzz-probe >/dev/null 2>&1; then
+        fuzz_cxx="$candidate"
+        break
+    fi
+done
+if [[ -z "$fuzz_cxx" ]]; then
+    step "fuzzing: no Clang with libFuzzer on this host, skipped"
+else
+    step "fuzzing ($fuzz_cxx, ${FUZZ_SECONDS:-30} s a target)"
+    CXX="$fuzz_cxx" tools/fuzz-build.sh build-fuzz >build-fuzz/build.log 2>&1 || {
+        tail -n 20 build-fuzz/build.log
+        exit 1
+    }
+    for target in build-fuzz/fuzz_*; do
+        [[ -x "$target" && -f "$target" ]] || continue
+        name="$(basename "$target")"
+        mkdir -p "build-fuzz/corpus/$name"
+        "$target" -max_total_time="${FUZZ_SECONDS:-30}" -rss_limit_mb=2048 \
+            -artifact_prefix="build-fuzz/$name-" "build-fuzz/corpus/$name" \
+            >"build-fuzz/$name.log" 2>&1 || {
+            tail -n 30 "build-fuzz/$name.log"
+            exit 1
+        }
+        echo "$name: $(grep -o 'Done [0-9]* runs' "build-fuzz/$name.log")"
+    done
+fi
+
 # ThreadSanitizer cannot run on every host: on arm64 it needs a 39, 42 or
 # 48-bit address space, and a Raspberry Pi 5 kernel with 16K pages gives 47.
 # A host that cannot run a sanitized program skips the step, saying why.
