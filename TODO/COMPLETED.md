@@ -3,6 +3,36 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-16: fuzzing, provenance and the 0.2.2 tag
+
+Four fuzz targets (names, board selection, sample conversions, burst
+search), run by ClusterFuzzLite on every push, found three defects, each
+fixed with a unit test first: a NaN sample written in CF32 or CF64 was
+undefined behaviour and now goes to the board as zero; two boards
+reporting one serial were paired with themselves and are now refused and
+left out of discovery; converting zero samples passed a null pointer to
+memcpy. With them: container images pinned by digest, a security policy,
+and a Release workflow that builds both architectures from the tag and
+attaches SLSA provenance. At the merge, GitHub CI measured 100.0% of
+lines (2823), 99.5% of functions and 93.9% of branches.
+
+The tag was cut twice. It was first pushed at 15:26Z on the merge
+`12f3336` (pull request 2), before the fuzzing fixes, and the Release
+workflow published that build. The tag was deleted at 15:49Z and cut
+again at 17:24Z on the merge `6e846b8` (pull request 3), and the Release
+was built again from it. So two builds were public as 0.2.2, the first
+for 23 minutes and on GitHub only; it never reached the apt repository.
+The release is the second: the GitHub Release's eight packages and
+`hackrfduplex-0.2.2.intoto.jsonl`, whose provenance names the tag at
+`6e846b8`.
+
+The packages of 0.2.0 and 0.2.1 on their GitHub Releases were signed
+afterwards through Sigstore by the Sign releases workflow.
+
+Not done, and carried as item 18 in ACTIVE.md: the hardware check of the
+released packages (the one bench run was of the first cut) and the apt
+repository, which still serves 0.2.1.
+
 ## 2026-11-16: coverage, CI and the repository tightened
 
 Tom: "tighten everything up - github action CI build, badges, CodeQL,

@@ -34,11 +34,13 @@ test-first loop; the target's result is the one that counts.
 
 Items 1 to 16 are done: 0.2.1 is released (tag `0.2.1` on `main`,
 2026-11-12), with packages for amd64 and arm64 in the tomcully.com apt
-repository. A release follows the steps in CONTRIBUTING.md, "Releases";
-`tools/deb-amd64.sh` builds the amd64 packages in Docker, and CI builds
-and install-checks both architectures on every push. Item 17 waits on
-hardware Tom does not have yet; 1.0.0 follows once the module has been
-used.
+repository. 0.2.2 is tagged and on GitHub (tag `0.2.2` on `main`,
+2026-11-16) but not yet in the apt repository, which still serves 0.2.1:
+item 18 is what remains. A release follows the steps in CONTRIBUTING.md,
+"Releases"; `tools/deb-amd64.sh` builds the amd64 packages in Docker, and
+CI builds and install-checks both architectures on every push. Item 17
+waits on hardware Tom does not have yet; 1.0.0 follows once the module
+has been used.
 
 ## Where things stand
 
@@ -75,6 +77,11 @@ used.
 - 2026-11-12: 0.2.0 released, then 0.2.1: the calibration burst queued
   eight transfers ahead, the libusb build dependency, amd64 packages
   (COMPLETED.md). 190 test cases in the default build.
+- 2026-11-16: 0.2.2 tagged and released on GitHub with SLSA provenance:
+  three fixes found by fuzzing, the libhackrf binding tested, coverage
+  held to a floor (COMPLETED.md). The tag was cut twice that day; the
+  second cut is the release. Its hardware check and the apt repository
+  are item 18.
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
@@ -246,3 +253,27 @@ tag since (1.0.0 after the module has been used):
   `--time-origin trigger`, `hackrfduplex-check --timed-bursts` lands
   every burst at one constant offset from the time asked (the origin is
   0 by construction, so the offset is the boards' pipeline difference).
+
+### 18. 0.2.2 on the bench and into the apt repository
+
+The release's packages are the eight `.deb` files on the GitHub Release
+`0.2.2`. They are downloaded, and on 2026-11-16 each matched both the
+Release's digests and the subjects of `hackrfduplex-0.2.2.intoto.jsonl`,
+whose source is the tag at `6e846b8`. The steps are CONTRIBUTING.md,
+"Releases", 5 and 6; the signing and the upload are Tom's.
+
+- [ ] The arm64 packages on the target, with Tom's go-ahead for the
+  install: power read before and after, the two packages installed,
+  SoapySDR reporting 0.2.2, the receive smoke test, then
+  `--timed-bursts 81920 --tx-gain 0 --seconds 60`; packages and copies
+  removed, `clkout=rx` left set. The only bench run so far was of the
+  first cut, which is not the release. The target did not answer on
+  2026-11-16 at 18:05Z. Acceptance: 99.9% of nominal with 0 overflows,
+  and every burst at +0 samples.
+- [ ] Tom signs the packages into the apt repository.
+- [ ] Install from a copy of the signed tree in clean `debian:trixie`
+  containers, amd64 and arm64. Acceptance: both report 0.2.2 and load
+  the module.
+- [ ] Tom uploads the repository.
+- [ ] Install from the live repository, both architectures, as the
+  README says. Acceptance: 0.2.2 installed and the module found.
