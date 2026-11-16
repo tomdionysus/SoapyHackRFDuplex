@@ -1,13 +1,11 @@
 # hackrfduplex
 
+[![Release](https://img.shields.io/github/v/release/tomdionysus/SoapyHackRFDuplex?sort=semver)](https://github.com/tomdionysus/SoapyHackRFDuplex/releases/latest)
 [![CI](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomdionysus/SoapyHackRFDuplex/badge)](https://scorecard.dev/viewer/?uri=github.com/tomdionysus/SoapyHackRFDuplex)
-[![Release](https://img.shields.io/github/v/release/tomdionysus/SoapyHackRFDuplex?sort=semver)](https://github.com/tomdionysus/SoapyHackRFDuplex/releases/latest)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
-
-Version 0.2.2 ([changes](CHANGELOG.md))
 
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
 makes two [HackRF One](https://greatscottgadgets.com/hackrf/one/) boards
@@ -38,8 +36,8 @@ It works with stock HackRF firmware and stock libhackrf.
 
 ## Install
 
-On Debian trixie, amd64 or arm64 (a Raspberry Pi 5 for one), from the
-tomcully.com apt repository:
+Packages for Debian trixie on amd64 and arm64, including the Raspberry
+Pi 5, are in the tomcully.com apt repository:
 
 ```
 sudo curl -fsSLo /etc/apt/sources.list.d/tomcully.sources https://tomcully.com/apt/tomcully.sources

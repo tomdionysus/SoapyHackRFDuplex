@@ -50,5 +50,18 @@ slsa-verifier verify-artifact soapysdr0.8-module-hackrfduplex_0.2.2_arm64.deb \
   --source-uri github.com/tomdionysus/SoapyHackRFDuplex --source-tag 0.2.2
 ```
 
+The packages of 0.2.0 and 0.2.1, released before the provenance, carry
+Sigstore signatures instead (`*.deb.sigstore.json`), made afterwards by
+the Sign releases workflow: they say these are the files the project
+published, not how they were built. Check one with
+[cosign](https://github.com/sigstore/cosign):
+
+```
+cosign verify-blob soapysdr0.8-module-hackrfduplex_0.2.1_arm64.deb \
+  --bundle soapysdr0.8-module-hackrfduplex_0.2.1_arm64.deb.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/tomdionysus/SoapyHackRFDuplex/\.github/workflows/sign-release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 The apt repository at tomcully.com is signed with its own archive key
 (`tomcully.sources` carries it).

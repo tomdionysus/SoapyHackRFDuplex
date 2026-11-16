@@ -5,6 +5,8 @@ hackrfduplex (0.2.2) unstable; urgency=medium
   * Boards that report the same serial are refused rather than paired
     with themselves, and left out of discovery.
   * Converting zero samples no longer hands memcpy a null pointer.
+  * hackrfduplex-check --acceptance starts each of its lines directly
+    rather than through a shell, which ran shell syntax in a serial.
   * The libhackrf binding is tested, the parsers, conversions and burst
     search are fuzzed, and code no input could reach is removed.
 

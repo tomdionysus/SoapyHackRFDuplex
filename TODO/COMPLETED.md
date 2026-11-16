@@ -3,6 +3,34 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-16: fuzzing, provenance and two attempts at 0.2.2
+
+Four fuzz targets (names, board selection, sample conversions, burst
+search), run by ClusterFuzzLite on every push, found three defects, each
+fixed with a unit test first: a NaN sample written in CF32 or CF64 was
+undefined behaviour and now goes to the board as zero; two boards
+reporting one serial were paired with themselves and are now refused and
+left out of discovery; converting zero samples passed a null pointer to
+memcpy. With them: container images pinned by digest, a security policy,
+and a Release workflow that builds both architectures from the tag and
+attaches SLSA provenance. At the merge, GitHub CI measured 100.0% of
+lines (2823), 99.5% of functions and 93.9% of branches.
+
+0.2.2 was attempted twice and is not released. The tag was first pushed
+at 15:26Z on the merge `12f3336` (pull request 2), before the fuzzing
+fixes, and the Release workflow published that build. The tag was
+deleted at 15:49Z and pushed again at 17:24Z on the merge `6e846b8`
+(pull request 3), and the Release was built again from it, so two builds
+were public as 0.2.2 on GitHub. Neither reached the apt repository, and
+the one bench run was of the first. Tom, the same day: "There's no
+release until I say so, and the previous attempts were shit. We fix
+everything in 0.2.2". The second attempt's tag and GitHub Release were
+deleted at 18:53Z on his word, for 0.2.2 to be built again on GitHub from
+a new tag. What remains is item 18 in ACTIVE.md.
+
+The packages of 0.2.0 and 0.2.1 on their GitHub Releases were signed
+afterwards through Sigstore by the Sign releases workflow.
+
 ## 2026-11-16: coverage, CI and the repository tightened
 
 Tom: "tighten everything up - github action CI build, badges, CodeQL,

@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Signs the packages of releases made before the Release workflow carried
+# SLSA provenance (0.2.0 and 0.2.1), as they stand on their GitHub
+# Releases: a Sigstore bundle (<package>.deb.sigstore.json) for each,
+# signed keylessly by this workflow's GitHub identity. A signature says
+# these are the files the project published; unlike provenance, it says
+# nothing about how they were built. A release that already carries
+# bundles is left alone. Runs when this file changes, and by hand once it
+# is on main.
+name: Sign releases
+
+on:
+  push:
+    branches: [develop, main]
+    paths: ['.github/workflows/sign-release.yml']
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: "Space-separated release tags to sign"
+        required: true
+        default: "0.2.0 0.2.1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sign-releases
+
+jobs:
+  sign:
+    name: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      TAGS: ${{ inputs.tags || '0.2.0 0.2.1' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
+
+      - name: Sign each release's packages
+        run: |
+          for tag in $TAGS; do
+            mkdir -p "assets/$tag"
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+                --jq '.assets[].name' | grep -q '\.sigstore\.json$'; then
+              echo "$tag: already signed"
+              continue
+            fi
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.deb' \
+              --dir "assets/$tag"
+            debs=("assets/$tag"/*.deb)
+            for deb in "${debs[@]}"; do
+              cosign sign-blob --yes --bundle "$deb.sigstore.json" "$deb"
+            done
+            gh release upload "$tag" "assets/$tag"/*.sigstore.json --repo "$GITHUB_REPOSITORY"
+            echo "$tag: signed ${#debs[@]} packages"
+          done

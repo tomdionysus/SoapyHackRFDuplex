@@ -9,6 +9,9 @@
   discovery.
 - Fixed, found by fuzzing: converting zero samples passed a null pointer
   to memcpy.
+- Fixed, found by CodeQL: `hackrfduplex-check --acceptance` ran each of
+  its lines through a shell, so a `--rx-serial` or `--tx-serial` holding
+  shell syntax was run as a command; it now starts each line directly.
 - Fuzz targets for the names, board selection, sample conversions and
   burst search, run by ClusterFuzzLite.
 - The libhackrf binding is tested against a fake libhackrf; coverage is
