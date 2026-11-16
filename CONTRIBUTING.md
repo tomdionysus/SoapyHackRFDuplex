@@ -5,6 +5,21 @@ Read this, [README.md](README.md), [TODO/ACTIVE.md](TODO/ACTIVE.md)
 before starting. Do not reopen a standing decision in
 [TODO/ACTIVE.md](TODO/ACTIVE.md) without saying so.
 
+## Reporting a problem
+
+Bugs and requests go in the issue tracker,
+<https://github.com/tomdionysus/SoapyHackRFDuplex/issues>, which is
+public and keeps every report. Say which version (`SoapySDRUtil --info`
+prints the module's), the host and its distribution, the boards and their
+firmware (`hackrfduplex-check --probe`), what you ran and what you saw;
+the output of `hackrfduplex-check` helps most. Reports are answered
+within two weeks. A vulnerability is reported privately instead, as
+[SECURITY.md](SECURITY.md) says.
+
+Contributions come as pull requests against `develop`, following the
+rest of this file: tests first, `tools/ci.sh` passing, one logical change
+per commit.
+
 ## Repository layout
 
 ```
