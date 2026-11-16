@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/tomdionysus/SoapyHackRFDuplex?sort=semver)](https://github.com/tomdionysus/SoapyHackRFDuplex/releases/latest)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 
-Version 0.2.1 ([changes](CHANGELOG.md))
+Version 0.2.2 ([changes](CHANGELOG.md))
 
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
 makes two [HackRF One](https://greatscottgadgets.com/hackrf/one/) boards

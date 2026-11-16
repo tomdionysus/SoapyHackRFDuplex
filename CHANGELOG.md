@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 - 2026-11-16
+
+- No change in behaviour.
+- The libhackrf binding is tested against a fake libhackrf; coverage is
+  100% of lines, with a floor CI enforces.
+- Code no input could reach is removed.
+- CI: actions pinned, actionlint, ShellCheck, CodeQL's
+  security-and-quality queries, OpenSSF Scorecard.
+- Each version tag publishes a GitHub Release with the amd64 and arm64
+  packages.
+
 ## 0.2.1 - 2026-11-12
 
 - Fixed: the calibration burst is queued eight transfers ahead of the
