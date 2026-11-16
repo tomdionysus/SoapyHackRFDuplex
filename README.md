@@ -36,8 +36,8 @@ It works with stock HackRF firmware and stock libhackrf.
 
 ## Install
 
-On Debian trixie, amd64 or arm64 (a Raspberry Pi 5 for one), from the
-tomcully.com apt repository:
+Packages for Debian trixie on amd64 and arm64, including the Raspberry
+Pi 5, are in the tomcully.com apt repository:
 
 ```
 sudo curl -fsSLo /etc/apt/sources.list.d/tomcully.sources https://tomcully.com/apt/tomcully.sources
