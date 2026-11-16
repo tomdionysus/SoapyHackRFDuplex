@@ -3,6 +3,9 @@
 [![CI](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomdionysus/SoapyHackRFDuplex/badge)](https://scorecard.dev/viewer/?uri=github.com/tomdionysus/SoapyHackRFDuplex)
+[![Release](https://img.shields.io/github/v/release/tomdionysus/SoapyHackRFDuplex?sort=semver)](https://github.com/tomdionysus/SoapyHackRFDuplex/releases/latest)
+[![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 
 Version 0.2.1 ([changes](CHANGELOG.md))
 
@@ -24,9 +27,10 @@ It works with stock HackRF firmware and stock libhackrf.
   the device cannot do it refuses, never silently ignores.
 - Timed transmit to the sample: in a four-hour soak on the real pair,
   over a million timed bursts were each received at the sample asked.
-- Unit tests against simulated boards on every push, with address,
-  undefined-behaviour and thread sanitizers, Clang's thread-safety
-  analysis, clang-tidy and CodeQL; the Debian packages built and
+- Unit tests against simulated boards and a simulated libhackrf on every
+  push, with address, undefined-behaviour and thread sanitizers, Clang's
+  thread-safety analysis, clang-tidy, CodeQL and a coverage floor (every
+  line of the module but its SoapySDR registration); the Debian packages built and
   installed for amd64 and arm64.
 - A hardware acceptance battery certifies a pair in one command.
 - Runs with GNU Radio, SoapyRemote, rtl_433 and SoapySDR's Python

@@ -67,8 +67,8 @@ ctest --test-dir build
 
 `tools/ci.sh` runs what a change must pass, in order:
 
-1. the format check (clang-format 19) and the licence line on every
-   source file;
+1. the format check (clang-format 19), the licence line on every
+   source file, and ShellCheck over the scripts where the host has it;
 2. the release build and its tests (`--quick` stops here);
 3. the address and undefined-behaviour sanitizer build and its tests;
 4. the build with the receive corrections (`HACKRFDUPLEX_DSP`, liquid-dsp)
@@ -76,7 +76,8 @@ ctest --test-dir build
 5. Clang's thread-safety analysis, a clang++-19 build where GCC is the
    compiler;
 6. clang-tidy with [.clang-tidy](.clang-tidy), where the host has it;
-7. the coverage report, where lcov is installed (`build-coverage/coverage/html`);
+7. the coverage report and its floors, where lcov is installed
+   (`build-coverage/coverage/html`);
 8. the thread sanitizer build and its tests, where the host can run it
    (not on a Raspberry Pi 5 kernel: its 47-bit address space is one
    ThreadSanitizer cannot use).
@@ -84,11 +85,26 @@ ctest --test-dir build
 Run it before a commit that touches code. GitHub Actions runs the whole
 of it on every push to `develop` and `main` in a Debian trixie container,
 keeps the coverage report as an artifact and sends it to Codecov
-(`CODECOV_TOKEN`, a repository secret), and runs CodeQL. It also builds
-the Debian packages for amd64 and arm64 (`tools/deb-build.sh`, lintian
-failing on any warning) and installs each into a clean container, where
-SoapySDR must load the module (`tools/deb-install-check.sh`). The run on
-the target, with the boards attached, stays the gate for a change.
+(`CODECOV_TOKEN`, a repository secret; [codecov.yml](codecov.yml) holds
+its checks), checks the workflows with actionlint, and runs CodeQL with
+its security-and-quality queries. It also builds the Debian packages for
+amd64 and arm64 (`tools/deb-build.sh`, lintian failing on any warning)
+and installs each into a clean container, where SoapySDR must load the
+module (`tools/deb-install-check.sh`). Every action is pinned to a
+commit, its release named beside it, and Dependabot proposes updates.
+OpenSSF Scorecard rates the repository weekly. `main` takes no push that
+has not passed CI and CodeQL. The run on the target, with the boards
+attached, stays the gate for a change.
+
+Coverage counts the module, the libhackrf binding (tested against a fake
+libhackrf, `module/tests/fake_libhackrf.*`) and the FT8 example's own
+code; it leaves out the tests, the SoapySDR registration, the check tool
+and the FT8 client's main loop, which only SoapySDR's loader, the boards
+or a person run. Branches are counted as the source has them, without the
+compiler's exception and clean-up edges. `tools/ci.sh` fails below 99.5%
+of lines, 99% of functions or 93% of branches. A line no input can reach,
+such as the return after a `switch` that returns for every value, is
+marked `// LCOV_EXCL_LINE: why`; nothing else is excluded by marker.
 
 The build of record runs on the target, a Debian trixie host with both
 boards attached: `HACKRFDUPLEX_TARGET=user@host tools/ci-pi.sh` copies
@@ -121,8 +137,11 @@ before it is taken as a finding.
 
 ## Releases
 
-A release is a version number, a tag, and packages for amd64 and arm64
-in the project's apt repository. In order:
+A release is a version number, a tag, a GitHub Release, and packages for
+amd64 and arm64 in the project's apt repository. Pushing the tag starts
+the Release workflow, which builds both architectures' packages from the
+tag, installs them, and publishes the Release with the tag's
+CHANGELOG.md entry as its notes. In order:
 
 1. On `develop`: the version in `project(... VERSION ...)` in
    `CMakeLists.txt`, an entry at the top of [CHANGELOG.md](CHANGELOG.md),
