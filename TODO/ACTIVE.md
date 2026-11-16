@@ -34,9 +34,9 @@ test-first loop; the target's result is the one that counts.
 
 Items 1 to 16 are done: 0.2.1 is released (tag `0.2.1` on `main`,
 2026-11-12), with packages for amd64 and arm64 in the tomcully.com apt
-repository. 0.2.2 is not released (Tom, 2026-11-16: "There's no release
-until I say so"): item 18 is what it still needs, and everything found
-is fixed in 0.2.2, not in a later number. A release follows the steps in CONTRIBUTING.md,
+repository. 0.2.2 followed on 2026-11-16 (tag `0.2.2` on `main` at
+`2e5d766`), each step on Tom's word, and is in the apt repository for
+both architectures (COMPLETED.md). A release follows the steps in CONTRIBUTING.md,
 "Releases"; `tools/deb-amd64.sh` builds the amd64 packages in Docker, and
 CI builds and install-checks both architectures on every push. Item 17
 waits on hardware Tom does not have yet; 1.0.0 follows once the module
@@ -77,11 +77,11 @@ has been used.
 - 2026-11-12: 0.2.0 released, then 0.2.1: the calibration burst queued
   eight transfers ahead, the libusb build dependency, amd64 packages
   (COMPLETED.md). 190 test cases in the default build.
-- 2026-11-16: two attempts at 0.2.2 were tagged and published on
-  GitHub, the second with three fixes found by fuzzing (COMPLETED.md).
-  Tom rejected both and had the second taken down; 0.2.2 is originated
-  again on GitHub with everything found since fixed in it. The apt
-  repository serves 0.2.1 until Tom signs and uploads. Item 18.
+- 2026-11-16: 0.2.2 released after two attempts Tom rejected: three
+  fixes found by fuzzing, one found by CodeQL in the check tool, the
+  libhackrf binding tested, coverage held to a floor, releases with SLSA
+  provenance (COMPLETED.md). A version is released only on Tom's word,
+  step by step.
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
@@ -161,7 +161,12 @@ untested against hardware, and item 17 waits for them.
   features; the build without it stays the default.
 - The next release is 0.2.0 (Tom, 2026-11-09); 1.0.0, with the SoapySDR
   surface and settings held stable, comes after 0.2.0 has been used.
-  0.2.0 and 0.2.1 are out (2026-11-12); fixes before 1.0.0 are 0.2.x.
+  0.2.0 and 0.2.1 are out (2026-11-12) and 0.2.2 (2026-11-16); fixes
+  before 1.0.0 are 0.2.x.
+- A version is released only when Tom says so, each step on his word at
+  the time: the merge to `main`, the tag, the install on the target, the
+  signing and the upload (Tom, 2026-11-16: "There's no release until I
+  say so").
 - Coverage (Tom, 2026-11-16, "near 100% coverage"): everything but the
   tests, the SoapySDR registration, the check tool (not split, Tom's
   choice) and the FT8 main loop is counted; `tools/ci.sh` fails under
@@ -253,57 +258,3 @@ tag since (1.0.0 after the module has been used):
   `--time-origin trigger`, `hackrfduplex-check --timed-bursts` lands
   every burst at one constant offset from the time asked (the origin is
   0 by construction, so the offset is the boards' pipeline difference).
-
-### 18. 0.2.2, fixed and released on Tom's word
-
-Tom, 2026-11-16: "There's no release until I say so, and the previous
-attempts were shit. We fix everything in 0.2.2". Nothing is tagged,
-published, signed, uploaded or installed on the target for 0.2.2 without
-Tom saying so in the conversation at the time. Fixes land on `develop`
-under the version 0.2.2, with CHANGELOG.md and `debian/changelog` kept
-to match.
-
-To fix, as found in the 2026-11-16 check:
-
-- [x] CodeQL's open alert, high: `tools/check.cpp` passed command-line
-  arguments to `popen`, so `--acceptance` ran shell syntax in a serial
-  (a marker file created by `--rx-serial 'x; touch marker #'`). It now
-  starts each line with `posix_spawnp`; the same run creates nothing and
-  reports the child's own exit status. `tools/ci.sh` passed on
-  corvus-uranus. The alert is raised against `main` and closes there when
-  0.2.2 is merged.
-- [ ] The README says released packages are in the apt repository, which
-  must be true of 0.2.2 on the day it is released.
-- [ ] `CODE_OF_CONDUCT.md` gives `mail@tomcully.com`; Tom confirms the
-  address or names another.
-- [x] The second attempt's tag `0.2.2` (at `6e846b8`) and its GitHub
-  Release were deleted on 2026-11-16 at 18:53Z, and its packages taken
-  out of the apt repository's incoming folder. Tom: "I don't trust the
-  last session release. We should reoriginate it on github", then "Do
-  this now please". 0.2.2 is built again on GitHub from a new tag on a
-  new merge of `develop`. Sigstore's log keeps the old provenance
-  entry, which names `6e846b8` and matches none of the new packages.
-
-Then the release, each step on Tom's word (CONTRIBUTING.md, "Releases"):
-
-- [x] `tools/ci.sh` passed on corvus-uranus and GitHub Actions on
-  `develop` at `dbaf7ba`; pull request 4 merged to `main` as `2e5d766`
-  on Tom's word, its tree identical to `develop`.
-- [x] Tag `0.2.2` on `2e5d766`, pushed 2026-11-16 at 19:08Z on Tom's
-  word. The Release workflow published eight packages and
-  `hackrfduplex-0.2.2.intoto.jsonl`; each package's sha256 is a subject
-  of the provenance, whose source is the tag at `2e5d766`. CodeQL's
-  alert on `main` closed with the merge. The signature on the provenance
-  is not yet checked with `slsa-verifier`, which is not installed here.
-- [x] The arm64 packages on the target, 2026-11-16 at 19:24Z on Tom's
-  word, the two files matching the provenance by sha256 there. SoapySDR
-  reported the module at 0.2.2. Receive, 8 Msps for 5 s: 99.9% of
-  nominal, 0 overflows, both boards `clock: external`. Timed bursts,
-  `--timed-bursts 81920 --tx-gain 0 --seconds 60`, amplifier off: 3658
-  of 3658 found at +0 samples, 0 late writes, 0 underflows, 0 overflows,
-  the origin at +31842. Power `0x50000` before and after each run.
-  Packages purged and copies removed; `clkout=rx` left set (the TX board
-  sees its CLKIN).
-- [ ] Tom signs the packages into the apt repository; an install from a
-  copy of the signed tree in clean `debian:trixie` containers, amd64 and
-  arm64; Tom uploads; an install from the live repository, both.
