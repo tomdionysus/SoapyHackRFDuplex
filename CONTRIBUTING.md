@@ -149,15 +149,18 @@ CHANGELOG.md entry as its notes. In order:
    `CMakeLists.txt`, an entry at the top of [CHANGELOG.md](CHANGELOG.md),
    a matching entry at the top of `debian/changelog`, and the version in
    the README. One commit, `Version x.y.z`.
-2. `tools/ci-pi.sh` passes on the target, and GitHub Actions passes on
+2. `tools/ci.sh` passes on a Debian trixie arm64 host (a build machine,
+   or the target through `tools/ci-pi.sh`), and GitHub Actions passes on
    `develop`, the package jobs included.
 3. Open a pull request from `develop` to `main` and merge it with a merge
    commit once its CI and CodeQL checks pass; `main` takes nothing else.
    Tag `x.y.z` on that merge commit (annotated, no `v`) and push the tag.
-4. Build the release packages from the tag, never from a working tree:
-   arm64 on the target from `git archive x.y.z` (`dpkg-buildpackage -us
-   -uc -b`, then lintian), amd64 with `tools/deb-amd64.sh x.y.z` (Docker).
-   Both must be free of lintian errors and warnings.
+4. The Release workflow builds the packages from the tag, lintian free of
+   errors and warnings, installs them and attaches them to the Release.
+   Those files are the release's packages: download them
+   (`gh release download x.y.z`) for the steps below, never build from a
+   working tree. `tools/deb-amd64.sh x.y.z` builds the amd64 ones the
+   same way locally, should GitHub be unavailable.
 5. On the target, install the arm64 packages and run the receive smoke
    test and, with transmit allowed, the timed bursts (TODO/ACTIVE.md,
    "Resume here"); then remove the packages, which would otherwise
