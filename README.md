@@ -5,6 +5,7 @@
 [![codecov](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex/branch/develop/graph/badge.svg)](https://codecov.io/gh/tomdionysus/SoapyHackRFDuplex)
 [![CodeQL](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/SoapyHackRFDuplex/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomdionysus/SoapyHackRFDuplex/badge)](https://scorecard.dev/viewer/?uri=github.com/tomdionysus/SoapyHackRFDuplex)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16773/badge)](https://www.bestpractices.dev/projects/16773)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 
 A [SoapySDR](https://github.com/pothosware/SoapySDR/wiki) module that
@@ -70,6 +71,10 @@ All documentation: [docs/index.md](docs/index.md). What works and what
 is untested: [docs/status.md](docs/status.md).
 
 ## Roadmap
+
+Through 2027, fixes come as 0.2.x releases, and 1.0.0, with the SoapySDR
+calls and settings held stable, follows once the module has seen use.
+Open until then:
 
 - The trigger time origin, which starts both boards on one edge through
   a jumper instead of a calibration burst, is built but has not been on
