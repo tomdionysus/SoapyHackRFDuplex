@@ -3,6 +3,67 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-16: 0.2.2 released (item 18)
+
+Tom, 2026-11-16: "There's no release until I say so, and the previous
+attempts were shit. We fix everything in 0.2.2". Nothing is tagged,
+published, signed, uploaded or installed on the target for 0.2.2 without
+Tom saying so in the conversation at the time. Fixes land on `develop`
+under the version 0.2.2, with CHANGELOG.md and `debian/changelog` kept
+to match.
+
+To fix, as found in the 2026-11-16 check:
+
+- [x] CodeQL's open alert, high: `tools/check.cpp` passed command-line
+  arguments to `popen`, so `--acceptance` ran shell syntax in a serial
+  (a marker file created by `--rx-serial 'x; touch marker #'`). It now
+  starts each line with `posix_spawnp`; the same run creates nothing and
+  reports the child's own exit status. `tools/ci.sh` passed on
+  corvus-uranus. The alert is raised against `main` and closes there when
+  0.2.2 is merged.
+- [x] The README says released packages are in the apt repository:
+  true of 0.2.2 from the upload on.
+- [x] `CODE_OF_CONDUCT.md` gives `mail@tomcully.com`, already the
+  maintainer address in `debian/changelog`.
+- [x] The second attempt's tag `0.2.2` (at `6e846b8`) and its GitHub
+  Release were deleted on 2026-11-16 at 18:53Z, and its packages taken
+  out of the apt repository's incoming folder. Tom: "I don't trust the
+  last session release. We should reoriginate it on github", then "Do
+  this now please". 0.2.2 is built again on GitHub from a new tag on a
+  new merge of `develop`. Sigstore's log keeps the old provenance
+  entry, which names `6e846b8` and matches none of the new packages.
+
+Then the release, each step on Tom's word (CONTRIBUTING.md, "Releases"):
+
+- [x] `tools/ci.sh` passed on corvus-uranus and GitHub Actions on
+  `develop` at `dbaf7ba`; pull request 4 merged to `main` as `2e5d766`
+  on Tom's word, its tree identical to `develop`.
+- [x] Tag `0.2.2` on `2e5d766`, pushed 2026-11-16 at 19:08Z on Tom's
+  word. The Release workflow published eight packages and
+  `hackrfduplex-0.2.2.intoto.jsonl`; each package's sha256 is a subject
+  of the provenance, whose source is the tag at `2e5d766`. CodeQL's
+  alert on `main` closed with the merge. The signature on the provenance
+  is not yet checked with `slsa-verifier`, which is not installed here.
+- [x] The arm64 packages on the target, 2026-11-16 at 19:24Z on Tom's
+  word, the two files matching the provenance by sha256 there. SoapySDR
+  reported the module at 0.2.2. Receive, 8 Msps for 5 s: 99.9% of
+  nominal, 0 overflows, both boards `clock: external`. Timed bursts,
+  `--timed-bursts 81920 --tx-gain 0 --seconds 60`, amplifier off: 3658
+  of 3658 found at +0 samples, 0 late writes, 0 underflows, 0 overflows,
+  the origin at +31842. Power `0x50000` before and after each run.
+  Packages purged and copies removed; `clkout=rx` left set (the TX board
+  sees its CLKIN).
+- [x] Tom signed the packages into the apt repository at 20:09Z: the
+  eight files in `public/pool` and the index entries for both
+  architectures match the provenance, and `InRelease` carries a good
+  signature from the archive key. An install from the signed tree in a
+  clean `debian:trixie` container gave 0.2.2 and the module on amd64;
+  the arm64 one was not run before the upload.
+- [x] Tom uploaded (pool first, then the rest, without `--delete`). From
+  the live repository, installed the way the README says in clean
+  `debian:trixie` containers, amd64 and arm64: 0.2.2 installed, the
+  module found at 0.2.2, the check tool runs.
+
 ## 2026-11-16: fuzzing, provenance and two attempts at 0.2.2
 
 Four fuzz targets (names, board selection, sample conversions, burst
