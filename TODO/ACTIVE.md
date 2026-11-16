@@ -79,9 +79,9 @@ has been used.
   (COMPLETED.md). 190 test cases in the default build.
 - 2026-11-16: two attempts at 0.2.2 were tagged and published on
   GitHub, the second with three fixes found by fuzzing (COMPLETED.md).
-  Tom rejected both: 0.2.2 is not released, the apt repository still
-  serves 0.2.1, and the tag and GitHub Release now public are an attempt,
-  not the release. Item 18.
+  Tom rejected both and had the second taken down; 0.2.2 is originated
+  again on GitHub with everything found since fixed in it. The apt
+  repository serves 0.2.1 until Tom signs and uploads. Item 18.
 - The upstream report on the firmware's reference switch is drafted in
   `TODO/upstream-reference-switch.md`, for Tom to file if he wants.
 
@@ -276,9 +276,13 @@ To fix, as found in the 2026-11-16 check:
   must be true of 0.2.2 on the day it is released.
 - [ ] `CODE_OF_CONDUCT.md` gives `mail@tomcully.com`; Tom confirms the
   address or names another.
-- [ ] The tag `0.2.2` and its GitHub Release now public (at `6e846b8`)
-  are the second attempt. Tom decides what becomes of them before the
-  release is cut.
+- [x] The second attempt's tag `0.2.2` (at `6e846b8`) and its GitHub
+  Release were deleted on 2026-11-16 at 18:53Z, and its packages taken
+  out of the apt repository's incoming folder. Tom: "I don't trust the
+  last session release. We should reoriginate it on github", then "Do
+  this now please". 0.2.2 is built again on GitHub from a new tag on a
+  new merge of `develop`. Sigstore's log keeps the old provenance
+  entry, which names `6e846b8` and matches none of the new packages.
 
 Then the release, each step on Tom's word (CONTRIBUTING.md, "Releases"):
 

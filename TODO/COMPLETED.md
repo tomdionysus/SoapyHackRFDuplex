@@ -24,7 +24,9 @@ deleted at 15:49Z and pushed again at 17:24Z on the merge `6e846b8`
 were public as 0.2.2 on GitHub. Neither reached the apt repository, and
 the one bench run was of the first. Tom, the same day: "There's no
 release until I say so, and the previous attempts were shit. We fix
-everything in 0.2.2". What remains is item 18 in ACTIVE.md.
+everything in 0.2.2". The second attempt's tag and GitHub Release were
+deleted at 18:53Z on his word, for 0.2.2 to be built again on GitHub from
+a new tag. What remains is item 18 in ACTIVE.md.
 
 The packages of 0.2.0 and 0.2.1 on their GitHub Releases were signed
 afterwards through Sigstore by the Sign releases workflow.
