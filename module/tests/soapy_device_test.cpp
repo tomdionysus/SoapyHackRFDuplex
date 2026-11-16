@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "bandwidth.hpp"
+#include "convert.hpp"
 #include "fake_board.hpp"
 #include "loopback.hpp"
 
@@ -44,15 +46,8 @@ struct SoapyRig {
         rx = rx_owner.get();
         tx = tx_owner.get();
         // The pair's log goes to SoapySDR's, as the device opened for real does.
-        const Log forward = [](LogLevel level, const std::string& message) {
-            const SoapySDRLogLevel soapy = level == LogLevel::kError     ? SOAPY_SDR_ERROR
-                                           : level == LogLevel::kWarning ? SOAPY_SDR_WARNING
-                                           : level == LogLevel::kInfo    ? SOAPY_SDR_INFO
-                                                                         : SOAPY_SDR_DEBUG;
-            SoapySDR::log(soapy, message);
-        };
         device = std::make_unique<SoapyDevice>(
-            std::make_unique<Pair>(std::move(rx_owner), std::move(tx_owner), forward), args);
+            std::make_unique<Pair>(std::move(rx_owner), std::move(tx_owner), &soapy_log), args);
     }
     ~SoapyRig() {
         device.reset();
@@ -120,6 +115,8 @@ TEST_CASE("each direction has an lo_locked sensor", "[soapy]") {
         CHECK(info.type == SoapySDR::ArgInfo::BOOL);
         CHECK(rig.device->readSensor(direction, 0, "lo_locked") == "true");
         CHECK_THROWS_AS(rig.device->readSensor(direction, 0, "temperature"), std::invalid_argument);
+        CHECK_THROWS_AS(rig.device->getSensorInfo(direction, 0, "temperature"),
+                        std::invalid_argument);
         CHECK_THROWS_AS(rig.device->readSensor(direction, 1, "lo_locked"), std::invalid_argument);
     }
     // The device's own sensors are item 9's: ref_locked and time_locked.
@@ -1596,9 +1593,9 @@ TEST_CASE("a timed write without a receive rate or an origin is a time error", "
     std::vector<std::int8_t> samples(32, 0);
     const void* in[] = {samples.data()};
     int flags = SOAPY_SDR_HAS_TIME;
-    // No receive rate: no time to place it at.
+    // At the start-up rate: no origin to tie the streams.
     CHECK(device.writeStream(tx, in, 16, flags, 1'000'000, 1000) == SOAPY_SDR_TIME_ERROR);
-    // A rate, but no origin to tie the streams.
+    // At a rate set: still no origin.
     rig.device->setSampleRate(SOAPY_SDR_RX, 0, 8e6);
     flags = SOAPY_SDR_HAS_TIME;
     CHECK(device.writeStream(tx, in, 16, flags, 1'000'000, 1000) == SOAPY_SDR_TIME_ERROR);
@@ -1755,5 +1752,137 @@ TEST_CASE("receive corrections in a DSP build: a set offset comes off what is re
     }
     d.deactivateStream(rx);
     d.closeStream(rx);
+}
+#endif
+
+TEST_CASE("the pair's log reaches SoapySDR's at its own level, named", "[soapy][log]") {
+    const SoapyRig rig;
+    // SoapySDR passes on nothing below info unless asked.
+    SoapySDR::setLogLevel(SOAPY_SDR_DEBUG);
+    for (const auto& [level, soapy] :
+         std::vector<std::pair<LogLevel, SoapySDRLogLevel>>{{LogLevel::kDebug, SOAPY_SDR_DEBUG},
+                                                            {LogLevel::kInfo, SOAPY_SDR_INFO},
+                                                            {LogLevel::kWarning, SOAPY_SDR_WARNING},
+                                                            {LogLevel::kError, SOAPY_SDR_ERROR}}) {
+        soapy_logs().clear();
+        soapy_log(level, "a message");
+        REQUIRE(soapy_logs().size() == 1);
+        CHECK(soapy_logs()[0].first == soapy);
+        CHECK(soapy_logs()[0].second == "hackrfduplex: a message");
+    }
+    SoapySDR::setLogLevel(SOAPY_SDR_INFO);
+}
+
+TEST_CASE("a device needs a pair", "[soapy]") {
+    CHECK_THROWS_AS(SoapyDevice(nullptr, {}), std::invalid_argument);
+}
+
+TEST_CASE("each direction is full duplex, in four formats, CS8 native", "[soapy]") {
+    const SoapyRig rig;
+    const SoapySDR::Device& d = *rig.device;
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CAPTURE(direction);
+        CHECK(d.getFullDuplex(direction, 0));
+        CHECK(d.getStreamFormats(direction, 0) ==
+              std::vector<std::string>{SOAPY_SDR_CS8, SOAPY_SDR_CS16, SOAPY_SDR_CF32,
+                                       SOAPY_SDR_CF64});
+        double full_scale = 0;
+        CHECK(d.getNativeStreamFormat(direction, 0, full_scale) == SOAPY_SDR_CS8);
+        CHECK(full_scale == kFullScale);
+        CHECK_THROWS_AS(d.getFullDuplex(direction, 1), std::invalid_argument);
+        CHECK_THROWS_AS(d.getStreamFormats(direction, 1), std::invalid_argument);
+        CHECK_THROWS_AS(d.getNativeStreamFormat(direction, 1, full_scale), std::invalid_argument);
+    }
+}
+
+TEST_CASE("the one antenna is TX/RX", "[soapy]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CAPTURE(direction);
+        CHECK(d.listAntennas(direction, 0) == std::vector<std::string>{"TX/RX"});
+        CHECK(d.getAntenna(direction, 0) == "TX/RX");
+        CHECK_NOTHROW(d.setAntenna(direction, 0, "TX/RX"));
+        CHECK_THROWS_AS(d.setAntenna(direction, 0, "ANT2"), std::invalid_argument);
+        CHECK_THROWS_AS(d.getAntenna(direction, 1), std::invalid_argument);
+    }
+}
+
+TEST_CASE("the one frequency component is RF, 1 MHz to 6 GHz", "[soapy]") {
+    const SoapyRig rig;
+    const SoapySDR::Device& d = *rig.device;
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CAPTURE(direction);
+        CHECK(d.listFrequencies(direction, 0) == std::vector<std::string>{"RF"});
+        for (const SoapySDR::RangeList& ranges :
+             {d.getFrequencyRange(direction, 0), d.getFrequencyRange(direction, 0, "RF")}) {
+            REQUIRE(ranges.size() == 1);
+            CHECK(ranges[0].minimum() == 1e6);
+            CHECK(ranges[0].maximum() == 6e9);
+        }
+        CHECK_THROWS_AS(d.getFrequencyRange(direction, 0, "BB"), std::invalid_argument);
+    }
+}
+
+TEST_CASE("the bandwidths offered are the boards' filter widths", "[soapy]") {
+    const SoapyRig rig;
+    const SoapySDR::Device& d = *rig.device;
+    for (const int direction : {SOAPY_SDR_RX, SOAPY_SDR_TX}) {
+        CAPTURE(direction);
+        const std::vector<double> listed = d.listBandwidths(direction, 0);
+        const SoapySDR::RangeList ranges = d.getBandwidthRange(direction, 0);
+        REQUIRE(listed.size() == filter_bandwidths().size());
+        REQUIRE(ranges.size() == listed.size());
+        for (std::size_t k = 0; k < listed.size(); ++k) {
+            CHECK(listed[k] == filter_bandwidths()[k]);
+            // Each width alone: no range between them.
+            CHECK(ranges[k].minimum() == listed[k]);
+            CHECK(ranges[k].maximum() == listed[k]);
+        }
+    }
+}
+
+TEST_CASE("a write on a transmit stream not running is a stream error", "[soapy]") {
+    SoapyRig rig;
+    SoapySDR::Device& d = *rig.device;
+    SoapySDR::Stream* tx = d.setupStream(SOAPY_SDR_TX, SOAPY_SDR_CS8);
+    std::vector<std::int8_t> samples(32, 0);
+    const void* in[] = {samples.data()};
+    int flags = 0;
+    CHECK(d.writeStream(tx, in, 16, flags, 0, 1000) == SOAPY_SDR_STREAM_ERROR);
+    d.closeStream(tx);
+}
+
+TEST_CASE("a timed write into a full transmit ring times out", "[soapy][time]") {
+    TimedRig rig;
+    SoapySDR::Device& d = *rig.device;
+    REQUIRE(d.activateStream(rig.rx_stream) == 0);
+    REQUIRE(d.activateStream(rig.tx_stream) == 0);
+    REQUIRE(d.hasHardwareTime());
+    // The board stops pulling, so the ring fills and stays full.
+    rig.air.paused = true;
+    const long long start = d.getHardwareTime() + 1'000'000'000LL;
+    // One transfer's worth at a time, each a millisecond after the last.
+    constexpr std::size_t kTransfer = 1024;
+    const std::vector<std::int8_t> buffer(2 * kTransfer, 3);
+    const void* buffs[] = {buffer.data()};
+    int result = 0;
+    for (int k = 0; k < 100 && result >= 0; ++k) {
+        int flags = SOAPY_SDR_HAS_TIME;
+        result =
+            d.writeStream(rig.tx_stream, buffs, kTransfer, flags, start + k * 1'000'000LL, 1000);
+    }
+    CHECK(result == SOAPY_SDR_TIMEOUT);
+    rig.air.paused = false;
+}
+
+#if defined(HACKRFDUPLEX_DSP)
+TEST_CASE("the transmit channel has no corrections to read back", "[soapy][dsp]") {
+    const SoapyRig rig;
+    const SoapySDR::Device& d = *rig.device;
+    CHECK(d.getDCOffset(SOAPY_SDR_TX, 0) == std::complex<double>());
+    CHECK(d.getIQBalance(SOAPY_SDR_TX, 0) == std::complex<double>());
+    CHECK_FALSE(d.getDCOffsetMode(SOAPY_SDR_TX, 0));
+    CHECK_FALSE(d.getIQBalanceMode(SOAPY_SDR_TX, 0));
 }
 #endif

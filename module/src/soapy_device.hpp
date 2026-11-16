@@ -12,17 +12,18 @@
 
 namespace hackrfduplex {
 
+// The pair's log, passed to SoapySDR's at the matching level.
+void soapy_log(LogLevel level, const std::string& message);
+
 // The SoapySDR face of a Pair: one RX channel on one board, one TX
 // channel on the other, full duplex. Everything here is translation; the
 // behaviour is the pair's.
 class SoapyDevice final : public SoapySDR::Device {
 public:
-    // Opens the boards `args` select (selection.hpp). Throws
-    // std::runtime_error when they cannot be chosen or opened.
-    explicit SoapyDevice(const SoapySDR::Kwargs& args);
-    // Over a pair already made, which is how the tests use it; `args` are
-    // the device arguments beyond the board selection: the settings but
-    // calibrate.
+    // Over a pair already made: of the boards `args` select when SoapySDR
+    // opens the device (registration.cpp), of fake boards in the tests.
+    // `args` are the device arguments beyond the board selection: the
+    // settings but calibrate. Throws std::invalid_argument without a pair.
     SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& args);
     ~SoapyDevice() override;
 

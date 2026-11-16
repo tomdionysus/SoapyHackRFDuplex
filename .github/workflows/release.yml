@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# A GitHub Release for each version tag: the tag's CHANGELOG.md entry as
+# its notes, and the Debian packages for amd64 and arm64, built from the
+# tag in Debian trixie and checked by lintian and by installing them, as
+# the apt repository serves them. Run by hand with a tag to release one
+# already pushed; the build and release scripts are the workflow's own
+# revision, so an older tag is built the same way.
+name: Release
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The version tag to release, such as 0.2.1"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  package:
+    name: package ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    container:
+      image: debian:trixie
+    steps:
+      - name: The scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: ci
+          persist-credentials: false
+
+      - name: The tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: src
+          persist-credentials: false
+
+      - name: Build the packages
+        run: cd src && ../ci/tools/deb-build.sh ../out
+
+      - name: Install the packages and load the module
+        run: ci/tools/deb-install-check.sh out
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: release-${{ matrix.arch }}
+          path: out/*.deb
+          retention-days: 7
+
+  release:
+    name: release
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: release-*
+          path: debs
+          merge-multiple: true
+
+      - name: Notes from CHANGELOG.md
+        run: tools/changelog-entry.sh "$TAG" CHANGELOG.md >notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" debs/*.deb --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" debs/*.deb --title "$TAG" --notes-file notes.md \
+              --verify-tag --repo "$GITHUB_REPOSITORY"
+          fi

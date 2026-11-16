@@ -81,4 +81,19 @@ if(HACKRFDUPLEX_BUILD_TESTS)
         target_link_libraries(hackrfduplex_tests PRIVATE hackrfduplex_soapy)
     endif()
     catch_discover_tests(hackrfduplex_tests)
+
+    # The libhackrf binding, built against libhackrf's header and linked with
+    # a fake of its functions in place of the library.
+    get_target_property(_hackrf_target libhackrf::libhackrf ALIASED_TARGET)
+    if(NOT _hackrf_target)
+        set(_hackrf_target libhackrf::libhackrf)
+    endif()
+    get_target_property(_hackrf_includes ${_hackrf_target} INTERFACE_INCLUDE_DIRECTORIES)
+    add_executable(hackrf_board_tests
+        src/hackrf_board.cpp
+        tests/fake_libhackrf.cpp
+        tests/hackrf_board_test.cpp)
+    target_include_directories(hackrf_board_tests SYSTEM PRIVATE ${_hackrf_includes})
+    target_link_libraries(hackrf_board_tests PRIVATE hackrfduplex_core Catch2::Catch2WithMain)
+    catch_discover_tests(hackrf_board_tests)
 endif()

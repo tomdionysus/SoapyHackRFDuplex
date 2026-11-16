@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Codecov's checks on a push or pull request: the whole may not drop more
+# than a tenth of a point, and the lines a change adds must be tested.
+# tools/ci.sh holds the floors themselves (lines, functions, branches).
+coverage:
+  precision: 1
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 0.1%
+    patch:
+      default:
+        target: 95%
+comment:
+  layout: "condensed_header, diff, files"
+  require_changes: true

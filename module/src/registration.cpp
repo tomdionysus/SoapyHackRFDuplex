@@ -2,6 +2,7 @@
 #include <SoapySDR/Logger.hpp>
 #include <SoapySDR/Registry.hpp>
 #include <exception>
+#include <memory>
 
 #include "hackrf_board.hpp"
 #include "selection.hpp"
@@ -29,8 +30,15 @@ SoapySDR::KwargsList find_pairs(const SoapySDR::Kwargs& args) {
     return results;
 }
 
+// Opens the boards `args` select (selection.hpp); throws when they cannot
+// be chosen or opened.
 SoapySDR::Device* make_pair(const SoapySDR::Kwargs& args) {
-    return new hackrfduplex::SoapyDevice(args);
+    using namespace hackrfduplex;
+    const Selection selection = select_pair(args, list_boards());
+    return new SoapyDevice(
+        std::make_unique<Pair>(std::make_unique<HackrfBoard>(selection.rx),
+                               std::make_unique<HackrfBoard>(selection.tx), &soapy_log),
+        args);
 }
 
 SoapySDR::Registry registration("hackrfduplex", &find_pairs, &make_pair, SOAPY_SDR_ABI_VERSION);

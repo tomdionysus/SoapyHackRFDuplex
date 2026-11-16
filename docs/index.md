@@ -18,6 +18,7 @@
 ## The project
 
 - [Status](status.md): what works, and what is untested on hardware
+- [Changelog](../CHANGELOG.md): what each release changed
 - [Design](design.md): how the module is built, and the measurements
   behind its figures
 - [Contributing](../CONTRIBUTING.md): building, testing, CI and the

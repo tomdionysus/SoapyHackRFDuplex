@@ -131,7 +131,7 @@ const char* clock_out_name(ClockOut which) {
         case ClockOut::kTx:
             return "tx";
     }
-    return "?";
+    return "?";  // LCOV_EXCL_LINE: every value returns above
 }
 
 const char* time_origin_name(TimeOrigin origin) {
@@ -143,7 +143,7 @@ const char* time_origin_name(TimeOrigin origin) {
         case TimeOrigin::kNone:
             return "none";
     }
-    return "?";
+    return "?";  // LCOV_EXCL_LINE: every value returns above
 }
 
 TimeOrigin parse_time_origin(const std::string& name) {
@@ -791,10 +791,10 @@ void Pair::lose_origin(const std::string& why) {
 }
 
 void Pair::mark_failed(Direction direction, const std::string& why) {
+    // Only a poll marks a side, under its lock, having passed over a side
+    // already failed; a start clears it under the same lock.
     Side& s = side(direction);
-    if (s.failed.exchange(true)) {
-        return;
-    }
+    s.failed = true;
     log(LogLevel::kError, std::string(direction_name(direction)) + " board stopped streaming (" +
                               why +
                               "); its stream has ended until it is deactivated and activated "

@@ -13,13 +13,12 @@ TxPath::TxPath(std::size_t slots, std::size_t transfer_bytes) : ring_(slots, tra
 std::size_t TxPath::write(const void* src, std::size_t samples, Format format, bool end_of_burst,
                           std::chrono::microseconds timeout) {
     if (current_ == nullptr) {
+        // A free slot stays free: this writer alone fills the ring, and a
+        // reset only empties it.
         if (!ring_.wait_free(timeout)) {
             return 0;
         }
         current_ = ring_.acquire();
-        if (current_ == nullptr) {
-            return 0;
-        }
         current_->size = 0;
         current_->end_of_burst = false;
         current_->timed = false;
@@ -45,9 +44,6 @@ TxWrite TxPath::write_at(const void* src, std::size_t samples, Format format, bo
         return {};
     }
     current_ = ring_.acquire();
-    if (current_ == nullptr) {
-        return {};
-    }
     current_->size = 0;
     current_->end_of_burst = false;
     current_->timed = true;

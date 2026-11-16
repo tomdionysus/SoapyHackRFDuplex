@@ -3,6 +3,41 @@
 Newest first. Each entry is the item as it stood in ACTIVE.md, with its
 date and what the acceptance test showed.
 
+## 2026-11-16: coverage, CI and the repository tightened
+
+Tom: "tighten everything up - github action CI build, badges, CodeQL,
+near 100% coverage". Measured first on corvus-saturn: 97.1% of lines,
+98.4% of functions, 91.5% of branches, over a report that left out the
+libhackrf binding, the DSP build and the FT8 example. Now:
+
+- Measured: the coverage build compiles the receive corrections and the
+  FT8 example; the libhackrf binding is tested against a fake libhackrf
+  (`hackrf_board_tests`, 17 cases) and counted. Left out: the tests, the
+  SoapySDR registration, the check tool (Tom: not split), the FT8 main
+  loop and ft8_lib's C. Branches without the compiler's exception and
+  clean-up edges.
+- Tested: the SoapySDR calls no test made (stream formats, antenna,
+  frequency and bandwidth lists, log levels, a write on a stopped stream,
+  a timed write into a full ring), the pair's failure paths (a burst only
+  part of which fits, a retune that cannot be undone, a trigger start
+  whose clean-up fails). Removed as unreachable: four receive-rate
+  checks (the device always has a rate), an exchange in mark_failed, two
+  null checks after wait_free, a duplicate CF32 case.
+- Result: 100.0% of lines (2804), 99.5% of functions, 94.0% of branches;
+  `tools/ci.sh` fails under 99.5 / 99 / 93.
+- CI: actions pinned to commits, Dependabot, superseded runs cancelled,
+  time limits, ShellCheck, actionlint, CodeQL security-and-quality,
+  Codecov failing a push on a failed upload (`codecov.yml`), OpenSSF
+  Scorecard, and a Release workflow building both architectures from a
+  tag. Badges: Scorecard, release, licence.
+- GitHub: description and topics corrected; `main` protected (CI and
+  CodeQL required, admins included, no force push or deletion), so a
+  release goes through a pull request; Releases 0.2.0 and 0.2.1
+  published with the packages the apt repository serves.
+
+The full `tools/ci.sh` passed on corvus-saturn in the trixie CI image,
+ThreadSanitizer included; GitHub CI and CodeQL passed on develop.
+
 ## 2026-11-12: amd64 packages and the 0.2.1 release
 
 The first clean build, in a `debian:trixie` container for amd64

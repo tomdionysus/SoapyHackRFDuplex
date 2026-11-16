@@ -35,25 +35,6 @@ constexpr double kMaxSampleRate = 20e6;
 constexpr double kMinFrequency = 1e6;
 constexpr double kMaxFrequency = 6e9;
 
-void soapy_log(LogLevel level, const std::string& message) {
-    SoapySDRLogLevel soapy_level = SOAPY_SDR_INFO;
-    switch (level) {
-        case LogLevel::kDebug:
-            soapy_level = SOAPY_SDR_DEBUG;
-            break;
-        case LogLevel::kInfo:
-            soapy_level = SOAPY_SDR_INFO;
-            break;
-        case LogLevel::kWarning:
-            soapy_level = SOAPY_SDR_WARNING;
-            break;
-        case LogLevel::kError:
-            soapy_level = SOAPY_SDR_ERROR;
-            break;
-    }
-    SoapySDR::log(soapy_level, "hackrfduplex: " + message);
-}
-
 // A request this device cannot honour, refused rather than ignored.
 [[noreturn]] void refuse(const std::string& call, const std::string& why) {
     throw std::invalid_argument(call + ": " + why);
@@ -92,15 +73,26 @@ std::chrono::microseconds left_until(std::chrono::steady_clock::time_point deadl
                : std::chrono::microseconds(0);
 }
 
-std::unique_ptr<Pair> open_pair(const SoapySDR::Kwargs& args) {
-    const Selection selection = select_pair(args, list_boards());
-    return std::make_unique<Pair>(std::make_unique<HackrfBoard>(selection.rx),
-                                  std::make_unique<HackrfBoard>(selection.tx), &soapy_log);
-}
-
 }  // namespace
 
-SoapyDevice::SoapyDevice(const SoapySDR::Kwargs& args) : SoapyDevice(open_pair(args), args) {}
+void soapy_log(LogLevel level, const std::string& message) {
+    SoapySDRLogLevel soapy_level = SOAPY_SDR_INFO;
+    switch (level) {
+        case LogLevel::kDebug:
+            soapy_level = SOAPY_SDR_DEBUG;
+            break;
+        case LogLevel::kInfo:
+            soapy_level = SOAPY_SDR_INFO;
+            break;
+        case LogLevel::kWarning:
+            soapy_level = SOAPY_SDR_WARNING;
+            break;
+        case LogLevel::kError:
+            soapy_level = SOAPY_SDR_ERROR;
+            break;
+    }
+    SoapySDR::log(soapy_level, "hackrfduplex: " + message);
+}
 
 SoapyDevice::SoapyDevice(std::unique_ptr<Pair> pair, const SoapySDR::Kwargs& args)
     : pair_(std::move(pair)) {
@@ -291,11 +283,9 @@ int SoapyDevice::activateStream(SoapySDR::Stream* stream, const int flags, const
     }
     std::optional<std::uint64_t> start;
     if (timed) {
+        // Never zero: the device opens at the boards' start-up rate and
+        // refuses a rate outside its range.
         const double rate = pair_->sample_rate(Direction::kRx);
-        if (!(rate > 0)) {
-            soapy_log(LogLevel::kError, "activateStream: set the receive sample rate first");
-            return SOAPY_SDR_TIME_ERROR;
-        }
         // Time is the receive position plus the offset; a stream that is not
         // running starts again from position 0.
         const long long ticks = SoapySDR::timeNsToTicks(timeNs, rate);
@@ -456,9 +446,6 @@ int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
     if ((flags & SOAPY_SDR_HAS_TIME) != 0) {
         flags = 0;
         const double rate = pair_->sample_rate(Direction::kRx);
-        if (!(rate > 0)) {
-            return SOAPY_SDR_TIME_ERROR;
-        }
         const TimedWrite written =
             pair_->write_at(buffs[0], numElems, end_of_burst, SoapySDR::timeNsToTicks(timeNs, rate),
                             timeout_of(timeoutUs));
@@ -472,7 +459,7 @@ int SoapyDevice::writeStream(SoapySDR::Stream* stream, const void* const* buffs,
                 return pair_->failed(Direction::kTx) ? SOAPY_SDR_STREAM_ERROR
                                                      : SOAPY_SDR_TIME_ERROR;
         }
-        return SOAPY_SDR_TIME_ERROR;
+        return SOAPY_SDR_TIME_ERROR;  // LCOV_EXCL_LINE: every status returns above
     }
     const std::size_t taken = pair_->write(buffs[0], numElems, end_of_burst, timeout_of(timeoutUs));
     flags = 0;
@@ -918,22 +905,14 @@ long long SoapyDevice::getHardwareTime(const std::string& what) const {
     if (!what.empty()) {
         throw std::invalid_argument("getHardwareTime: no time source " + what);
     }
-    const double rate = pair_->sample_rate(Direction::kRx);
-    if (!(rate > 0)) {
-        return 0;
-    }
-    return SoapySDR::ticksToTimeNs(pair_->time_ticks(), rate);
+    return SoapySDR::ticksToTimeNs(pair_->time_ticks(), pair_->sample_rate(Direction::kRx));
 }
 
 void SoapyDevice::setHardwareTime(const long long timeNs, const std::string& what) {
     if (!what.empty()) {
         throw std::invalid_argument("setHardwareTime: no time source " + what);
     }
-    const double rate = pair_->sample_rate(Direction::kRx);
-    if (!(rate > 0)) {
-        throw std::logic_error("setHardwareTime: set the receive sample rate first");
-    }
-    pair_->set_time_ticks(SoapySDR::timeNsToTicks(timeNs, rate));
+    pair_->set_time_ticks(SoapySDR::timeNsToTicks(timeNs, pair_->sample_rate(Direction::kRx)));
 }
 
 // Clock and time sources
